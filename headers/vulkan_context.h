@@ -901,7 +901,7 @@ namespace VulkanContext {
         pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipeline_create_info.stageCount = shader_stage_create_info.size();
         pipeline_create_info.pStages = shader_stage_create_info.data();
-        pipeline_create_info.pVertexInputState = &vertex_input_state;
+        pipeline_create_info.pVertexInputState = &vertex_input_state_create_info;
         pipeline_create_info.pInputAssemblyState = &input_assembly_state;
         pipeline_create_info.pViewportState = &viewport_state;
         pipeline_create_info.pRasterizationState = &rasterization_state_create_info;
@@ -922,20 +922,16 @@ namespace VulkanContext {
         this->device = device;
 
         // setup pipeline layout
-        {
-            VkPipelineLayouCreateInfo create_info = {};
-            create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-            vkCreatePipelineLayout(device.logical, &create_info, nullptr, &layout);
-        }
+        VkPipelineLayoutCreateInfo layout_create_info = {};
+        layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        vkCreatePipelineLayout(device.logical, &layout_create_info, nullptr, &layout);
 
         // setup shader stage
-        {
-            VkPipelineShaderStageCreateInfo shader_stage_create_info = {};
-            shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-            shader_stage_create_info.stage = VK_SHADER_STAGE_COMPUTE_SHADER;
-            shader_stage_create_info.module = compute_shader_module;
-            shader_stage_create_info.pName = "main";
-        }
+        VkPipelineShaderStageCreateInfo shader_stage_create_info = {};
+        shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shader_stage_create_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        shader_stage_create_info.module = compute_shader_module;
+        shader_stage_create_info.pName = "main";
         
         // setup layout
         VkPipelineLayoutCreateInfo layout_create_info = {};
@@ -969,7 +965,7 @@ namespace VulkanContext {
             // check if required memory type is allowed
             if (type_filter & (1 << i)) {
                 // check if required properties are satisfied
-                if (device_memory_properties.memoryTypes[i].propertyFlags & memory_properties) == memory_properties){
+                if ((device_memory_properties.memoryTypes[i].propertyFlags & memory_properties) == memory_properties){
                     return i;
                 }
             }
@@ -989,34 +985,34 @@ namespace VulkanContext {
         create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         create_info.size = size;
         create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        vkCreateBuffer(device.logical, &create_info, nullptr, &buffer->buffer);
+        vkCreateBuffer(device.logical, &create_info, nullptr, &buffer);
 
         // get buffer memory requirements
         VkMemoryRequirements memory_requirements;
-        vkGetBufferMemoryRequirements(device.logical, buffer->buffer, &memory_requirements);
+        vkGetBufferMemoryRequirements(device.logical, buffer, &memory_requirements);
 
         // allocate memory
         VkMemoryAllocateInfo allocate_info = {};
         allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocate_info.allocationSize = memory_requirements.size;
         allocate_info.memoryTypeIndex = get_memory_type_index(device, memory_requirements.memoryTypeBits, memory_properties);
-        vkAllocateMemory(device.logical, &allocate_info, nullptr, &buffer->memory);
+        vkAllocateMemory(device.logical, &allocate_info, nullptr, &memory);
 
         // bind memory to buffer
         VkDeviceSize memory_offset = 0;
-        vkBindBufferMemory(device.logical, buffer->buffer, buffer->memory, memory_offset);
+        vkBindBufferMemory(device.logical, buffer, memory, memory_offset);
     }
 
     VertexBuffer::~VertexBuffer() {
-        vkDestroyBuffer(device.logical, buffer->buffer, nullptr);
-        vkFreeMemory(device.logical, buffer->memory, nullptr);
+        vkDestroyBuffer(device.logical, buffer, nullptr);
+        vkFreeMemory(device.logical, memory, nullptr);
     }
 
     void VertexBuffer::map_memory(){
         VkDeviceSize offset = 0;
         VkMemoryMapFlags flags = 0;
         void* data;
-        vkMapMemory(device.logical, buffer.memory, offset, size, flags, &data);
+        vkMapMemory(device.logical, memory, offset, size, flags, &data);
         memcpy(data, vertex_data.data(), size);
     }
 
@@ -1031,34 +1027,34 @@ namespace VulkanContext {
         create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         create_info.size = size;
         create_info.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-        vkCreateBuffer(device.logical, &create_info, nullptr, &buffer->buffer);
+        vkCreateBuffer(device.logical, &create_info, nullptr, &buffer);
 
         // get buffer memory requirements
         VkMemoryRequirements memory_requirements;
-        vkGetBufferMemoryRequirements(device.logical, buffer->buffer, &memory_requirements);
+        vkGetBufferMemoryRequirements(device.logical, buffer, &memory_requirements);
 
         // allocate memory
         VkMemoryAllocateInfo allocate_info = {};
         allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocate_info.allocationSize = memory_requirements.size;
         allocate_info.memoryTypeIndex = get_memory_type_index(device, memory_requirements.memoryTypeBits, memory_properties);
-        vkAllocateMemory(device.logical, &allocate_info, nullptr, &buffer->memory);
+        vkAllocateMemory(device.logical, &allocate_info, nullptr, &memory);
 
         // bind memory to buffer
         VkDeviceSize memory_offset = 0;
-        vkBindBufferMemory(device.logical, buffer->buffer, buffer->memory, memory_offset);
+        vkBindBufferMemory(device.logical, buffer, memory, memory_offset);
     }
 
     IndexBuffer::~IndexBuffer() {
-        vkDestroyBuffer(device.logical, buffer->buffer, nullptr);
-        vkFreeMemory(device.logical, buffer->memory, nullptr);
+        vkDestroyBuffer(device.logical, buffer, nullptr);
+        vkFreeMemory(device.logical, memory, nullptr);
     }
 
     void IndexBuffer::map_memory() {
         VkDeviceSize offset = 0;
         VkMemoryMapFlags flags = 0;
         void* data;
-        vkMapMemory(device.logical, buffer.memory, offset, size, flags, &data);
+        vkMapMemory(device.logical, memory, offset, size, flags, &data);
         memcpy(data, index_data.data(), size);
     }
 
@@ -1080,7 +1076,7 @@ namespace VulkanContext {
         VkShaderModule result = {};
         FILE* file = fopen(filename, "rb");
         if (!file) {
-            Log::error("shader file not found: " + filename);
+            Log::log(LOG_LEVEL_ERROR, "shader file not found: ", filename);
         }
         fseek(file, 0, SEEK_END);
         long file_size = ftell(file);
@@ -1182,7 +1178,7 @@ namespace VulkanContext {
         dependency_info.pMemoryBarriers = nullptr;
         dependency_info.imageMemoryBarrierCount = 0;
         dependency_info.pImageMemoryBarriers = nullptr;
-        vkCmdSetEvent2(command_buffer.bind_index_buffer, event, &dependency_info);
+        vkCmdSetEvent2(command_buffer.buffer, event, &dependency_info);
     }
 
 }; // end of namespace VulkanContext
