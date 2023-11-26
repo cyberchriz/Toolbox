@@ -18,8 +18,8 @@ namespace VulkanContext {
         void create(const void* pNext = nullptr, VkInstanceCreateFlags flags = 0);
         VkInstance get() const { return instance; }
         Instance();
-    private:
         ~Instance();
+    private:
         VkInstance instance = nullptr;
         VkApplicationInfo application_info = {};
         VkInstanceCreateInfo instance_create_info = {};
@@ -41,14 +41,12 @@ namespace VulkanContext {
         QueueFamily usage = QueueFamily::UNDEFINED;
         float priority = 1.0f;
         void wait_idle() const { vkQueueWaitIdle(queue); }
-    private:
         ~Queue() {};
+    private:
     };
 
     class Device {
     public:
-        // deleting the default constructor
-        Device() = delete;
         // parametric constructor
         Device(Instance instance, uint32_t id = 0, VkPhysicalDeviceFeatures enabled_features = {}, const std::vector<const char*>& enabled_extensions = {});
         // public member variables
@@ -57,24 +55,23 @@ namespace VulkanContext {
         VkPhysicalDevice physical = nullptr;
         VkDevice logical = nullptr;
         Queue graphics_queue, compute_queue, transfer_queue;
-    private:
         // Destructor
         ~Device();
+    private:
     };
 
     class RenderPass {
-        RenderPass() = delete;
         RenderPass(Device device, VkFormat format, QueueFamily usage = QueueFamily::GRAPHICS);
         VkRenderPass renderpass;
-    private:
         ~RenderPass();
+    private:
         Device device;
     };
 
     class Swapchain {
     public:
-        Swapchain() = delete;
         Swapchain(Device device, VkSurfaceKHR surface, VkImageUsageFlags usage, RenderPass renderpass, uint32_t min_image_count = 3, VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D, VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR);
+        ~Swapchain();
         uint32_t num_images = 0;
         std::vector<VkImage> image;
         std::vector<VkImageView> image_view;
@@ -84,13 +81,11 @@ namespace VulkanContext {
         uint32_t height;
         VkFormat format;
     private:
-        ~Swapchain();
         Device device;
     };
 
     class RenderAttachment {
     public:
-        RenderAttachment() = delete;
         RenderAttachment(VkImageView image_view, VkImageLayout image_layout, VkAttachmentLoadOp load_op, VkAttachmentStoreOp store_op, VkClearValue clear_value) {
             attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             attachment.pNext = NULL;
@@ -106,17 +101,15 @@ namespace VulkanContext {
     };
 
     class FrameBuffer {
-        FrameBuffer() = delete;
         FrameBuffer(Device device, Swapchain swapchain, RenderPass renderpass);
+        ~FrameBuffer();
         std::vector<VkFramebuffer> buffer;
     private:
-        ~FrameBuffer();
         Device device;
     };
 
     class CommandBuffer {
     public:
-        CommandBuffer() = delete;
         CommandBuffer(Device device, QueueFamily usage, CommandPool pool);
         void bind_vertex_buffer(VertexBuffer vertex_buffer);
         void bind_index_buffer(IndexBuffer index_buffer);
@@ -137,55 +130,51 @@ namespace VulkanContext {
         VkPipelineBindPoint bind_point;
         Device device;
         VkCommandPool pool;
-    private:
         ~CommandBuffer();
+    private:
     };
 
     class CommandPool {
     public:
-        CommandPool() = delete;
         CommandPool(Device device, QueueFamily usage = QueueFamily::GRAPHICS);
         void trim() { vkTrimCommandPool(device.logical, pool, NULL); }
         VkResult reset(VkCommandPoolResetFlags flags = VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) { return vkResetCommandPool(device.logical, pool, flags); }
         VkCommandPool pool;
         QueueFamily usage;
         Device device;
-    private:
         ~CommandPool();
+    private:
     };
 
     class GraphicsPipeline {
     public:
-        GraphicsPipeline() = delete;
         GraphicsPipeline(Device device, RenderPass renderpass, Swapchain swapchain, VertexDescription vertex_description, VkShaderModule vertex_shader_module, VkShaderModule fragment_shader_module);
         VkPipeline pipeline;
         VkPipelineLayout layout;
-    private:
         ~GraphicsPipeline();
+    private:
         Device device;
     };
 
     class ComputePipeline {
     public:
-        ComputePipeline() = delete;
         ComputePipeline(Device device, VkShaderModule compute_shader_module);
         VkPipeline pipeline;
         VkPipelineLayout layout;
-    private:
         ~ComputePipeline();
+    private:
         Device device;
     };
 
     class VertexDescription {
-        VertexDescription() = delete;
         VertexDescription(uint32_t dimensions);
         void add_color_attribute();
         std::vector<VkVertexInputAttributeDescription> get_attribute_descriptions() const { return attribute_descriptions; }
         VkVertexInputBindingDescription get_input_binding() const { return input_binding; }
         uint32_t get_attribute_descriptions_count() const { return attribute_descriptions.size(); }
         uint64_t get_size() const { return input_binding.stride; }
+        ~VertexDescription() {}
     private:
-        ~VertexDescription(){}
         uint32_t dimensions = 0;
         bool has_color = false;
         std::vector<VkVertexInputAttributeDescription> attribute_descriptions;
@@ -195,17 +184,15 @@ namespace VulkanContext {
     class VertexBuffer {
     public:
         // public methods
-        VertexBuffer() = delete;
         VertexBuffer(Device device, VertexDescription vertex_description, uint32_t num_vertices, VkMemoryPropertyFlags memory_properties);
         uint32_t get_num_vertices() const { return num_vertices; }
-
+        ~VertexBuffer();
         // public member variables
         void map_memory();
         VkBuffer buffer;
         VkDeviceMemory memory;
         std::vector<float> vertex_data;
     private:
-        ~VertexBuffer();
         uint32_t num_vertices;
         Device device;
         uint64_t size; // size in bytes
@@ -214,17 +201,15 @@ namespace VulkanContext {
     class IndexBuffer {
     public:
         // public methods
-        IndexBuffer() = delete;
         IndexBuffer(Device device, uint32_t num_indices, VkMemoryPropertyFlags memory_properties);
         uint32_t get_num_indices() const { return num_indices; }
-        
+        ~IndexBuffer();
         // public member variables
         VkBuffer buffer;
         VkDeviceMemory memory;
         void map_memory();
         std::vector<uint32_t> index_data;
     private:
-        ~IndexBuffer();
         uint32_t num_indices;
         Device device;
         uint64_t size; // size in bytes
@@ -232,21 +217,20 @@ namespace VulkanContext {
 
     class Fence {
     public:
-        Fence() = delete;
         Fence(Device device, bool signaled=false);
+        ~Fence();
         bool active() { return vkGetFenceStatus(device.logical, fence) == VK_SUCCESS; }
         VkResult reset() { return vkResetFences(device.logical, 1, &fence); }
         VkResult wait(uint64_t timeout_nanosec=1000000000) {return vkWaitForFences(device.logical, 1, &fence, VK_TRUE, timeout_nanosec); }
         VkFence fence;
     private:
         Device device;
-        ~Fence();
     };
 
     class Semaphore {
     public:
-        Semaphore() = delete;
         Semaphore(Device device, VkSemaphoreType type = VK_SEMAPHORE_TYPE_BINARY, uint64_t initial_value = 0);
+        ~Semaphore();
         VkResult wait(uint64_t timeout_nanosec = 1000000000);
         uint64_t counter() { uint64_t value;  vkGetSemaphoreCounterValue(device.logical, semaphore, &value); return value; }
         void signal(uint64_t value);
@@ -254,13 +238,12 @@ namespace VulkanContext {
     private:
         Device device;
         VkSemaphoreType type;
-        ~Semaphore();
     };
 
     class Event {
     public:
-        Event() = delete;
         Event(Device device);
+        ~Event();
         bool signaled() { return vkGetEventStatus(device.logical, event) == VK_EVENT_SET; }
         VkResult set() { return vkSetEvent(device.logical, event); }
         VkResult reset() { return vkResetEvent(device.logical, event); }
@@ -268,7 +251,6 @@ namespace VulkanContext {
         VkEvent event;
     private:
         Device device;
-        ~Event();
     };
     // standalone helper functions that are not part of any class:
 
