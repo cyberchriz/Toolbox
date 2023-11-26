@@ -47,8 +47,9 @@ namespace VulkanContext {
 
     class Device {
     public:
+        Device() {};
         // parametric constructor
-        Device(Instance instance, uint32_t id = 0, VkPhysicalDeviceFeatures enabled_features = {}, const std::vector<const char*>& enabled_extensions = {});
+        Device(Instance instance, uint32_t id = 0, VkPhysicalDeviceFeatures enabled_features, const std::vector<const char*>& enabled_extensions = {});
         // public member variables
         VkPhysicalDeviceProperties properties = {};
         VkPhysicalDeviceProperties2 properties2 = {};
@@ -61,6 +62,8 @@ namespace VulkanContext {
     };
 
     class RenderPass {
+    public:
+        RenderPass() {};
         RenderPass(Device device, VkFormat format, QueueFamily usage = QueueFamily::GRAPHICS);
         VkRenderPass renderpass;
         ~RenderPass();
@@ -70,6 +73,7 @@ namespace VulkanContext {
 
     class Swapchain {
     public:
+        Swapchain() {};
         Swapchain(Device device, VkSurfaceKHR surface, VkImageUsageFlags usage, RenderPass renderpass, uint32_t min_image_count = 3, VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D, VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR);
         ~Swapchain();
         uint32_t num_images = 0;
@@ -82,10 +86,12 @@ namespace VulkanContext {
         VkFormat format;
     private:
         Device device;
+        RenderPass renderpass;
     };
 
     class RenderAttachment {
     public:
+        RenderAttachment(){}
         RenderAttachment(VkImageView image_view, VkImageLayout image_layout, VkAttachmentLoadOp load_op, VkAttachmentStoreOp store_op, VkClearValue clear_value) {
             attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             attachment.pNext = NULL;
@@ -101,6 +107,7 @@ namespace VulkanContext {
     };
 
     class FrameBuffer {
+    public:
         FrameBuffer(Device device, Swapchain swapchain, RenderPass renderpass);
         ~FrameBuffer();
         std::vector<VkFramebuffer> buffer;
@@ -110,6 +117,7 @@ namespace VulkanContext {
 
     class CommandBuffer {
     public:
+        CommandBuffer(){}
         CommandBuffer(Device device, QueueFamily usage, CommandPool pool);
         void bind_vertex_buffer(VertexBuffer vertex_buffer);
         void bind_index_buffer(IndexBuffer index_buffer);
@@ -136,6 +144,7 @@ namespace VulkanContext {
 
     class CommandPool {
     public:
+        CommandPool(){}
         CommandPool(Device device, QueueFamily usage = QueueFamily::GRAPHICS);
         void trim() { vkTrimCommandPool(device.logical, pool, NULL); }
         VkResult reset(VkCommandPoolResetFlags flags = VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) { return vkResetCommandPool(device.logical, pool, flags); }
@@ -148,16 +157,18 @@ namespace VulkanContext {
 
     class GraphicsPipeline {
     public:
+        GraphicsPipeline(){}
         GraphicsPipeline(Device device, RenderPass renderpass, Swapchain swapchain, VertexDescription vertex_description, VkShaderModule vertex_shader_module, VkShaderModule fragment_shader_module);
+        ~GraphicsPipeline();
         VkPipeline pipeline;
         VkPipelineLayout layout;
-        ~GraphicsPipeline();
     private:
         Device device;
     };
 
     class ComputePipeline {
     public:
+        ComputePipeline(){}
         ComputePipeline(Device device, VkShaderModule compute_shader_module);
         VkPipeline pipeline;
         VkPipelineLayout layout;
@@ -167,6 +178,8 @@ namespace VulkanContext {
     };
 
     class VertexDescription {
+    public:
+        VertexDescription(){}
         VertexDescription(uint32_t dimensions);
         void add_color_attribute();
         std::vector<VkVertexInputAttributeDescription> get_attribute_descriptions() const { return attribute_descriptions; }
@@ -184,6 +197,7 @@ namespace VulkanContext {
     class VertexBuffer {
     public:
         // public methods
+        VertexBuffer(){}
         VertexBuffer(Device device, VertexDescription vertex_description, uint32_t num_vertices, VkMemoryPropertyFlags memory_properties);
         uint32_t get_num_vertices() const { return num_vertices; }
         ~VertexBuffer();
@@ -201,9 +215,10 @@ namespace VulkanContext {
     class IndexBuffer {
     public:
         // public methods
+        IndexBuffer(){}
         IndexBuffer(Device device, uint32_t num_indices, VkMemoryPropertyFlags memory_properties);
-        uint32_t get_num_indices() const { return num_indices; }
         ~IndexBuffer();
+        uint32_t get_num_indices() const { return num_indices; }
         // public member variables
         VkBuffer buffer;
         VkDeviceMemory memory;
@@ -217,6 +232,7 @@ namespace VulkanContext {
 
     class Fence {
     public:
+        Fence(){}
         Fence(Device device, bool signaled=false);
         ~Fence();
         bool active() { return vkGetFenceStatus(device.logical, fence) == VK_SUCCESS; }
@@ -229,6 +245,7 @@ namespace VulkanContext {
 
     class Semaphore {
     public:
+        Semaphore(){}
         Semaphore(Device device, VkSemaphoreType type = VK_SEMAPHORE_TYPE_BINARY, uint64_t initial_value = 0);
         ~Semaphore();
         VkResult wait(uint64_t timeout_nanosec = 1000000000);
@@ -242,6 +259,7 @@ namespace VulkanContext {
 
     class Event {
     public:
+        Event(){}
         Event(Device device);
         ~Event();
         bool signaled() { return vkGetEventStatus(device.logical, event) == VK_EVENT_SET; }
@@ -462,6 +480,7 @@ namespace VulkanContext {
 
     Swapchain::Swapchain(Device device, VkSurfaceKHR surface, VkImageUsageFlags usage, RenderPass renderpass, uint32_t min_image_count, VkImageViewType view_type, VkPresentModeKHR present_mode) {
         this->device = device;
+        this->renderpass = renderpass;
         VkBool32 supports_present = false;
         vkGetPhysicalDeviceSurfaceSupportKHR(device.physical, device.graphics_queue.family_index, surface, &supports_present);
         if (!supports_present) {
