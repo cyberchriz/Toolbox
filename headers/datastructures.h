@@ -1,22 +1,31 @@
-#pragma once
-#include <cmath> 
-#include <iostream>
-#include <memory>
-#include <type_traits>
-#include <typeindex>
-#include <unordered_map>
-#include <vector>
-#include "distributions.h"
+#ifndef DATA_STRUCTURES_H
+#define DATA_STRUCTURES_H
+
+#ifndef MEMLOG
 //#define MEMLOG
-#include "log.h"
+#endif
+
+#include "cumulative_distribution_functions.h"
 #include "initlists.h"
-#include <math.h>
+#include "log.h"
+#include "random_distributions.h"
+#include <algorithm>
+#include <cmath> 
+#include <core/demangle.hpp>
+#include <cstdint>
 #include <initializer_list>
+#include <iostream>
 #include <limits>
+#include <math.h>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <typeindex>
 #include <typeinfo>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 
 // forward declarations
@@ -178,12 +187,12 @@ struct PolyRegResult{
         };  
         // constructor & destructor
         PolyRegResult() : power(0), coefficient(nullptr) {}; 
-        PolyRegResult(const int elements, const int power) : power(power) {
+        PolyRegResult(const int elements, const uint32_t power) : power(power) {
             coefficient = std::make_unique<double[]>(power+1);
         };
         ~PolyRegResult(){}
     private:
-        int power;
+        uint32_t power;
 };
 
 // class for multidimensional arrays
@@ -488,22 +497,8 @@ class Array{
 };
 
 
-
-
-
-
-
-
-
-
-
-
-
 // DEFINITIONS
 // note: these are not kept in a separate .cpp file because this can create problems with template classes
-
-
-
 
 
 // +=================================+   
@@ -1144,11 +1139,11 @@ double Array<T>::median() const {
     }
     // Copy the data to a temporary array for sorting
     // note: .get() is used to retrieve a raw pointer from a std::unique_ptr
-    T tmp[this->data_elements];
-    std::copy(this->data.get(), this->data.get() + this->data_elements, tmp);
+    std::vector<T> tmp(this->data_elements);
+    std::copy(this->data.get(), this->data.get() + this->data_elements, tmp.data());
 
     // Sort the temporary array
-    std::sort(tmp, tmp + this->data_elements);
+    std::sort(tmp.begin(), tmp.end());
 
     // Calculate the median based on the number of elements
     if (this->data_elements % 2 == 1) {
@@ -5409,3 +5404,5 @@ void Array<T>::print(std::string comment, std::string delimiter, std::string lin
         }
     }
 }
+
+#endif

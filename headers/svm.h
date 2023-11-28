@@ -1,6 +1,7 @@
 // Support Vector Machines
 
-#pragma once
+#ifndef SVM_H
+#define SVM_H
 
 #include <vector>
 #include <algorithm>
@@ -172,3 +173,5 @@ T SVM<T>::kernelFunction(const std::vector<T>& dataPoint1, const std::vector<T>&
 
     return dotProduct;
 }
+
+#endif

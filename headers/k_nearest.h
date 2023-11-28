@@ -1,7 +1,9 @@
 // k nearest neighbors (classification algorithm)
 // author: 'cyberchriz' (Christian Suer)
 
-#pragma once
+#ifndef K_NEAREST_H
+#define K_NEAREST_H
+
 #include <iostream>
 #include <vector>
 #include <algorithm>
@@ -140,3 +142,5 @@ int KNearest<T>::num_classes() const {
     }
     return static_cast<int>(unique_labels.size());
 }
+
+#endif

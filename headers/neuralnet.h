@@ -4,7 +4,9 @@
 // objective of this file: flexible implementation of sequential modular neural networks
 // with a variety of different layer types, making use of matrix operations
 
-#pragma once
+#ifndef NEURALNET_H
+#define NEURALNET_H
+
 #include "datastructures.h"
 #include "distributions.h"
 #include "log.h"
@@ -335,3 +337,5 @@ class NeuralNet{
         double max_gradient;
         int feature_maps=10;
 };
+
+#endif

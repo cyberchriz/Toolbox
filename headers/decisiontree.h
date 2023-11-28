@@ -3,7 +3,10 @@
 // The code implements a decision tree classifier using the ID3 algorithm for splitting nodes.
 
 // Preprocessor directives
-#pragma once
+
+#ifndef DECISION_TREE_H
+#define DECISION_TREE_H
+
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -264,3 +267,5 @@ std::vector<T> DecisionTree<T>::get_unique_values(const std::vector<T>& v) const
 
     return unique_values;
 }
+
+#endif

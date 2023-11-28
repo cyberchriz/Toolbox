@@ -1,20 +1,12 @@
 // author: 'cyberchriz' (Christian Suer)
 
-#pragma once
+#ifndef LAYER_H
+#define LAYER_H
+
 #include "activation_functions.h"
+#include "mlp_enums.h"
 #include "neuron.h"
 #include <vector>
-
-// available neural network optimization methods
-enum OPTIMIZATION_METHOD {
-    VANILLA,           // Vanilla Stochastic Gradient Descent
-    MOMENTUM,          // Stochastic Gradient Descent with Momentum
-    NESTEROV,          // Nesterov Accelerated Gradient (NAG)
-    RMSPROP,           // RMSprop
-    ADADELTA,          // ADADELTA
-    ADAM,              // ADAM
-    ADAGRAD            // AdaGrad
-};
 
 class Layer {
 public:
@@ -61,3 +53,6 @@ public:
     // Destructor
     ~Layer() {}
 };
+
+
+#endif

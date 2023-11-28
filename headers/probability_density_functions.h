@@ -9,10 +9,11 @@ the probability of a random variable taking on a particular value. */
 
 // author: Christian Suer
 
-#pragma once
+#ifndef PROBABILITY_DENSITY_FUNCTIONS_H
+#define PROBABILITY_DENSITY_FUNCTIONS_H
+
 #include <cmath>
 
-constexpr double SCALE_FACTOR = 0.707106781;
 
 template<typename T>
 class PdfObject{
@@ -62,7 +63,7 @@ T PdfObject<T>::cauchy(T x_val, T x_peak, T gamma) {
 // scale factor default: sigma/sqrt(2)=0.707106781
 template<typename T>
 T PdfObject<T>::laplace(T x_val, T mu, T sigma) {
-    static double scale_factor;
+    static double scale_factor= 0.707106781;
     scale_factor = sigma / sqrt(2);
     return exp(-fabs(x_val - mu) / scale_factor) / (2 * scale_factor);
 }
@@ -142,3 +143,5 @@ T gamma(T x) {
         return gamma_helper(x - 1);
     }
 }
+
+#endif

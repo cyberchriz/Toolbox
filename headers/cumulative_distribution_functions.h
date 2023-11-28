@@ -7,10 +7,11 @@ taking on values less than or equal to a given value. */
 
 // author: Christian Suer (cyberchriz)
 
-#pragma once
+#ifndef CUMULATIVE_DISTRIBUTION_FUNCTIONS_H
+#define CUMULATIVE_DISTRIBUTION_FUNCTIONS_H
+
 #include <cmath>
 
-constexpr double SCALE_FACTOR = 0.707106781;
 
 template<typename T>
 class CdfObject{
@@ -64,7 +65,7 @@ T CdfObject<T>::cauchy(T x_val, T x_peak, T gamma) {
 // the scale_factor is sigma/sqrt(2)=0.707106781 by default
 template<typename T>
 T CdfObject<T>::laplace(T x_val, T mu, T sigma) {
-    static double scale_factor;
+    static double scale_factor= 0.707106781;
     scale_factor = sigma / sqrt(2);
     if (x_val < mu)
     {
@@ -173,3 +174,5 @@ T regularized_beta(T a, T b, T x) {
         return 1 - bt * beta_inc(b, a, 1 - x) / b;
     }
 }
+
+#endif

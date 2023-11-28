@@ -3,7 +3,8 @@
 
 // Gradient Boosting Machines (GBM) algorithm
 
-#pragma once
+#ifndef GBM_H
+
 #include <vector>
 #include <cmath>
 #include <iostream>
@@ -254,3 +255,5 @@ T GBM<T>::calculateError(const std::vector<T>& predictions, const std::vector<T>
     }
     return error;
 }
+
+#endíf

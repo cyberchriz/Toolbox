@@ -4,7 +4,9 @@
 
 
 // preprocessor directives
-#pragma once
+#ifndef VALIDATE_H
+#define VALIDATE_H
+
 #include <cmath>
 
 
@@ -227,3 +229,5 @@ void validate_r(ushort& expression){
     if (expression!=expression){expression = 0;}
     if (std::isinf(expression)){expression = 2*SHRT_MAX;}
 }
+
+#endif

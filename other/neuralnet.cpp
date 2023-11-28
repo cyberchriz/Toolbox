@@ -2,7 +2,6 @@
 
 // batch training
 void NeuralNet::fit_set(const Array<Array<double>>& features, const Array<Array<double>>& labels, const int batch_size, const int epochs, bool batch_gradient_averaging){
-    Log::time(LOG_LEVEL_DEBUG, __PRETTY_FUNCTION__);
     int total_samples = features.get_elements();
     int batches = std::ceil(total_samples/batch_size);
     // get scaling parameters from entire dataset
@@ -82,7 +81,6 @@ void NeuralNet::autoencode(const Array<double>& features){
 }
 
 double NeuralNet::test_set(const Array<Array<double>>& features, const Array<Array<double>>& labels){
-    Log::time(LOG_LEVEL_DEBUG);
     int total_samples = features.get_elements();
     Array<double> bias = Array<double>(labels.data[0].get_shape());
     Array<double> correct_predictions = Array<double>(labels.data[0].get_shape());

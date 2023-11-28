@@ -1,6 +1,8 @@
 // author: Christian Suer (github.con/cyberchriz/git/DataScience)
 
-#pragma once
+#ifndef NAIVE_BAYES_H
+#define NAIVE_BAYES_H
+
 #include <vector>
 #include <unordered_map>
 #include <cmath>
@@ -125,3 +127,5 @@ std::string NaiveBayes<T>::classify(const std::vector<T>& features) {
 
     return bestLabel;
 }
+
+#endif

@@ -1,5 +1,7 @@
-#pragma once
-#include "../headers/mlp.h"
+#ifndef AUTOENCODER_H
+#define AUTOENCODER_H
+
+#include "mlp.h"
 
 class Autoencoder:public MLP {
     private:
@@ -39,3 +41,5 @@ class Autoencoder:public MLP {
             set_training_mode(true);
         }
 };
+
+#endif

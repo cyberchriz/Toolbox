@@ -89,8 +89,8 @@ endforeach()
 
 # Check if there are any sources found, then add the executable
 if (SOURCES)
-    message("found sources in folder ${SOURCE_DIR}:")
-    message("-- ${SOURCES}")
+    message("\nfound sources in folder ${SOURCE_DIR}:")
+    message("${SOURCES}\n")
     add_executable(
         ${CMAKE_PROJECT_NAME}
         ${SOURCES}
@@ -141,11 +141,13 @@ set(USE_VULKAN "TRUE" CACHE BOOL "whether to include the Vulkan library")
 if (USE_VULKAN)
 	set($ENV{VULKAN_SDK} "C:/VulkanSDK")
 	set(VULKAN_LIBRARY "C:/VulkanSDK/1.3.268.0/Lib" CACHE PATH "location of Vulkan Lib folder")
-	set(VULKAN_INCLUDE_DIR "C:/VulkanSDK/1.3.268.0/Include/vulkan" CACHE PATH "location of Vulkan Include folder")
+	set(VULKAN_INCLUDE_DIR "C:/VulkanSDK/1.3.268.0/Include" CACHE PATH "location of Vulkan Include folder")
 	set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${VULKAN_LIBRARY};${VULKAN_INCLUDE_DIR}")
 	find_package(Vulkan REQUIRED)
 	if  (Vulkan_FOUND)
-		target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${VULKAN_LIBRARY} ${VULKAN_INCLUDE_DIR})
+		target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${VULKAN_INCLUDE_DIR})
+		target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC "${VULKAN_INCLUDE_DIR}/vulkan")
+		target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC "${VULKAN_INCLUDE_DIR}/vk_video")
 		target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC ${Vulkan_LIBRARIES})
 	endif()
 endif()
@@ -162,6 +164,13 @@ set(USE_GLM "TRUE" CACHE BOOL "whether to include the GLM library")
 if (USE_GLM)
 	set(GLM_HEADERS_PATH "C:/Dependencies/glm-0.9.9.8/glm/glm" CACHE PATH "location of glm headers folder")
 	target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${GLM_HEADERS_PATH})
+endif()
+
+set(USE_BOOST "TRUE" CACHE BOOL "whether to include the Boost library")
+if (USE_BOOST)
+	set(BOOST_ROOT_PATH "C:/Dependencies/boost_1_84_0" CACHE PATH "location of the boost root library")
+	set(BOOST_HEADERS_PATH "C:/Dependencies/boost_1_84_0/boost" CACHE PATH "location of the boost headers folder")
+	target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${BOOST_HEADERS_PATH} ${BOOST_ROOT_PATH})
 endif()
 
 # install build

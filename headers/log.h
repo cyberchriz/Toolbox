@@ -1,10 +1,10 @@
-#pragma once
+#ifndef LOG_H
+#define LOG_H
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
-#include "timer.h"
 
 enum LogLevel {
     LOG_LEVEL_ERROR,
@@ -16,6 +16,8 @@ enum LogLevel {
 
 class Log {
 public:
+    Log(){}
+    ~Log(){}
     static void error(const std::string& message);
     static void warning(const std::string& message);
     static void info(const std::string& message);
@@ -24,7 +26,6 @@ public:
     static void set_filepath(const std::string& filepath);
     static void enable_to_console(bool active = true);
     static void enable_to_file(bool active = true);
-    static void time(int level = LOG_LEVEL_DEBUG, std::string caller_function = "");
     static bool at_least(LogLevel level);
 
     template <typename... Args>
@@ -82,12 +83,6 @@ void Log::enable_to_console(bool active) {
 
 void Log::enable_to_file(bool active) {
     log_to_file = active;
-}
-
-void Log::time(int level, std::string caller_function) {
-    if (level > log_level) return;
-    Timer timer = Timer(caller_function);
-    std::move(timer);
 }
 
 bool Log::at_least(LogLevel level) {
@@ -153,3 +148,5 @@ LogLevel Log::log_level = LOG_LEVEL_WARNING;
 bool Log::log_to_console = true;
 bool Log::log_to_file = false;
 std::string Log::log_filepath = "log.txt";
+
+#endif

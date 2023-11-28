@@ -1,6 +1,8 @@
-#pragma once
-#include <string>
+#ifndef ACTIVATION_FUNCTIONS_H
+#define ACTIVATION_FUNCTIONS_H
+
 #include <cmath>
+#include <string>
 
 // enumeration of available activation functions for neural networks
 enum ACT_FUNC {
@@ -90,3 +92,5 @@ private:
     static double leaky_log_rectifier_drv(double z);
     static double ramp_drv(double z);
 };
+
+#endif

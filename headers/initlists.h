@@ -1,4 +1,6 @@
-#pragma once
+#ifndef INITLISTS_H
+#define INITLISTS_H
+
 #include <vector>
 
 // helper method to convert a std::initializer_list<T> to std::vector<T>
@@ -18,3 +20,4 @@ std::initializer_list<T> vector_to_initlist(const std::vector<T>& vec) {
     return std::initializer_list<T>{vec.begin(), vec.end()};
 }
 
+#endif

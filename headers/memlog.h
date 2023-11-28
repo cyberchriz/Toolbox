@@ -4,10 +4,12 @@
 // by overriding the `new` and 'delete' operators;
 // in order to use this, simply use a "#define MEMLOG" flag as a preprocessor directive before(!) including this file
 
+#ifndef MEMLOG_H
+#define MEMLOG_H
+
 #ifdef MEMLOG
 
     // dependencies
-    #pragma once
     #include <cstdlib>
     #include <cxxabi.h>
     #include <execinfo.h>
@@ -76,5 +78,7 @@
         allocated_memory.erase(ptr);
         std::free(ptr);
     }
+
+#endif
 
 #endif

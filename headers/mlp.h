@@ -1,58 +1,21 @@
 // author: 'cyberchriz' (Christian Suer)
 // this is a neural network library for multilayer perceptrons (MLP) with flexible topologies
 
-// available feature and label scaling methods
-enum SCALING {
-    none,              // no scaling
-    standardized,      // standard deviation method (µ=0, sigma=1)
-    normalized,        // minmax, range 0 to 1
-    maxabs             // minmax, range -1 to +1
-};
-
-// available types of neural network layers
-enum LAYER_TYPE {
-    standard,
-    recurrent,
-    mod_recurrent,
-    lstm,
-    gru,
-    convolutional,
-    pooling
-};
-
-// neural network weight initialization methods
-enum WEIGHT_INIT
-{
-    Xavier_normal = 1,     // Xavier Glorot normal
-    Xavier_uniform = 2,    // Xavier Glorot uniform
-    Sigmoid_uniform = 3,   // sigmoid uniform
-    Kaiming_ReLU = 4,      // Kaiming He (ReLU)
-    Kaiming_ELU = 5,       // Kaiming He (ELU)
-    Kaiming_uniform = 6,   // Kaiming He uniform
-    custom_uniform = 7     // custom uniform
-};
-
-// neural network loss functions
-enum LOSS_FUNCTION
-{
-    MSE = 1,                                                         // mean squared error (MSE)
-    CategoricalCrossEntropy = 2,                                     // categorical cross entropy
-    BinaryCrossEntropy = 3,                                          // binary cross entropy
-    MAE = 4                                                          // mean absolute error (MAE)
-};
-
 
 // preprocessor directives
-#pragma once
-#include <vector>
+#ifndef MLP_H
+#define MLP_H
+#include "activation_functions.h"
+#include "layer.h"
+#include "mlp_enums.h"
+#include "neuron.h"
+#include "random_distributions.h"
+#include "weight_init.h"
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
-#include "random_distributions.h"
-#include "weight_init.h"
-#include "activation_functions.h"
-#include "layer.h"
+#include <vector>
 
 // MLP network class declaration
 class MLP{
@@ -68,7 +31,7 @@ class MLP{
         void set_label(uint32_t index, double value);
         void autoencode();
         void save(std::string filename="network_backup.dat");
-        bool network_exists(){return layers!=0;}
+        bool network_exists() const { return layers != 0; }
         double get_loss_avg();
         void set_training_mode(bool active=true){training_mode=active;}
         void set_learning_rate(double value){base_lr=fmin(fmax(0,value),1.0);}
@@ -109,3 +72,5 @@ class MLP{
         bool recurrent=false;
         std::string filename;     
 };
+
+#endif

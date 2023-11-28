@@ -12,9 +12,9 @@ MLP::~MLP(){}
 
 // add new network layer
 // return value: current number of total layers
-int MLP::add_layer(int neurons, OPTIMIZATION_METHOD _opt_method, ACTIVATION_FUNC _activation){
+int MLP::add_layer(int neurons, OPTIMIZATION_METHOD opt_method, ACT_FUNC activation){
     int inputs_per_neuron = layers==0 ? 0 : layer[layers-1].neurons;
-    layer.push_back(Layer(neurons,inputs_per_neuron,_opt_method,_activation));
+    layer.push_back(Layer(neurons,inputs_per_neuron, opt_method, activation));
     layers++;
     MLP::reset_weights();
     return layers;
@@ -22,7 +22,7 @@ int MLP::add_layer(int neurons, OPTIMIZATION_METHOD _opt_method, ACTIVATION_FUNC
 
 // initialize weights:
 // automatically sets appropriate method for a given activation function
-void MLP::reset_weights(uint start_layer, uint end_layer, double factor){
+void MLP::reset_weights(uint32_t start_layer, uint32_t end_layer, double factor){
     for (int l=fmax(1,start_layer);l<=fmin(layers-1,end_layer);l++){
         int fan_in = 1;
         int fan_out = l<layers-1 ? layer[l+1].neurons : 1;
@@ -33,9 +33,9 @@ void MLP::reset_weights(uint start_layer, uint end_layer, double factor){
                 fan_out=layer[l].neurons;
             }
         }
-        ACTIVATION_FUNC act_func = layer[l].activation;
+        ACT_FUNC act_func = layer[l].activation;
         switch (act_func){
-            case f_ReLU:
+            case F_RELU:
                 for (int j=0;j<layer[l].neurons;j++){
                     for (int i=0;i<layer[l-1].neurons;i++){
                         layer[l].neuron[j].input_weight[i]=f_He_ReLU(fan_in)*factor;
@@ -48,7 +48,7 @@ void MLP::reset_weights(uint start_layer, uint end_layer, double factor){
                     layer[l].neuron[j].m4_weight=f_He_ReLU(fan_in)*factor;
                 }
                 break;
-            case f_LReLU:
+            case F_LRELU:
                 for (int j=0;j<layer[l].neurons;j++){
                     for (int i=0;i<layer[l-1].neurons;i++){
                         layer[l].neuron[j].input_weight[i]=f_He_ReLU(fan_in)*factor;
@@ -61,7 +61,7 @@ void MLP::reset_weights(uint start_layer, uint end_layer, double factor){
                     layer[l].neuron[j].m4_weight=f_He_ReLU(fan_in)*factor;
                 }
                 break;                
-            case f_tanh:
+            case F_TANH:
                 for (int j=0;j<layer[l].neurons;j++){
                     for (int i=0;i<layer[l-1].neurons;i++){
                         layer[l].neuron[j].input_weight[i]=f_Xavier_uniform(fan_in,fan_out)*factor;
@@ -74,7 +74,7 @@ void MLP::reset_weights(uint start_layer, uint end_layer, double factor){
                     layer[l].neuron[j].m4_weight=f_Xavier_uniform(fan_in,fan_out)*factor;
                 }          
                 break;
-            case f_sigmoid:
+            case F_SIGMOID:
                 for (int j=0;j<layer[l].neurons;j++){
                     for (int i=0;i<layer[l-1].neurons;i++){
                         layer[l].neuron[j].input_weight[i]=f_Xavier_sigmoid(fan_in,fan_out)*factor;
@@ -87,7 +87,7 @@ void MLP::reset_weights(uint start_layer, uint end_layer, double factor){
                     layer[l].neuron[j].m4_weight=f_Xavier_sigmoid(fan_in,fan_out)*factor;
                 }              
                 break;
-            case f_ELU:
+            case F_ELU:
                 for (int j=0;j<layer[l].neurons;j++){
                     for (int i=0;i<layer[l-1].neurons;i++){
                         layer[l].neuron[j].input_weight[i]=f_He_ELU(fan_in)*factor;
@@ -129,7 +129,7 @@ void MLP::reset_weights(uint start_layer, uint end_layer, double factor){
 }
 
 // forward propagation
-void MLP::feedforward(uint start_layer, uint end_layer){
+void MLP::feedforward(uint32_t start_layer, uint32_t end_layer){
     // cycle through layers
     for (int l=fmax(1,start_layer);l<=fmin(layers-1,end_layer);l++){
         for (int j=0;j<layer[l].neurons;j++){
@@ -169,7 +169,7 @@ void MLP::feedforward(uint start_layer, uint end_layer){
                 layer[l].neuron[j].x *= 1/(1-dropout);
             }            
             // activate
-            layer[l].neuron[j].h = activate(layer[l].neuron[j].x,layer[l].activation);
+            layer[l].neuron[j].h = Activation::function(layer[l].neuron[j].x,layer[l].activation);
 
             // reset weights of current layer in case of invalid numbers
             if (std::isnan(layer[l].neuron[j].x) || std::isnan(layer[l].neuron[j].h) ||
@@ -287,59 +287,59 @@ void MLP::backpropagate(){
                 if (layer[l-1].neuron[i].dropout){continue;}
                 if (method==VANILLA){
                     // get delta
-                    layer[l].neuron[j].input_weight_delta[i] = lr * layer[l].neuron[j].gradient * deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l-1].neuron[i].h;
+                    layer[l].neuron[j].input_weight_delta[i] = lr * layer[l].neuron[j].gradient * Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l-1].neuron[i].h;
                     // update
                     layer[l].neuron[j].input_weight[i] = layer[l].neuron[j].input_weight[i]+layer[l].neuron[j].input_weight_delta[i];
                 }
                 if (method==MOMENTUM){
                     // get delta
-                    layer[l].neuron[j].input_weight_delta[i] = (lr_momentum*layer[l].neuron[j].input_weight_delta[i]) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l-1].neuron[i].h;
+                    layer[l].neuron[j].input_weight_delta[i] = (lr_momentum*layer[l].neuron[j].input_weight_delta[i]) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l-1].neuron[i].h;
                     // update
                     layer[l].neuron[j].input_weight[i] = layer[l].neuron[j].input_weight[i]+layer[l].neuron[j].input_weight_delta[i];
                 }                
                 else if (method==NESTEROV){
                     // lookahead step
-                    double lookahead = (lr_momentum*layer[l].neuron[j].input_weight_delta[i]) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l-1].neuron[i].h;
+                    double lookahead = (lr_momentum*layer[l].neuron[j].input_weight_delta[i]) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l-1].neuron[i].h;
                     // momentum step
-                    layer[l].neuron[j].input_weight_delta[i] = (lr_momentum*lookahead) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l-1].neuron[i].h;
+                    layer[l].neuron[j].input_weight_delta[i] = (lr_momentum*lookahead) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l-1].neuron[i].h;
                     // update step
                     layer[l].neuron[j].input_weight[i] = layer[l].neuron[j].input_weight[i] + layer[l].neuron[j].input_weight_delta[i];
                 }
                 else if (method==RMSPROP){
                     // opt_v update
-                    layer[l].neuron[j].opt_v[i] =  lr_momentum*layer[l].neuron[j].opt_v[i] + (1-lr_momentum)*pow(deactivate(layer[l].neuron[j].x,layer[l].activation),2) * layer[l].neuron[j].gradient;
+                    layer[l].neuron[j].opt_v[i] =  lr_momentum*layer[l].neuron[j].opt_v[i] + (1-lr_momentum)*pow(Activation::derivative(layer[l].neuron[j].x,layer[l].activation),2) * layer[l].neuron[j].gradient;
                     // get delta
-                    layer[l].neuron[j].input_weight_delta[i] =  lr / (sqrt(layer[l].neuron[j].opt_v[i]+1e-8)+__DBL_MIN__) * pow(layer[l].neuron[j].h,2) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h;
+                    layer[l].neuron[j].input_weight_delta[i] =  lr / (sqrt(layer[l].neuron[j].opt_v[i]+1e-8)+DBL_MIN) * pow(layer[l].neuron[j].h,2) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h;
                     // update
                     layer[l].neuron[j].input_weight[i] = layer[l].neuron[j].input_weight[i]+layer[l].neuron[j].input_weight_delta[i];
                 }
                 else if (method==ADADELTA){
                     // opt_v update
-                    layer[l].neuron[j].opt_v[i] =  opt_beta1 * layer[l].neuron[j].opt_v[i] + (1-opt_beta1) * pow(deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h,2);
+                    layer[l].neuron[j].opt_v[i] =  opt_beta1 * layer[l].neuron[j].opt_v[i] + (1-opt_beta1) * pow(Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h,2);
                     // opt_w update
                     layer[l].neuron[j].opt_w[i] =  (opt_beta1 * pow(layer[l].neuron[j].opt_w[i],2)) + (1-opt_beta1)*pow(layer[l].neuron[j].input_weight_delta[i],2);
                     // get delta
-                    layer[l].neuron[j].input_weight_delta[i] =  sqrt(layer[l].neuron[j].opt_w[i]+1e-8)/(sqrt(layer[l].neuron[j].opt_v[i]+1e-8)+__DBL_MIN__) * deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h;
+                    layer[l].neuron[j].input_weight_delta[i] =  sqrt(layer[l].neuron[j].opt_w[i]+1e-8)/(sqrt(layer[l].neuron[j].opt_v[i]+1e-8)+DBL_MIN) * Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h;
                     // update
                     layer[l].neuron[j].input_weight[i] = layer[l].neuron[j].input_weight[i]+layer[l].neuron[j].input_weight_delta[i];
                 }
                 else if (method==ADAM){ // =ADAM without minibatch
                     // opt_v update
-                    layer[l].neuron[j].opt_v[i] =  opt_beta1 * layer[l].neuron[j].opt_v[i] + (1-opt_beta1) * deactivate(layer[l].neuron[j].x, layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h;
+                    layer[l].neuron[j].opt_v[i] =  opt_beta1 * layer[l].neuron[j].opt_v[i] + (1-opt_beta1) * Activation::derivative(layer[l].neuron[j].x, layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h;
                     // opt_w update
-                    layer[l].neuron[j].opt_w[i] = opt_beta2 * layer[l].neuron[j].opt_w[i] * pow(deactivate(layer[l].neuron[j].x, layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h,2);
+                    layer[l].neuron[j].opt_w[i] = opt_beta2 * layer[l].neuron[j].opt_w[i] * pow(Activation::derivative(layer[l].neuron[j].x, layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h,2);
                     // get delta
                     double v_t = layer[l].neuron[j].opt_v[i]/(1-opt_beta1);
                     double w_t = layer[l].neuron[j].opt_w[i]/(1-opt_beta2);
-                    layer[l].neuron[j].input_weight_delta[i] =  lr * (v_t/(sqrt(w_t+1e-8))+__DBL_MIN__);
+                    layer[l].neuron[j].input_weight_delta[i] =  lr * (v_t/(sqrt(w_t+1e-8))+DBL_MIN);
                     // update
                     layer[l].neuron[j].input_weight[i] =  layer[l].neuron[j].input_weight[i]  + layer[l].neuron[j].input_weight_delta[i];
                 }
                 else if (method==ADAGRAD){
                     // opt_v update
-                    layer[l].neuron[j].opt_v[i] =  layer[l].neuron[j].opt_v[i] + pow(deactivate(layer[l].neuron[j].x, layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h,2);
+                    layer[l].neuron[j].opt_v[i] =  layer[l].neuron[j].opt_v[i] + pow(Activation::derivative(layer[l].neuron[j].x, layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h,2);
                     // get delta
-                    layer[l].neuron[j].input_weight_delta[i] = lr / sqrt(layer[l].neuron[j].opt_v[i] +1e-8) * deactivate(layer[l].neuron[j].x, layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h;
+                    layer[l].neuron[j].input_weight_delta[i] = lr / sqrt(layer[l].neuron[j].opt_v[i] +1e-8) * Activation::derivative(layer[l].neuron[j].x, layer[l].activation) * layer[l].neuron[j].gradient * layer[l-1].neuron[i].h;
                     // update
                     layer[l].neuron[j].input_weight[i] = layer[l].neuron[j].input_weight[i]  + layer[l].neuron[j].input_weight_delta[i];
                 }                
@@ -350,14 +350,14 @@ void MLP::backpropagate(){
                 }
             }
             // update bias weights (Vanilla)
-            layer[l].neuron[j].delta_b = (lr_momentum*layer[l].neuron[j].delta_b) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * deactivate(layer[l].neuron[j].x,layer[l].activation);
+            layer[l].neuron[j].delta_b = (lr_momentum*layer[l].neuron[j].delta_b) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * Activation::derivative(layer[l].neuron[j].x,layer[l].activation);
             layer[l].neuron[j].bias_weight = layer[l].neuron[j].bias_weight + layer[l].neuron[j].delta_b;
             // update recurrent weights (Vanilla)
             if (recurrent){
-                layer[l].neuron[j].delta_m1 = (lr_momentum*layer[l].neuron[j].delta_m1) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].m1;
-                layer[l].neuron[j].delta_m2 = (lr_momentum*layer[l].neuron[j].delta_m2) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].m2;
-                layer[l].neuron[j].delta_m3 = (lr_momentum*layer[l].neuron[j].delta_m3) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].m3;
-                layer[l].neuron[j].delta_m4 = (lr_momentum*layer[l].neuron[j].delta_m4) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * deactivate(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].m4;
+                layer[l].neuron[j].delta_m2 = (lr_momentum*layer[l].neuron[j].delta_m2) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].m2;
+                layer[l].neuron[j].delta_m1 = (lr_momentum*layer[l].neuron[j].delta_m1) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].m1;
+                layer[l].neuron[j].delta_m3 = (lr_momentum*layer[l].neuron[j].delta_m3) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].m3;
+                layer[l].neuron[j].delta_m4 = (lr_momentum*layer[l].neuron[j].delta_m4) + (1-lr_momentum)*(lr*layer[l].neuron[j].gradient) * Activation::derivative(layer[l].neuron[j].x,layer[l].activation) * layer[l].neuron[j].m4;
                 layer[l].neuron[j].m1_weight = layer[l].neuron[j].m1_weight + layer[l].neuron[j].delta_m1;
                 layer[l].neuron[j].m2_weight = layer[l].neuron[j].m2_weight + layer[l].neuron[j].delta_m2;
                 layer[l].neuron[j].m3_weight = layer[l].neuron[j].m3_weight + layer[l].neuron[j].delta_m3;
@@ -368,7 +368,7 @@ void MLP::backpropagate(){
 }
 
 // set a single input value via index (with auto-scaling)
-void MLP::set_input(uint index, double value){
+void MLP::set_input(uint32_t index, double value){
     layer[0].neuron[index].x = value;
     layer[0].neuron[index].input_min = fmin(value,layer[0].neuron[index].input_min);
     layer[0].neuron[index].input_max = fmax(value,layer[0].neuron[index].input_max);
@@ -396,33 +396,33 @@ void MLP::set_input(uint index, double value){
             break;
         case maxabs:
             // -1 to 1
-            layer[0].neuron[index].h = value / (layer[0].neuron[index].input_maxabs + __DBL_EPSILON__);
+            layer[0].neuron[index].h = value / (layer[0].neuron[index].input_maxabs + DBL_EPSILON);
             break;
         case normalized:
             // 0 to 1
             layer[0].neuron[index].h = value - layer[0].neuron[index].input_min;
-            layer[0].neuron[index].h = layer[0].neuron[index].h / (layer[0].neuron[index].input_max - layer[0].neuron[index].input_min + __DBL_EPSILON__);
+            layer[0].neuron[index].h = layer[0].neuron[index].h / (layer[0].neuron[index].input_max - layer[0].neuron[index].input_min + DBL_EPSILON);
             break;
         default:
         // case standardized: // (µ=0, sigma=1)
             layer[0].neuron[index].h = layer[0].neuron[index].h - layer[0].neuron[index].input_rolling_average; 
-            layer[0].neuron[index].h = layer[0].neuron[index].h / (layer[0].neuron[index].input_stddev + __DBL_EPSILON__);
+            layer[0].neuron[index].h = layer[0].neuron[index].h / (layer[0].neuron[index].input_stddev + DBL_EPSILON);
             break;
     }
 }
 
 // get single output via 1d index
-double MLP::get_output(uint index){
+double MLP::get_output(uint32_t index){
     return layer[layers-1].neuron[index].output;
 }
    
 // get a single 'h' from a hidden layer via 1d index (e.g. for autoencoder bottleneck)      
-double MLP::get_hidden(uint index,uint layer_index){
+double MLP::get_hidden(uint32_t index,uint32_t layer_index){
     return layer[layer_index].neuron[index].h;
 }
 
 // set a single label value via 1-dimensional index (with auto-scaling)
-void MLP::set_label(uint index, double value){
+void MLP::set_label(uint32_t index, double value){
     layer[layers-1].neuron[index].x = value;
     layer[layers-1].neuron[index].label_min = fmin(value,layer[layers-1].neuron[index].label_min);
     layer[layers-1].neuron[index].label_max = fmax(value,layer[layers-1].neuron[index].label_max);
@@ -450,17 +450,17 @@ void MLP::set_label(uint index, double value){
             break;
         case maxabs:
             // -1 to 1
-            layer[layers-1].neuron[index].scaled_label = value / (layer[layers-1].neuron[index].label_maxabs + __DBL_EPSILON__);
+            layer[layers-1].neuron[index].scaled_label = value / (layer[layers-1].neuron[index].label_maxabs + DBL_EPSILON);
             break;
         case normalized:
             // 0 to 1
             layer[layers-1].neuron[index].scaled_label = value - layer[layers-1].neuron[index].label_min;
-            layer[layers-1].neuron[index].scaled_label = layer[layers-1].neuron[index].h / (layer[layers-1].neuron[index].label_max - layer[layers-1].neuron[index].label_min + __DBL_EPSILON__);
+            layer[layers-1].neuron[index].scaled_label = layer[layers-1].neuron[index].h / (layer[layers-1].neuron[index].label_max - layer[layers-1].neuron[index].label_min + DBL_EPSILON);
             break;
         default:
             // standardized (µ=0, sigma=1)
             layer[layers-1].neuron[index].scaled_label = layer[layers-1].neuron[index].h - layer[layers-1].neuron[index].label_rolling_average; 
-            layer[layers-1].neuron[index].scaled_label = layer[layers-1].neuron[index].h / (layer[layers-1].neuron[index].label_stddev + __DBL_EPSILON__);
+            layer[layers-1].neuron[index].scaled_label = layer[layers-1].neuron[index].h / (layer[layers-1].neuron[index].label_stddev + DBL_EPSILON);
             break;
     }
 }

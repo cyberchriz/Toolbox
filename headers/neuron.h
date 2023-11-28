@@ -2,7 +2,10 @@
 // this is a helper class that defines the properties of neurons as part of a layer (as part of a multilayer perceptron network)
 
 // preprocessor directives
-#pragma once
+#ifndef NEURON_H
+#define NEURON_H
+
+#include "mlp_enums.h"
 #include <vector>
 
 // declaration of the 'Neuron' class
@@ -77,3 +80,5 @@ class Neuron{
         // destructor
         ~Neuron(){};
 };
+
+#endif

@@ -1,4 +1,6 @@
-#pragma once
+#ifndef WEIGHT_INIT_H
+#define WEIGHT_INIT_H
+
 #include "distributions.h"
 #include <cmath>
 
@@ -63,3 +65,5 @@ double f_He_ELU(int fan_in) {
     result *= sqrt(1.55 / (double(fan_in)));
     return result;
 }
+
+#endif
