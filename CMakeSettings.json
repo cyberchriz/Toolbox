@@ -9,7 +9,14 @@
       "installRoot": "${projectDir}\\out\\install\\${name}",
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
-      "ctestCommandArgs": ""
+      "ctestCommandArgs": "",
+      "variables": [
+        {
+          "name": "ENTRYPOINT_FILE",
+          "value": "C:/Users/Admin/source/repos/Toolbox/sources/vkdata_test.cpp",
+          "type": "STRING"
+        }
+      ]
     }
   ]
 }

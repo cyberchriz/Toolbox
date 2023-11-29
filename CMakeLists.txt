@@ -1,11 +1,12 @@
 # set CMake version
+message("CMake Version ${CMAKE_VERSION}")
 set(MIN_VERSION "3.9" CACHE STRING "minimum CMake version")
 cmake_minimum_required(VERSION ${MIN_VERSION}...${CMAKE_VERSION})
 if (${CMAKE_VERSION} VERSION_LESS 3.12)
 	cmake_policy(VERSION ${CMAKE_VERSION})
 endif()
 
-# set core variables of this project (with cmake-gui support)
+# set core variables of this project
 set(CMAKE_PROJECT_NAME "unnamed" CACHE STRING "project name")
 set(CMAKE_PROJECT_VERSION "1.0.0" CACHE STRING "project version (major.minor.revision)")
 set(CMAKE_PROJECT_DESCRIPTION "no description" CACHE STRING "project description")
@@ -20,6 +21,7 @@ endif()
 # set essential folders
 set(CMAKE_SOURCE_DIR "${CMAKE_SOURCE_DIR}" CACHE PATH "project root path (top level)")
 set(SOURCE_DIR "${CMAKE_SOURCE_DIR}/sources" CACHE PATH "sources folder corresponding to the current CMakeLists.txt")
+set(ENTRYPOINT_FILE "${SOURCE_DIR}/main.cpp" CACHE STRING "entry point file for the executable")
 set(CMAKE_BINARY_DIR "${CMAKE_SOURCE_DIR}/out/build" CACHE PATH "binary build directory of the project")
 set(CMAKE_CURRENT_BINARY_DIR ${CMAKE_BINARY_DIR})
 set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}")
@@ -30,6 +32,14 @@ set(CMAKE_CXX_STANDARD_DEFAULT "17" CACHE STRING "required C/C++ standard")
 	set_property(CACHE CMAKE_CXX_STANDARD_DEFAULT PROPERTY STRINGS 98 11 14 17 20 23)
 	set(CMAKE_CXX_STANDARD_REQUIRED "TRUE")
 enable_language(${CMAKE_PROJECT_LANGUAGES})
+
+# define project
+project(
+	${CMAKE_PROJECT_NAME}
+	VERSION ${CMAKE_PROJECT_VERSION}
+	DESCRIPTION ${CMAKE_PROJECT_DESCRIPTION}
+	LANGUAGES ${CMAKE_PROJECT_LANGUAGES}
+)
 
 # compiler setup
 set(PROJECT_COMPILER "AUTO" CACHE STRING "compiler model")
@@ -57,14 +67,6 @@ elseif (PROJECT_COMPILER STREQUAL "LLVM")
 	# TODO: compiler-specific flags for LLVM
 endif()
 
-# define project
-project(
-	${CMAKE_PROJECT_NAME}
-	VERSION ${CMAKE_PROJECT_VERSION}
-	DESCRIPTION ${CMAKE_PROJECT_DESCRIPTION}
-	LANGUAGES ${CMAKE_PROJECT_LANGUAGES}
-)
-
 # Automatically add subdirectories that have CMakeLists.txt files
 file(GLOB SUBDIRECTORIES "${CMAKE_SOURCE_DIR}/*")
 foreach(SUBDIR ${SUBDIRECTORIES})
@@ -76,29 +78,30 @@ endforeach()
 # Define allowed file extensions to be compiled
 set(ALLOWED_EXTENSIONS ".cpp;.cxx;.cc" CACHE STRING "allowed extensions of files to be compiled")
 
-# Filter SOURCE_DIR for specified file extensions
+# add entrypoint as executable
+message("adding entrypoint file '${ENTRYPOINT_FILE}' to executable")
+add_executable(
+  ${CMAKE_PROJECT_NAME}
+  ${ENTRYPOINT_FILE}
+)
+
+# Filter SOURCE_DIR for specified valid file extensions and add matches to target
 file(GLOB_RECURSE SOURCES "${SOURCE_DIR}/*")
+list(REMOVE_ITEM SOURCES ${ENTRYPOINT_FILE}) # remove entrypoint from result  list
 foreach(SOURCE ${SOURCES})
-    get_filename_component(EXTENSION ${SOURCE} EXT)
-	set(EXT_INDEX -1)
-    list(FIND ALLOWED_EXTENSIONS ${EXTENSION} EXT_INDEX)
-    if(EXT_INDEX EQUAL -1)
-        list(REMOVE_ITEM SOURCES ${SOURCE})
-    endif()
+  # Check if the file has a valid extension
+  get_filename_component(EXTENSION ${SOURCE} EXT)
+  set(EXT_INDEX -1)
+  list(FIND ALLOWED_EXTENSIONS ${EXTENSION} EXT_INDEX)
+  if(EXT_INDEX EQUAL -1)
+    list(REMOVE_ITEM SOURCES ${SOURCE})
+    continue()
+  endif()
+
+  # Add the valid source file to the target
+  message("adding source file '${SOURCE}' to target")
+  target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${SOURCE})
 endforeach()
-
-# Check if there are any sources found, then add the executable
-if (SOURCES)
-    message("\nfound sources in folder ${SOURCE_DIR}:")
-    message("${SOURCES}\n")
-    add_executable(
-        ${CMAKE_PROJECT_NAME}
-        ${SOURCES}
-    )
-else()
-    message("${SOURCE_DIR}: no source files found")
-endif()
-
 
 # add static libraries
 set(PROJECT_ADD_STATIC_LIBS "" CACHE STRING "static libraries to be added")
@@ -186,9 +189,9 @@ endif()
 
 # first-ever execution of this script?
 if (NOT EXISTS "${CMAKE_BINARY_DIR}/CMakeCache.txt")
-	message("\n ==========================================================================")
+	message("\n ==============================================================================")
 	message(  " THIS SEEMS TO BE THE FIRST-TIME EXECUTION OF THIS CMakeLists.txt FILE")
 	message(  " It's recommended to configure the project details by editing CMakeCache.txt")
-	message(  " with cmake-gui or ccmake")
-	message(  " ==========================================================================\n")
+	message(  " by using cmake-gui or ccmake or by editing CMakeSettings.json in Visual Studio")
+	message(  " ==============================================================================\n")
 endif()

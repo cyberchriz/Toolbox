@@ -1,10 +1,15 @@
-#ifndef VULKAN_CONTEXT_H
-#define VULKAN_CONTEXT_H
+#ifndef VKCONTEXT_H
+#define VKCONTEXT_H
 
 #include "log.h"
+#include <cstdint>
+#include <cstdio>
+#include <stdio.h>
 #include <string.h>
+#include <utility>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan_core.h>
+#include <boost/type_traits.hpp>
 
 enum QueueFamily {
     GRAPHICS,
@@ -23,46 +28,59 @@ enum BufferUsage {
 class Instance {
 public:
 
-    Instance() {
-        // set default parameters
-        application_info = {};
-        application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        application_info.pApplicationName = "Vulkan Application";
-        application_info.applicationVersion = VK_MAKE_VERSION(0, 0, 1);
-        application_info.apiVersion = VK_API_VERSION_1_2;
-        instance_create_info = {};
-        instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    }
+    Instance() {};
 
     ~Instance() {
-        vkDestroyInstance(instance, nullptr);
+        if (instance != nullptr) {
+            delete[] enabled_layer_names_ptr;
+            delete[] enabled_extension_names_ptr;
+            vkDestroyInstance(instance, nullptr);
+        }
     }
-    void init_application(const char* name = "", uint32_t major_version = 0, uint32_t minor_version = 0, uint32_t patch_version = 0) {
+    void init_application(const char* name = "Vulkan Application", uint32_t major_version = 1, uint32_t minor_version = 0, uint32_t patch_version = 0) {
+        application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         application_info.pApplicationName = name;
         application_info.applicationVersion = VK_MAKE_VERSION(major_version, minor_version, patch_version);
     }
 
     void init_engine(const char* name = "", uint32_t major_version = 0, uint32_t minor_version = 0, uint32_t patch_version = 0) {
+        application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         application_info.pEngineName = name;
         application_info.engineVersion = VK_MAKE_VERSION(major_version, minor_version, patch_version);
     }
 
     void init_api_version(uint32_t version = VK_API_VERSION_1_2) {
+        application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         application_info.apiVersion = version;
     }
 
-    void init_layers(const std::vector<const char*>& enabled_layer_names) {
-        instance_create_info.enabledLayerCount = static_cast<uint32_t>(enabled_layer_names.size());
-        instance_create_info.ppEnabledLayerNames = enabled_layer_names.data();
+    void init_layers(const std::vector<const char*> enabled_layer_names) {
+        instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        uint32_t layer_count = enabled_layer_names.size();
+        enabled_layer_names_ptr = new const char* [layer_count];
+        for (uint32_t i = 0; i < layer_count; ++i) {
+            enabled_layer_names_ptr[i] = enabled_layer_names[i];
+        }
+        instance_create_info.enabledLayerCount = layer_count;
+        instance_create_info.ppEnabledLayerNames = enabled_layer_names_ptr;
+        delete[] enabled_layer_names_ptr;
     }
 
-    void init_extensions(const std::vector<const char*>& enabled_extension_names) {
-        instance_create_info.enabledExtensionCount = static_cast<uint32_t>(enabled_extension_names.size());
-        instance_create_info.ppEnabledExtensionNames = enabled_extension_names.data();
+    void init_extensions(const std::vector<const char*> enabled_extension_names) {
+        instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        uint32_t extension_count = enabled_extension_names.size();
+        enabled_extension_names_ptr = new const char* [extension_count];
+        for (uint32_t i = 0; i < extension_count; ++i) {
+            enabled_extension_names_ptr[i] = enabled_extension_names[i];
+        }
+        instance_create_info.enabledExtensionCount = extension_count;
+        instance_create_info.ppEnabledExtensionNames = enabled_extension_names_ptr;
     }
 
-    void create(const void* pNext = nullptr, VkInstanceCreateFlags flags = 0) {
-        instance_create_info.pNext = pNext;
+
+    void create(VkInstanceCreateFlags flags = 0) {
+        instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        instance_create_info.pNext = nullptr;
         instance_create_info.flags = flags;
         instance_create_info.pApplicationInfo = &application_info;
 
@@ -87,9 +105,11 @@ public:
 
 
 private:
-    VkInstance instance = nullptr;
+    VkInstance instance;
     VkApplicationInfo application_info = {};
     VkInstanceCreateInfo instance_create_info = {};
+    const char** enabled_extension_names_ptr;
+    const char** enabled_layer_names_ptr;
 };
 
 class Queue {
@@ -108,7 +128,7 @@ class Device {
 public:
     Device(){};
 
-    Device(Instance instance, uint32_t id = 0, VkPhysicalDeviceFeatures enabled_features = {}, const std::vector<const char*>& enabled_extensions = {}) {
+    Device(Instance instance, uint32_t id = 0, VkPhysicalDeviceFeatures enabled_features = {}, const std::vector<const char*> enabled_extensions = {}) {
         // confirm valid instance
         if (instance.get() == nullptr) {
             Log::error("Invalid call to Device constructor: create Vulkan instance first!");
@@ -709,8 +729,8 @@ public:
         vkDestroyPipelineLayout(device.logical, layout, nullptr);
     }
 
-    VkPipeline pipeline;
-    VkPipelineLayout layout;
+    VkPipeline pipeline = nullptr;
+    VkPipelineLayout layout = nullptr;
 
 private:
     Device device;
@@ -719,9 +739,9 @@ private:
 template<typename T>
 class Buffer {
 public:
-    Buffer() {}
+    Buffer(){}
 
-    Buffer(Device device, BufferUsage usage, uint32_t num_elements, VkMemoryPropertyFlags memory_properties) {
+    Buffer(Device device, BufferUsage usage, uint32_t num_elements, VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
         this->device = device;
         this->num_elements = num_elements;
         this->size_bytes = num_elements * sizeof(T);
@@ -755,7 +775,7 @@ public:
         VkPhysicalDeviceMemoryProperties device_memory_properties;
         vkGetPhysicalDeviceMemoryProperties(device.physical, &device_memory_properties);
         uint32_t type_index = UINT32_MAX;
-        uint32_t type_filter = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        uint32_t type_filter = memory_properties;
         ;
         for (uint32_t i = 0; i < device_memory_properties.memoryTypeCount; i++) {
             // check if required memory type is allowed
@@ -803,12 +823,12 @@ public:
         vkUnmapMemory(device.logical, memory);
     }
 
-    void set(uint32_t index, T value) {
+    void set(uint32_t flattened_index, T value) {
         if (index >= num_elements) {
             Log::log(LOG_LEVEL_ERROR, "in method Buffer::set(): index out of bounds: ", index);
             return;
         }
-        VkDeviceSize offset = index * sizeof(T);
+        VkDeviceSize offset = flattened_index * sizeof(T);
         VkMemoryMapFlags flags = 0;
         void* data;
         vkMapMemory(device.logical, memory, offset, sizeof(T), flags, &data);
@@ -820,12 +840,12 @@ public:
         return num_elements;
     }
 
-    VkBuffer buffer;
-    VkDeviceMemory memory;
+    VkBuffer buffer = nullptr;
+    VkDeviceMemory memory = nullptr;
 private:
-    uint32_t num_elements;
+    uint32_t num_elements=0;
     Device device;
-    uint64_t size_bytes;
+    uint64_t size_bytes=0;
 };
 
 class Fence {
@@ -1053,8 +1073,28 @@ public:
         }
     }
 
-    void push_constants(VkShaderStageFlags stages, const void* data, uint32_t size, uint32_t offset=0) {
-        vkCmdPushConstants(buffer, pipeline_layout, stages, offset, size, data);
+    template<typename T>
+    void push_constants(std::vector<T>& data, uint32_t offset=0) {
+        uint32_t size = data.size();
+        if (boost::is_floating_point<T>::value && T != float) {
+            for (T& value : data) {
+                value = (float)value;
+            }
+        }
+        else if (boost::is_integral<T>::value && T != uint32_t) {
+            for (T& value : data) {
+                value = (uint32_t)value;
+            }
+        }
+        else if (boost::is_boolean<T>::value && T != bool32_t) {
+            for (T& value : data) {
+                value = (bool32_t)value;
+            }
+        }
+        else {
+            Log::log(LOG_LEVEL_WARNING, "in method CommandBuffer::push_constants(): data vector is non-integer, non-floating_point and non-boolean; please make sure it's a 32bit type");
+        }
+        vkCmdPushConstants(buffer, pipeline_layout, VK_SHADER_STAGE_ALL, offset, size, data.data());
     }
 
     template<typename T>

@@ -9,17 +9,51 @@
 
 #ifdef MEMLOG
 
-    // dependencies
-    #include <cstdlib>
-    #include <cxxabi.h>
-    #include <execinfo.h>
-    #include <iostream>
-    #include <unordered_map>
+// dependencies
+#include <cstdlib>
+#ifdef _WIN32
+#include <Dbghelp.h>
+#else // UNIX
+#include <cxxabi.h>
+#include <execinfo.h>
+#endif
+#include <iostream>
+#include <unordered_map>
 
-    // global variables
+// global variables
     
-    std::unordered_map<void*, std::size_t> allocated_memory;
-    int total_allocation=0;
+std::unordered_map<void*, std::size_t> allocated_memory;
+int total_allocation=0;
+
+#ifdef _WIN32
+
+void get_caller_function_name(char*& func_name, int stack_level = 1) {
+    DWORD64 callstack[stack_level + 1];
+    int num_frames = CaptureStackBackTrace(0, stack_level + 1, callstack, nullptr);
+    if (num_frames >= 2) {
+        DWORD64 caller_address = callstack[stack_level];
+        DWORD64 module_base = 0;
+
+        // Retrieve the module base address
+        if (SymGetModuleBase(GetCurrentProcess(), caller_address, &module_base)) {
+            // Enumerate symbols within the module
+            SYM_TYPE type = SymGetTypeInfo(GetCurrentProcess(), module_base, caller_address, &type);
+            if (type != SymFunction) {
+                func_name = nullptr;
+                return;
+            }
+
+            // Retrieve symbol information
+            DWORD symbol_size = 0;
+            TCHAR symbol_name[1024];
+            if (SymEnumSymbolsW(GetCurrentProcess(), module_base, caller_address, symbol_name, sizeof(symbol_name), &symbol_size)) {
+                func_name = _strdup(symbol_name);
+            }
+        }
+    }
+}
+
+#else // UNIX
 
     // get function name from callstack
     // level 0: current function
@@ -36,6 +70,8 @@
             }
         }
     }
+
+#endif
 
     // operator 'new' override
     void* operator new(std::size_t size){
