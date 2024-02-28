@@ -9,7 +9,7 @@
 #include "layer.h"
 #include "mlp_enums.h"
 #include "neuron.h"
-#include "random_distributions.h"
+#include "rnd.h"
 #include "weight_init.h"
 #include <cmath>
 #include <cstdlib>

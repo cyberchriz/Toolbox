@@ -1,0 +1,76 @@
+// this Vulkan/GLSL compute shader tries to recover invalid elements
+// by substituting
+// -inf with a large negative number,
+// +inf with a large positive number,
+// NaN or ~0 with a very small positive number
+
+#version 450
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+        
+// setup result data buffer
+layout(set = 0, binding = 1) buffer ResultBuffer {
+    float result[];
+};
+
+// setup push constants layout (according to shader_exec OVERLOAD_2)
+layout(push_constant) uniform PushConstants {
+    uint data_rows;
+    uint data_cols;
+    uint data_depth;
+
+    uint result_rows;
+    uint result_cols;
+    uint result_depth;
+
+    float seed;
+    float constant2;        // not used for this shader
+    float constant3;        // not used for this shader
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = 32) in;
+
+// random number generator
+float random(float seed) {
+    return fract(sin(seed) * 43758.5453);
+}
+
+// setup global variables
+uint result_elements = result_rows * result_cols * result_depth;
+float FLT_MAX = 3.4e+38;
+float FLT_MIN = 1.2e-38;
+
+// main function
+void main() {
+    uint result_flat_index = gl_GlobalInvocationID.x;
+    if (result_flat_index < result_elements) {
+        float current_value = data[result_flat_index];
+
+        // check for positive infinity
+        if (isinf(current_value) && current_value > 0) {
+            float random_factor = 1 - 0.1 * random(seed * (result_flat_index + 1)); // factor between 0.9 and 1.0
+            result[result_flat_index] = FLT_MAX * random_factor;
+        }
+        // check for negative infinity
+        else if (isinf(-current_value) && current_value < 0) {
+            float random_factor = 1 - 0.1 * random(seed * (result_flat_index + 1)); // factor between 0.9 and 1.0
+            result[result_flat_index] = -(FLT_MAX * random_factor);
+        }
+        // check for 'not a number' (NaN)
+        else if (isnan(current_value)) {
+            result[result_flat_index] = FLT_MIN * (1 +  random(seed * (result_flat_index + 1)));
+        }
+        // check for ~zeros
+        else if (abs(current_value) < FLT_MIN) {
+            result[result_flat_index] = FLT_MIN * (1 +  random(seed * (result_flat_index + 1)));
+        }
+        // retain original
+        else {
+            result[result_flat_index] = current_value;
+        }
+    }
+}

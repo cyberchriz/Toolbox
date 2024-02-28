@@ -1,0 +1,81 @@
+// this Vulkan/GLSL compute shader calculates the variance of the
+// data buffer elements via parallel reduction and stores the final result in result[0]
+
+#version 450
+#define WORKGROUP_SIZE 128
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+        
+// setup result data buffer
+layout(set = 0, binding = 1) buffer ResultBuffer {
+    float result[];
+};
+
+// setup finished workgroups buffer
+layout(set = 0, binding = 2) buffer FinishedBuffer {
+    uint finished[];
+};
+
+// setup push constants layout
+layout(push_constant) uniform PushConstants {
+    uint data_elements;
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+// main function
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint workgroups = uint(ceil(float(data_elements) / WORKGROUP_SIZE));
+    if (x < data_elements) {
+        // copy elements from data to result
+        result[x] = data[x];
+        barrier();
+
+        // calculate partial sum of workgroup via parallel reduction
+        for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+            if (x % (2*i) == 0 && x+i < data_elements) {
+                result[x] += result[x+i];
+            }
+            barrier();
+        }
+        atomicAdd(finished[0], 1);
+
+        // add partial sums across workgroups
+        float sum = 0;
+        while (finished[0] < workgroups - 1) {}
+        for (uint i = 0; i < workgroups; i++) {
+            sum += result[i*WORKGROUP_SIZE];
+        }
+        
+        // calculate mean
+        float mean = sum / data_elements;
+
+        // store squared mean deviation in result buffer
+        result[x] = pow(data[x] - mean, 2);
+        barrier();
+
+        // calculate partial sum of squared mean deviations (within workgroup) via parallel reduction
+        for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+            if (x % (2*i) == 0 && x+i < data_elements) {
+                result[x] += result[x+i];
+            }
+            barrier();
+        }
+        atomicAdd(finished[1], 1);
+
+        // add partial sums across workgroups
+        if (x == 0) {
+            sum = 0;
+            while (finished[1] < workgroups - 1) {}
+            for (uint i = 0; i < workgroups; i++) {
+                sum += result[i*WORKGROUP_SIZE];
+            }
+            result[0] = sum / data_elements;
+        }
+    }
+}

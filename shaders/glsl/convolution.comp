@@ -1,0 +1,77 @@
+// this Vulkan/GLSL compute shader implements a convolution operation with a filter kernel
+
+#version 450
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+
+// setup filter 'kernel' buffer
+layout(set = 0, binding = 1) buffer FilterBuffer {
+    float kernel[];
+};
+
+// setup result data buffer
+layout(set = 0, binding = 2) buffer ResultBuffer {
+    float result[];
+};
+
+// setup push constants layout (according to shader_exec OVERLOAD_3)
+layout(push_constant) uniform PushConstants {
+    uint data_rows;
+    uint data_cols;
+    uint data_depth;
+
+    uint kernel_rows;
+    uint kernel_cols;
+    uint kernel_depth;
+
+    uint result_rows;
+    uint result_cols;
+    uint result_depth;
+
+    float constant1;        // not used for this shader
+    float constant2;        // not used for this shader
+    float constant3;        // not used for this shader
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = 32) in;
+
+// setup global variables
+uint data_elements = data_rows * data_cols * data_depth;
+uint kernel_elements = kernel_rows * kernel_cols * kernel_depth;
+uint result_elements = result_rows * result_cols * result_depth;
+uint result_subspace_x = result_cols * result_depth;
+uint data_subspace_x = data_cols * data_depth;
+uint kernel_subspace_x = kernel_cols * kernel_depth;
+float nan = 0.0 / 0.0;
+
+// main function
+void main() {
+    uint result_flat_index = gl_GlobalInvocationID.x;
+    if (result_flat_index < result_elements) {
+        uint result_3dx = uint(result_flat_index/result_subspace_x);
+        uint result_3dy = uint((result_flat_index % result_subspace_x) / result_depth);
+        uint result_3dz = uint((result_flat_index % result_subspace_x) % result_depth);
+        float product_sum = 0;
+        uint kernel_flat_index = 0;
+        uint item_flat_index = 0;
+        for (uint x = 0; x < kernel_rows; x++) {
+            for (uint y = 0; y < kernel_cols; y++) {
+                for (uint z = 0; z < kernel_depth; z++) {
+                    kernel_flat_index = x * kernel_subspace_x + y * kernel_depth + z;
+                    item_flat_index =
+                        (result_3dx + x) * data_subspace_x +
+                        (result_3dy + y) * data_depth +
+                        (result_3dz + z);
+                    if (item_flat_index < result_elements) {
+                        product_sum += kernel[kernel_flat_index] * data[item_flat_index];
+                    }
+                }
+            }
+        }
+        result[result_flat_index] = product_sum;
+    }
+}

@@ -1,0 +1,49 @@
+// this Vulkan/GLSL compute shader assigns any outliers beyond the given z-score to the specified value;
+// (Rectified Linear Unit)
+
+#version 450
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+        
+// setup result data buffer
+layout(set = 0, binding = 1) buffer ResultBuffer {
+    float result[];
+};
+
+// setup push constants layout (according to shader_exec OVERLOAD_2)
+layout(push_constant) uniform PushConstants {
+    uint data_rows;
+    uint data_cols;
+    uint data_depth;
+
+    uint result_rows;
+    uint result_cols;
+    uint result_depth;
+
+    float lower_margin;
+    float upper_margin;
+    float value;
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = 32) in;
+
+// setup global variables
+uint result_elements = result_rows * result_cols * result_depth;
+
+// main function
+void main() {
+    uint result_flat_index = gl_GlobalInvocationID.x;
+    if (result_flat_index < result_elements) {
+        float x = data[result_flat_index];
+        if (x > upper_margin || x < lower_margin) {
+            result[result_flat_index] = value;
+        }
+        else {
+            result[result_flat_index] = data[result_flat_index];
+        }
+    }
+}

@@ -1,0 +1,51 @@
+// this Vulkan/GLSL compute shader erases a single columnn from the matrix
+// (with column index given via push constant)
+
+#version 450
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+        
+// setup result data buffer
+layout(set = 0, binding = 1) buffer ResultBuffer {
+    float result[];
+};
+
+// setup push constants layout (according to shader_exec OVERLOAD_4)
+layout(push_constant) uniform PushConstants {
+    uint data_rows;
+    uint data_cols;
+    uint data_depth;
+
+    uint result_rows;
+    uint result_cols;
+    uint result_depth;
+
+    int erased_col;
+    int constant2;          // not used for this shader
+    int constant3;          // not used for this shader
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = 32) in;
+
+// setup global variables
+uint data_elements = data_rows * data_cols * data_depth;
+uint result_elements = result_rows * result_cols * result_depth;
+uint result_subspace_x = result_cols * result_depth;
+uint data_subspace_x = data_cols * data_depth;
+
+// main function
+void main() {
+    uint result_flat_index = gl_GlobalInvocationID.x;
+    if (result_flat_index < result_elements) {
+        uint result_3dx = uint(result_flat_index/result_subspace_x);
+        uint result_3dy = uint((result_flat_index % result_subspace_x) / result_depth);
+        uint result_3dz = uint((result_flat_index % result_subspace_x) % result_depth);
+        uint data_3dy = result_3dy >= erased_col ? result_3dy + 1 : result_3dy;
+        uint data_flat_index = result_3dx * data_subspace_x + data_3dy * data_depth + result_3dz;
+        result[result_flat_index] = data[data_flat_index];
+    }
+}

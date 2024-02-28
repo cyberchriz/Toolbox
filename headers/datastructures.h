@@ -500,6 +500,104 @@ class Array{
 // DEFINITIONS
 // note: these are not kept in a separate .cpp file because this can create problems with template classes
 
+// +=================================+   
+// | Constructors & Destructors      |
+// +=================================+
+
+// constructor for multi-dimensional array:
+// pass dimension size (elements per dimension)
+// as an initializer_list, e.g. {3,4,4}
+template<typename T>
+Array<T>::Array(const std::initializer_list<int>& shape) {
+    // check if shape init_list is empty
+    int dimensions = (int)shape.size();
+    if (dimensions == 0) {
+        this->data_elements = 0;
+        this->capacity = 0;
+        return;
+    }
+    // store size of individual dimensions in std::vector<int> size member variable
+    auto iterator = shape.begin();
+    int n = 0;
+    this->dim_size.resize(dimensions);
+    for (; iterator != shape.end(); n++, iterator++) {
+        this->dim_size[n] = *iterator;
+    }
+    // calculate the subspace size for each dimension
+    int totalsize = 1;
+    this->subspace_size.resize(dimensions);
+    for (int i = 0; i < dimensions; i++) {
+        totalsize *= this->dim_size[i];
+        this->subspace_size[i] = totalsize;
+    }
+    this->data_elements = totalsize;
+    // set reserve capacity for 1d Arrays
+    this->capacity = this->data_elements;
+    if (dimensions == 1) {
+        this->capacity = int((1.0f + this->_reserve) * this->data_elements);
+    }
+    // initialize data buffer
+    this->data = std::make_unique<T[]>(this->capacity);
+};
+
+// constructor for multidimensional array:
+// pass dimension size (elements per dimension)
+// as type std::vector<int>
+template<typename T>
+Array<T>::Array(const std::vector<int>& shape) {
+    // check if shape vector is empty
+    int dimensions = (int)shape.size();
+    if (dimensions == 0) {
+        this->data_elements = 0;
+        this->capacity = 0;
+        return;
+    }
+    // calculate subspace size for each dimension
+    int totalsize = 1;
+    this->subspace_size.resize((int)shape.size());
+    this->dim_size.resize((int)shape.size());
+    for (int i = 0; i < dimensions; i++) {
+        this->subspace_size[i] = totalsize;
+        this->dim_size[i] = shape[i];
+        totalsize *= this->dim_size[i];
+    }
+    this->data_elements = totalsize;
+    // set reserve capacity for 1d Arrays
+    this->capacity = this->data_elements;
+    if (dimensions == 1) {
+        this->capacity = (1.0f + this->_reserve) * this->data_elements;
+    }
+    // initialize data buffer
+    this->data = std::make_unique<T[]>(this->capacity);
+}
+
+// Array move constructor
+template<typename T>
+Array<T>::Array(Array&& other) noexcept {
+    this->data_elements = other.get_elements();
+    this->capacity = other.get_capacity();
+    this->data = std::move(other.data);
+    this->dim_size = std::move(other.dim_size);
+    this->subspace_size = std::move(other.subspace_size);
+    other.data.reset();
+}
+
+// Array copy constructor
+template<typename T>
+Array<T>::Array(Array& other) {
+    this->data_elements = other.get_elements();
+    this->capacity = other.get_capacity();
+    this->dim_size = other.dim_size;
+    this->subspace_size = other.subspace_size;
+    this->data = std::make_unique<T[]>(data_elements);
+    std::copy(other.data.get(), other.data.get() + other.get_elements(), this->data.get());
+}
+
+// virtual destructor
+template<typename T>
+Array<T>::~Array() {
+    // empty
+}
 
 // +=================================+   
 // | getters & setters               |
@@ -4693,104 +4791,7 @@ std::vector<int> Array<T>::get_convolution_shape(std::vector<int>& filter_shape,
     return this->get_shape();
 }
 
-// +=================================+   
-// | Constructors & Destructors      |
-// +=================================+
 
-// constructor for multi-dimensional array:
-// pass dimension size (elements per dimension)
-// as an initializer_list, e.g. {3,4,4}
-template<typename T>
-Array<T>::Array(const std::initializer_list<int>& shape) {
-    // check if shape init_list is empty
-    int dimensions = (int)shape.size();
-    if (dimensions == 0) {
-        this->data_elements = 0;
-        this->capacity = 0;
-        return;
-    }
-    // store size of individual dimensions in std::vector<int> size member variable
-    auto iterator = shape.begin();
-    int n = 0;
-    this->dim_size.resize(dimensions);
-    for (; iterator != shape.end(); n++, iterator++) {
-        this->dim_size[n] = *iterator;
-    }
-    // calculate the subspace size for each dimension
-    int totalsize = 1;
-    this->subspace_size.resize(dimensions);
-    for (int i = 0; i < dimensions; i++) {
-        totalsize *= this->dim_size[i];
-        this->subspace_size[i] = totalsize;
-    }
-    this->data_elements = totalsize;
-    // set reserve capacity for 1d Arrays
-    this->capacity = this->data_elements;
-    if (dimensions == 1) {
-        this->capacity = int((1.0f + this->_reserve) * this->data_elements);
-    }
-    // initialize data buffer
-    this->data = std::make_unique<T[]>(this->capacity);
-};
-
-// constructor for multidimensional array:
-// pass dimension size (elements per dimension)
-// as type std::vector<int>
-template<typename T>
-Array<T>::Array(const std::vector<int>& shape) {
-    // check if shape vector is empty
-    int dimensions = (int)shape.size();
-    if (dimensions == 0) {
-        this->data_elements = 0;
-        this->capacity = 0;
-        return;
-    }
-    // calculate subspace size for each dimension
-    int totalsize = 1;
-    this->subspace_size.resize((int)shape.size());
-    this->dim_size.resize((int)shape.size());
-    for (int i = 0; i < dimensions; i++) {
-        this->subspace_size[i] = totalsize;
-        this->dim_size[i] = shape[i];
-        totalsize *= this->dim_size[i];
-    }
-    this->data_elements = totalsize;
-    // set reserve capacity for 1d Arrays
-    this->capacity = this->data_elements;
-    if (dimensions == 1) {
-        this->capacity = (1.0f + this->_reserve) * this->data_elements;
-    }
-    // initialize data buffer
-    this->data = std::make_unique<T[]>(this->capacity);
-}
-
-// Array move constructor
-template<typename T>
-Array<T>::Array(Array&& other) noexcept {
-    this->data_elements = other.get_elements();
-    this->capacity = other.get_capacity();
-    this->data = std::move(other.data);
-    this->dim_size = std::move(other.dim_size);
-    this->subspace_size = std::move(other.subspace_size);
-    other.data.reset();
-}
-
-// Array copy constructor
-template<typename T>
-Array<T>::Array(Array& other) {
-    this->data_elements = other.get_elements();
-    this->capacity = other.get_capacity();
-    this->dim_size = other.dim_size;
-    this->subspace_size = other.subspace_size;
-    this->data = std::make_unique<T[]>(data_elements);
-    std::copy(other.data.get(), other.data.get() + other.get_elements(), this->data.get());
-}
-
-// virtual destructor
-template<typename T>
-Array<T>::~Array() {
-    // empty
-}
 
 // +=================================+   
 // | Private Member Functions        |

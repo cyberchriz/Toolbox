@@ -1,0 +1,64 @@
+// this Vulkan/GLSL compute shader retrieves
+// the element with the lowest value in the array and stores
+// the result in a result buffer via parallel reduction
+// the final result gets stored in result[0]
+
+#version 450
+#define WORKGROUP_SIZE 128
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+        
+// setup result data buffer
+layout(set = 0, binding = 1) buffer ResultBuffer {
+    float result[];
+};
+
+// setup finished workgroups buffer
+layout(set = 0, binding = 2) buffer FinishedBuffer {
+    uint finished[];
+};
+
+// setup push constants layout
+layout(push_constant) uniform PushConstants {
+    uint data_elements;
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+// main function
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint workgroups = uint(ceil(float(data_elements) / WORKGROUP_SIZE));
+    if (x < data_elements) {
+        // copy elements from data to result
+        result[x] = data[x];
+        barrier();
+
+        // search minimum within workgroup via parallel reduction
+        for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+            if (x % (2*i) == 0 && x+i < data_elements) {
+                result[x] = min(result[x], result[x+i]);
+            }
+            barrier();
+        }
+        if (gl_LocalInvocationID.x == 0) {
+            atomicAdd(finished[0], 1);
+        }
+
+        // find minimum across workgroups
+        if (x == 0) {
+            while (finished[0] < workgroups - 1) {
+                // wait for all workgroups to finish
+            }
+            float minimum = result[0];
+            for (uint i = 0; i < workgroups; i++) {
+                minimum = min(minimum, result[i * WORKGROUP_SIZE]);
+            }
+            result[0] = minimum;
+        }
+    }
+}

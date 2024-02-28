@@ -13,7 +13,7 @@
       "variables": [
         {
           "name": "ENTRYPOINT_FILE",
-          "value": "C:/Users/Admin/source/repos/Toolbox/sources/vkdata_test.cpp",
+          "value": "C:/Users/Admin/source/repos/Toolbox/sources/vkvec_test.cpp",
           "type": "STRING"
         }
       ]

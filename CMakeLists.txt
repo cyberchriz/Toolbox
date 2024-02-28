@@ -25,6 +25,8 @@ set(ENTRYPOINT_FILE "${SOURCE_DIR}/main.cpp" CACHE STRING "entry point file for 
 set(CMAKE_BINARY_DIR "${CMAKE_SOURCE_DIR}/out/build" CACHE PATH "binary build directory of the project")
 set(CMAKE_CURRENT_BINARY_DIR ${CMAKE_BINARY_DIR})
 set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}")
+set(GLSL_FOLDER "${CMAKE_SOURCE_DIR}/shaders/glsl" CACHE PATH "folder for GLSL shaders")
+set(SPIRV_FOLDER "${CMAKE_SOURCE_DIR}/shaders/spirv" CACHE PATH "folder for SPIR-V files")
 
 # language setup
 set(CMAKE_PROJECT_LANGUAGES "C;CXX" CACHE STRING "available languages: C, CXX, CSharp, CUDA, OBJC, OBJCXX, Fortran, HIP, ISPC, Swift, ASM, ASM_NASM, ASM_MARMASM, ASM_MASM, ASM-ATT") 
@@ -103,6 +105,62 @@ foreach(SOURCE ${SOURCES})
   target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${SOURCE})
 endforeach()
 
+# Automatically find GLSL shader files in the GLSL_FOLDER
+message("searching ${GLSL_FOLDER} for valid glsl files (.vert, .frag, .comp, ...)")
+file(GLOB_RECURSE GLSL_SHADER_SOURCES 
+    "${GLSL_FOLDER}/*.vert"
+    "${GLSL_FOLDER}/*.frag"
+    "${GLSL_FOLDER}/*.comp"
+    # Add more extensions if needed
+)
+
+# Locate GLSL compiler 'glslangValidator' executable
+if (GLSL_SHADER_SOURCES)
+	find_program(GLSLANG_VALIDATOR_EXECUTABLE glslangValidator)
+	if(GLSLANG_VALIDATOR_EXECUTABLE)
+	  # Execute glslangValidator and get its version
+	  execute_process(
+		COMMAND ${GLSLANG_VALIDATOR_EXECUTABLE} --version
+		OUTPUT_VARIABLE GLSL_VERSION
+		OUTPUT_STRIP_TRAILING_WHITESPACE
+	  )
+	  message(STATUS "glslangValidator version: ${GLSL_VERSION}")
+	else()
+	  message(FATAL_ERROR "glslangValidator executable not found")
+	endif()
+endif()
+
+# Function to compile GLSL shaders to SPIR-V format
+function(compile_glsl_shader shader_input shader_output)
+    get_filename_component(SHADER_NAME ${shader_input} NAME_WE)
+    set(SHADER_TARGET_NAME "${CMAKE_PROJECT_NAME}_${SHADER_NAME}_spv")  # Full target name
+	message("Compiling ${shader_input} to ${shader_output}")
+
+    add_custom_command(
+        OUTPUT ${shader_output}
+        COMMAND glslangValidator -V ${shader_input} --target-env vulkan1.2 -o ${shader_output} -enable-ext VK_EXT_shader_atomic_float
+        MAIN_DEPENDENCY ${shader_input}
+        COMMENT "Compiling ${shader_input} to ${shader_output}"
+    )
+
+    add_custom_target(${SHADER_TARGET_NAME} DEPENDS ${shader_output})
+endfunction()
+
+# Iterate over all found GLSL shader files and compile them
+foreach(SHADER_SOURCE ${GLSL_SHADER_SOURCES})#
+	set(GLSL_INPUT "${SHADER_SOURCE}")
+    get_filename_component(SHADER_BASE_NAME ${SHADER_SOURCE} NAME_WE)
+    set(SPIRV_OUTPUT "${SPIRV_FOLDER}/${SHADER_BASE_NAME}.spv")
+
+    compile_glsl_shader(${GLSL_INPUT} ${SPIRV_OUTPUT})
+
+    # Include the SPIR-V files in the target sources
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${SPIRV_OUTPUT})
+
+    # Add the custom target as a dependency
+    add_dependencies(${CMAKE_PROJECT_NAME} ${CMAKE_PROJECT_NAME}_${SHADER_BASE_NAME}_spv)
+endforeach()
+
 # add static libraries
 set(PROJECT_ADD_STATIC_LIBS "" CACHE STRING "static libraries to be added")
 if (PROJECT_ADD_STATIC_LIBS)
@@ -143,8 +201,8 @@ target_include_directories(
 set(USE_VULKAN "TRUE" CACHE BOOL "whether to include the Vulkan library")
 if (USE_VULKAN)
 	set($ENV{VULKAN_SDK} "C:/VulkanSDK")
-	set(VULKAN_LIBRARY "C:/VulkanSDK/1.3.268.0/Lib" CACHE PATH "location of Vulkan Lib folder")
-	set(VULKAN_INCLUDE_DIR "C:/VulkanSDK/1.3.268.0/Include" CACHE PATH "location of Vulkan Include folder")
+	set(VULKAN_LIBRARY "C:/VulkanSDK/1.3.275.0/Lib" CACHE PATH "location of Vulkan Lib folder")
+	set(VULKAN_INCLUDE_DIR "C:/VulkanSDK/1.3.275.0/Include" CACHE PATH "location of Vulkan Include folder")
 	set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${VULKAN_LIBRARY};${VULKAN_INCLUDE_DIR}")
 	find_package(Vulkan REQUIRED)
 	if  (Vulkan_FOUND)
@@ -174,6 +232,7 @@ if (USE_BOOST)
 	set(BOOST_ROOT_PATH "C:/Dependencies/boost_1_84_0" CACHE PATH "location of the boost root library")
 	set(BOOST_HEADERS_PATH "C:/Dependencies/boost_1_84_0/boost" CACHE PATH "location of the boost headers folder")
 	target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${BOOST_HEADERS_PATH} ${BOOST_ROOT_PATH})
+	set(BOOST_STATIC_LIBS "${BOOST_ROOT_PATH}/libs/*.lib")
 endif()
 
 # install build
@@ -190,7 +249,6 @@ endif()
 # first-ever execution of this script?
 if (NOT EXISTS "${CMAKE_BINARY_DIR}/CMakeCache.txt")
 	message("\n ==============================================================================")
-	message(  " THIS SEEMS TO BE THE FIRST-TIME EXECUTION OF THIS CMakeLists.txt FILE")
 	message(  " It's recommended to configure the project details by editing CMakeCache.txt")
 	message(  " by using cmake-gui or ccmake or by editing CMakeSettings.json in Visual Studio")
 	message(  " ==============================================================================\n")

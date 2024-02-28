@@ -1,0 +1,77 @@
+// this Vulkan/GLSL compute shader performs elementwise execution of the round(x) function,
+// i.e. rounding to the nearest integer
+
+#version 450
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+        
+// setup result data buffer
+layout(set = 0, binding = 1) buffer ResultBuffer {
+    float result[]; // result[0] is initialized to 0
+};
+
+// setup push constants layout (according to shader_exec OVERLOAD_2)
+layout(push_constant) uniform PushConstants {
+    uint data_rows;
+    uint data_cols;
+    uint data_depth;
+
+    uint result_rows;
+    uint result_cols;
+    uint result_depth;
+
+    float constant1;        // not used for this shader
+    float constant2;        // not used for this shader
+    float constant3;        // not used for this shader
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = 32) in;
+
+// setup global variables
+uint result_elements = result_rows;
+
+// main function
+void main() {
+    uint result_3dx = gl_GlobalInvocationID.x;
+    if (result_3dx < result_elements) {
+        float temp;
+        uint i = result_3dx;
+        while (
+            i < result_rows - 1  &&
+            (data[i] > data[i+1] && result[i] < result[i+1]) ||
+            (data[i] < data[i+1] && result[i] > result[i+1])
+        ) {
+            temp = result[i];
+            // note: the while loops are required to ensure a correct result with non-atomic assignment
+            while (result[i] != result[i+1]) {
+                result[i] = result[i+1];
+            }
+            while (result[i+1] != temp) {
+                result[i+1] = temp;
+            }
+            i++;
+        }
+
+        i = result_3dx;
+        while (
+            i > 0  &&
+            (data[i] > data[i-1] && result[i] < result[i-1]) ||
+            (data[i] < data[i-1] && result[i] > result[i-1])
+        ) {
+            temp = result[i];
+            // note: the while loops are required to ensure a correct result with non-atomic assignment
+            while (result[i] != result[i-1]) {
+                result[i] = result[i-1];
+            }
+            while (result[i-1] != temp) {
+                result[i-1] = temp;
+            }
+            i--;
+        }
+
+    }
+}

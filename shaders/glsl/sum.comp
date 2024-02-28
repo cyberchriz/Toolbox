@@ -1,0 +1,60 @@
+// this Vulkan/GLSL compute shader calculates the sum of the
+// data buffer elements via parallel reduction and stores the final result in result[0]
+
+#version 450
+#define WORKGROUP_SIZE 32
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+        
+// setup result data buffer
+layout(set = 0, binding = 1) buffer ResultBuffer {
+    float result[];
+};
+
+// setup counter for finished workgroups
+layout(set = 0, binding = 2) buffer FinishedBuffer {
+    uint finished[];
+};
+
+// setup push constants layout
+layout(push_constant) uniform PushConstants {
+    uint data_elements;
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+// main function
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint workgroups = uint(ceil(float(data_elements) / WORKGROUP_SIZE));
+    if (x < data_elements) {
+        // copy elements from data to result
+        result[x] = data[x];
+        barrier();
+
+        // calculate sum of workgroup via parallel reduction
+        for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+            if (x % (2*i) == 0 && x+i < data_elements) {
+                result[x] += result[x+i];
+            }
+            barrier();
+        }
+        atomicAdd(finished[0], 1);
+
+        // store sum of partial sums in result[0]
+        if (x == 0) {
+            while (finished[0] < workgroups - 1) {
+                // wait for all workgroups to finish
+            }
+            float sum = 0;
+            for (uint i = 0; i < workgroups; i++) {
+                sum += result[i * WORKGROUP_SIZE];
+            }
+            result[0] = sum;
+        }
+    }
+}

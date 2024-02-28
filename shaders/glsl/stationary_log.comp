@@ -1,0 +1,44 @@
+// this Vulkan/GLSL compute shader implements a stationary transformation of the vector data,
+// using first degree logreturn differencing, e.g. for time series data;
+#version 450
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+        
+// setup result data buffer
+layout(set = 0, binding = 1) buffer ResultBuffer {
+    float result[];
+};
+
+// setup push constants layout (according to shader_exec OVERLOAD_2)
+layout(push_constant) uniform PushConstants {
+    uint data_rows;
+    uint data_cols;
+    uint data_depth;
+
+    uint result_rows;
+    uint result_cols;
+    uint result_depth;
+
+    float constant1;        // not used for this shader
+    float constant2;        // not used for this shader
+    float constant3;        // not used for this shader
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = 32) in;
+
+// setup global variables
+uint result_elements = data_rows * data_cols * data_depth;
+
+// main function
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    if (x < result_elements) {
+        result[x] =
+            data[x] != 0 && data[x - 1 >= 0 ? x - 1 : 0] != 0 ?
+            log(data[x] / data[x - 1 >= 0 ? x - 1 : 0]) : 0;
+    }
+}

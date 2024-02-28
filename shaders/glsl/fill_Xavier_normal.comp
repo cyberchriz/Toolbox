@@ -1,0 +1,71 @@
+// this Vulkan/GLSL compute shader randomly initializes
+// the array elements to fit a normal "Xavier" neural network
+// weight initialization for tanh activation
+// (by Xavier Glorot & Bengio)
+
+#version 450
+#define WORKGROUP_SIZE 128
+
+// setup source data buffer
+layout(set = 0, binding = 0) buffer DataBuffer {
+    float data[];
+};
+
+// setup push constants layout
+layout(push_constant) uniform PushConstants {
+    uint data_elements;
+    uint seed;
+    uint fan_in;
+    uint fan_out;
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+// setup global variables
+float M_PI = 3.141592653589793;
+float sigma = 1;
+float mu = 0;
+float factor = sqrt(6.0 / sqrt(fan_in + fan_out));
+uint state[4];
+bool initialized = false;
+
+// XorShift128 random number generator
+float random(uint seed) {
+
+  if (!initialized) {
+    state[0] = seed;
+    for (int i = 1; i < 4; ++i) {
+      state[i] = state[i - 1] * 0x343fd45e;
+    }
+    initialized = true;
+  }
+
+  uint x = state[0];
+  uint y = state[2];
+  state[0] = state[1];
+  state[1] = state[2];
+  state[2] = state[3];
+  state[3] = x ^ y ^ (x << 13) ^ (y << 17) ^ (x >> 15) ^ (y >> 18);
+
+  // Mask and scale to [0, 1]
+  return float(state[3] & 0xffffffff) / 4294967295.0;
+}
+
+float randomGaussian(uint seed) {
+    // Generate two uniformly distributed random variables
+    float u1 = random(seed);
+    float u2 = random(seed + 1);
+
+    // Apply the Box-Muller transform to get two standard normal random variables
+    float r = sqrt(-2.0f * log(u1)) * cos(2.0f * M_PI * u2);
+    return r * sigma + mu;
+}
+
+// main function
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    if (x < data_elements) {
+        data[x] = randomGaussian(seed + x) * factor;
+    }
+}
