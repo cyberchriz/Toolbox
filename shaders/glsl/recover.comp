@@ -2,75 +2,84 @@
 // by substituting
 // -inf with a large negative number,
 // +inf with a large positive number,
-// NaN or ~0 with a very small positive number
+// NaN with a very small positive number
 
 #version 450
+#define WORKGROUP_SIZE 256
 
-// setup source data buffer
+// setup buffers
 layout(set = 0, binding = 0) buffer DataBuffer {
     float data[];
 };
-        
-// setup result data buffer
 layout(set = 0, binding = 1) buffer ResultBuffer {
     float result[];
 };
 
-// setup push constants layout (according to shader_exec OVERLOAD_2)
+// setup push constants layout
 layout(push_constant) uniform PushConstants {
-    uint data_rows;
-    uint data_cols;
-    uint data_depth;
-
-    uint result_rows;
-    uint result_cols;
-    uint result_depth;
-
-    float seed;
-    float constant2;        // not used for this shader
-    float constant3;        // not used for this shader
+    uint data_elements;
+    uint seed;
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+// set global variables
+uint state[4];
+bool initialized = false;
 
 // random number generator
-float random(float seed) {
-    return fract(sin(seed) * 43758.5453);
+// XorShift128 random number generator
+float random(uint seed) {
+
+  if (!initialized) {
+    state[0] = seed;
+    for (int i = 1; i < 4; ++i) {
+      state[i] = state[i - 1] * 0x343fd45e;
+    }
+    initialized = true;
+  }
+
+  uint x = state[0];
+  uint y = state[2];
+  state[0] = state[1];
+  state[1] = state[2];
+  state[2] = state[3];
+  state[3] = x ^ y ^ (x << 13) ^ (y << 17) ^ (x >> 15) ^ (y >> 18);
+
+  // Mask and scale to [0, 1]
+  return float(state[3] & 0xffffffff) / 4294967295.0;
 }
 
 // setup global variables
-uint result_elements = result_rows * result_cols * result_depth;
-float FLT_MAX = 3.4e+38;
-float FLT_MIN = 1.2e-38;
+float FLT_MAX = 3.4e+35;
+float FLT_MIN = 1.2e-35;
 
 // main function
 void main() {
-    uint result_flat_index = gl_GlobalInvocationID.x;
-    if (result_flat_index < result_elements) {
-        float current_value = data[result_flat_index];
+    uint x = gl_GlobalInvocationID.x;
+    if (x < data_elements) {
+        float current_value = data[x];
 
-        // check for positive infinity
-        if (isinf(current_value) && current_value > 0) {
-            float random_factor = 1 - 0.1 * random(seed * (result_flat_index + 1)); // factor between 0.9 and 1.0
-            result[result_flat_index] = FLT_MAX * random_factor;
-        }
-        // check for negative infinity
-        else if (isinf(-current_value) && current_value < 0) {
-            float random_factor = 1 - 0.1 * random(seed * (result_flat_index + 1)); // factor between 0.9 and 1.0
-            result[result_flat_index] = -(FLT_MAX * random_factor);
+        // check for infinity
+        if (isinf(current_value)) {
+            float random_factor = 1 - 0.1 * random(seed * (x + 1)); // factor between 0.9 and 1.0
+            // check for positive infinity
+            if (current_value > 0) {
+                result[x] = random_factor * FLT_MAX;
+            }
+            // check for negative infinity
+            else {
+                result[x] = -random_factor * FLT_MAX;
+            }
         }
         // check for 'not a number' (NaN)
         else if (isnan(current_value)) {
-            result[result_flat_index] = FLT_MIN * (1 +  random(seed * (result_flat_index + 1)));
-        }
-        // check for ~zeros
-        else if (abs(current_value) < FLT_MIN) {
-            result[result_flat_index] = FLT_MIN * (1 +  random(seed * (result_flat_index + 1)));
+            result[x] = FLT_MIN * (1 +  random(seed * (x + 1)));
         }
         // retain original
         else {
-            result[result_flat_index] = current_value;
+            result[x] = current_value;
         }
     }
 }

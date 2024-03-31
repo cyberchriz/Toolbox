@@ -2,26 +2,28 @@
 // data buffer elements via parallel reduction and stores the final result in result[0]
 
 #version 450
-#define WORKGROUP_SIZE 128
+#define WORKGROUP_SIZE 256
 
-// setup source data buffer
+// setup buffers
 layout(set = 0, binding = 0) buffer DataBuffer {
-    float data[];
+	float data[];
 };
-        
-// setup result data buffer
 layout(set = 0, binding = 1) buffer ResultBuffer {
-    float result[];
+	float result[];
 };
-
-// setup finished workgroups buffer
-layout(set = 0, binding = 2) buffer FinishedBuffer {
-    uint finished[];
+layout(set = 0, binding = 2) buffer PartialSumBuffer {
+	float partial_sum[];
+};
+layout(set = 0, binding = 3) buffer Mdev2Buffer {
+	float mdev2[];
+};
+layout(set = 0, binding = 4) buffer SignalBuffer {
+	uint signal[];
 };
 
 // setup push constants layout
 layout(push_constant) uniform PushConstants {
-    uint data_elements;
+	uint data_elements;
 };
 
 // setup local size according to workgroup size
@@ -29,53 +31,61 @@ layout(local_size_x = WORKGROUP_SIZE) in;
 
 // main function
 void main() {
-    uint x = gl_GlobalInvocationID.x;
-    uint workgroups = uint(ceil(float(data_elements) / WORKGROUP_SIZE));
-    if (x < data_elements) {
-        // copy elements from data to result
-        result[x] = data[x];
-        barrier();
+	uint x = gl_GlobalInvocationID.x;
+	uint workgroup_ID = x / WORKGROUP_SIZE;
+	uint workgroups = data_elements / WORKGROUP_SIZE + 1;
+	signal[workgroup_ID] = 0;
+	
+	if (x < data_elements) {
 
-        // calculate partial sum of workgroup via parallel reduction
-        for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
-            if (x % (2*i) == 0 && x+i < data_elements) {
-                result[x] += result[x+i];
-            }
-            barrier();
-        }
-        atomicAdd(finished[0], 1);
+		// calculate partial sum within workgroup via parallel reduction
+		partial_sum[x] = data[x] / data_elements;
+		barrier();
+		for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+			if (x % (2*i) == 0 && x+i < data_elements) {
+				partial_sum[x] += partial_sum[x+i];
+			}
+			barrier();
+		}
+		signal[workgroup_ID] = 1;
 
-        // add partial sums across workgroups
-        float sum = 0;
-        while (finished[0] < workgroups - 1) {}
-        for (uint i = 0; i < workgroups; i++) {
-            sum += result[i*WORKGROUP_SIZE];
-        }
-        
-        // calculate mean
-        float mean = sum / data_elements;
+		// add partial sums across workgroups
+		float mean = 0;
+		for (uint i = 0; i < workgroups; i++) {
+			uint loop_count = 0;
+			while (signal[i] < 1 && loop_count < 10000) {
+				memoryBarrier();
+				loop_count++;
+			}
+			mean += partial_sum[i*WORKGROUP_SIZE];
+		}
 
-        // store squared mean deviation in result buffer
-        result[x] = pow(data[x] - mean, 2);
-        barrier();
+		// calculate squared mean deviations
+		float mdev = data[x] - mean;
+		mdev2[x] = (mdev * mdev) / (data_elements - 1);
+		barrier();
 
-        // calculate partial sum of squared mean deviations (within workgroup) via parallel reduction
-        for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
-            if (x % (2*i) == 0 && x+i < data_elements) {
-                result[x] += result[x+i];
-            }
-            barrier();
-        }
-        atomicAdd(finished[1], 1);
+		// calculate partial sum of squared mean deviations (within workgroup) via parallel reduction
+		for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+			if (x % (2*i) == 0 && x+i < data_elements) {
+				mdev2[x] += mdev2[x+i];
+			}
+			barrier();
+		}
+		signal[workgroup_ID] = 2;
 
-        // add partial sums across workgroups
-        if (x == 0) {
-            sum = 0;
-            while (finished[1] < workgroups - 1) {}
-            for (uint i = 0; i < workgroups; i++) {
-                sum += result[i*WORKGROUP_SIZE];
-            }
-            result[0] = sum / data_elements;
-        }
-    }
+		// calculate final result (add partial mdev2 results across workgroups)
+		if (x == 0) {
+			float final_result = 0;
+			for (uint i = 0; i < workgroups; i++) {
+				uint loop_count = 0;
+				while (signal[i] < 2 && loop_count < 10000) {
+					memoryBarrier();
+					loop_count++;
+				}
+				final_result += mdev2[i * WORKGROUP_SIZE];
+			}
+			result[0] = final_result;
+		}
+	}
 }

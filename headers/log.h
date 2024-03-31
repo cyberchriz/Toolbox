@@ -4,7 +4,7 @@
 #ifdef _RELEASE
 #define DEFAULT_LEVEL LogLevel::ERROR
 #else
-#define DEFAULT_LEVEL LogLevel::DEBUG
+#define DEFAULT_LEVEL LogLevel::WARNING
 #endif
 
 #include <cstdint>
@@ -21,7 +21,8 @@ enum LogLevel {
     WARNING,
     INFO,
     DEBUG,
-    NONE
+    FORCE,
+    FORCE_PLAIN
 };
 
 class Log {
@@ -96,14 +97,19 @@ void Log::enable_to_file(bool active) {
 }
 
 bool Log::at_least(LogLevel level) {
-    return log_level != LogLevel::NONE && log_level >= level;
+    return log_level != LogLevel::FORCE && log_level >= level;
 }
 
 template <typename... Args>
 void Log::log(LogLevel level, Args&&... args) {
-    if (level <= log_level && level < LogLevel::NONE) {
+    if (level <= log_level || level == LogLevel::FORCE || level == LogLevel::FORCE_PLAIN) {
         static std::string levelStrings[] = {
-            "ERROR", "WARNING", "INFO", "DEBUG"
+            "[ERROR]:   ",
+            "[WARNING]: ",
+            "[INFO]:    ",
+            "[DEBUG]:   ",
+            "[LOG]:     ",
+            ""
         };
         std::stringstream stream;
         concatArgs(stream, std::forward<Args>(args)...);
@@ -124,15 +130,17 @@ void Log::log(LogLevel level, Args&&... args) {
         case DEBUG:
             log_message += "\033[34m"; // blue
             break;
-        case NONE:
+        case FORCE:
+            break;
+        case FORCE_PLAIN:
             break;
         default:
-            log(WARNING, "invalid usage of log function with log level ", level, ", must be <=", LogLevel::NONE);
+            log(WARNING, "invalid usage of log function with log level ", level, ", must be <=", LogLevel::FORCE);
             break;
         }
 
         // append message
-        log_message += "[" + levelStrings[level] + "]: " + stream.str();
+        log_message += levelStrings[level] + stream.str();
 
         // set color back to default + add newline escape character
         log_message += "\033[0m";
@@ -142,6 +150,11 @@ void Log::log(LogLevel level, Args&&... args) {
             if (file_stream.good()) {
                 file_stream << log_message << std::endl;
                 file_stream.close();
+            }
+            else {
+#               ifndef _RELEASE
+                    std::cout << "unable to open log file" << std::endl;
+#               endif
             }
         }
 

@@ -2,43 +2,29 @@
 // f(x) = exp(x)/pow(exp(x)+1,2)
 
 #version 450
+#define WORKGROUP_SIZE 256
 
-// setup source data buffer
+// setup buffers
 layout(set = 0, binding = 0) buffer DataBuffer {
     float data[];
 };
-        
-// setup result data buffer
 layout(set = 0, binding = 1) buffer ResultBuffer {
     float result[];
 };
 
-// setup push constants layout (according to shader_exec OVERLOAD_2)
+// setup push constants layout
 layout(push_constant) uniform PushConstants {
-    uint data_rows;
-    uint data_cols;
-    uint data_depth;
-
-    uint result_rows;
-    uint result_cols;
-    uint result_depth;
-
-    float constant1;        // not used for this shader
-    float constant2;        // not used for this shader
-    float constant3;        // not used for this shader
+    uint data_elements;
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
-
-// setup global variables
-uint result_elements = result_rows * result_cols * result_depth;
+layout(local_size_x = WORKGROUP_SIZE) in;
 
 // main function
 void main() {
-    uint result_flat_index = gl_GlobalInvocationID.x;
-    float exp_x = exp(data[result_flat_index]);
-    if (result_flat_index < result_elements) {
-        result[result_flat_index] = exp_x / pow(exp_x + 1, 2);
+    uint x = gl_GlobalInvocationID.x;
+    if (x < data_elements) {
+        float exp_x = exp(data[x]);
+        result[x] = exp_x / ((exp_x + 1) * (exp_x + 1));
     }
 }

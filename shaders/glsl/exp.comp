@@ -1,6 +1,7 @@
 // this Vulkan/GLSL compute shader performs elementwise execution of the exp(x) function
 
 #version 450
+#define WORKGROUP_SIZE 256
 
 // setup source data buffer
 layout(set = 0, binding = 0) buffer DataBuffer {
@@ -9,34 +10,21 @@ layout(set = 0, binding = 0) buffer DataBuffer {
         
 // setup result data buffer
 layout(set = 0, binding = 1) buffer ResultBuffer {
-    float result[]; // result[0] is initialized to 0
+    float result[];
 };
 
-// setup push constants layout (according to shader_exec OVERLOAD_2)
+// setup push constants layout
 layout(push_constant) uniform PushConstants {
-    uint data_rows;
-    uint data_cols;
-    uint data_depth;
-
-    uint result_rows;
-    uint result_cols;
-    uint result_depth;
-
-    float constant1;        // not used for this shader
-    float constant2;        // not used for this shader
-    float constant3;        // not used for this shader
+    uint data_elements;
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
-
-// setup global variables
-uint data_elements = data_rows * data_cols * data_depth;
+layout(local_size_x = WORKGROUP_SIZE) in;
 
 // main function
 void main() {
-    uint data_flat_index = gl_GlobalInvocationID.x;
-    if (data_flat_index < data_elements) {
-        result[data_flat_index] = exp(data[data_flat_index]);
+    uint x = gl_GlobalInvocationID.x;
+    if (x < data_elements) {
+        result[x] = exp(data[x]);
     }
 }

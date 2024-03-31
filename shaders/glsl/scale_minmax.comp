@@ -2,42 +2,92 @@
 // to the range as specified via push constants
 
 #version 450
+#define WORKGROUP_SIZE 256
 
-// setup source data buffer
+// setup buffers
 layout(set = 0, binding = 0) buffer DataBuffer {
-    float data[];
+	float data[];
 };
-        
-// setup result data buffer
 layout(set = 0, binding = 1) buffer ResultBuffer {
-    float result[];
+	float result[];
+};
+layout(set = 0, binding = 2) buffer SignalBuffer {
+	uint signal[];
 };
 
-// setup push constants layout (according to shader_exec OVERLOAD_2)
+// setup push constants layout
 layout(push_constant) uniform PushConstants {
-    uint data_rows;
-    uint data_cols;
-    uint data_depth;
-
-    uint result_rows;
-    uint result_cols;
-    uint result_depth;
-
-    float range_from;
-    float data_min;
-    float scale_factor;
+	uint data_elements;
+	float range_from;
+	float range_to;
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
+layout(local_size_x = WORKGROUP_SIZE) in;
 
-// setup global variables
-uint result_elements = result_rows * result_cols * result_depth;
+// global variables
+float range = range_to - range_from;
 
 // main function
 void main() {
-    uint result_flat_index = gl_GlobalInvocationID.x;
-    if (result_flat_index < result_elements) {
-        result[result_flat_index] = (data[result_flat_index] - data_min) * scale_factor + range_from;
-    }
+	uint x = gl_GlobalInvocationID.x;
+	uint workgroup_ID = x / WORKGROUP_SIZE;
+	uint workgroups = data_elements / WORKGROUP_SIZE + 1;
+	float minimum;
+	float maximum;
+	if (gl_LocalInvocationID.x == 0) {
+		signal[workgroup_ID] = 0;
+	}
+	
+	if (x < data_elements) {
+
+		// get local minimum within workgroup via parallel reduction
+		result[x] = data[x];
+		barrier();
+		for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+			if (x % (2*i) == 0 && x+i < data_elements) {
+				result[x] = min(result[x], result[x+i]);
+			}
+			barrier();
+		}
+		signal[workgroup_ID] = 1;
+
+		// get global minimum across workgroups
+		minimum = result[0];
+		for (uint i = 1; i < workgroups; i++) {
+			uint loop_count = 0;
+			while (signal[i] != 1 && loop_count < 10000) {
+				memoryBarrier();
+				loop_count++;
+			}
+			minimum = min(minimum, result[i*WORKGROUP_SIZE]);
+		}
+		barrier();
+
+		// get local maximum within workgroup via parallel reduction
+		result[x] = data[x];
+		barrier();
+		for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+			if (x % (2*i) == 0 && x+i < data_elements) {
+				result[x] = max(result[x], result[x+i]);
+			}
+			barrier();
+		}
+		signal[workgroup_ID] = 2;
+
+		// get global maximum across workgroups
+		maximum = result[0];
+		for (uint i = 1; i < workgroups; i++) {
+			uint loop_count = 0;
+			while (signal[i] != 2 && loop_count < 10000) {
+				memoryBarrier();
+				loop_count++;
+			}
+			maximum = max(maximum, result[i*WORKGROUP_SIZE]);
+		}
+		barrier();
+
+		// finish scaling
+		result[x] = ((data[x] - minimum) / (maximum - minimum)) * range + range_from;
+	}
 }

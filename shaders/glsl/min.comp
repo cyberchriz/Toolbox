@@ -4,7 +4,7 @@
 // the final result gets stored in result[0]
 
 #version 450
-#define WORKGROUP_SIZE 128
+#define WORKGROUP_SIZE 256
 
 // setup source data buffer
 layout(set = 0, binding = 0) buffer DataBuffer {
@@ -17,8 +17,8 @@ layout(set = 0, binding = 1) buffer ResultBuffer {
 };
 
 // setup finished workgroups buffer
-layout(set = 0, binding = 2) buffer FinishedBuffer {
-    uint finished[];
+layout(set = 0, binding = 2) buffer SignalBuffer {
+    uint signal[];
 };
 
 // setup push constants layout
@@ -29,10 +29,16 @@ layout(push_constant) uniform PushConstants {
 // setup local size according to workgroup size
 layout(local_size_x = WORKGROUP_SIZE) in;
 
+// global variables
+uint workgroups = uint(ceil(float(data_elements) / WORKGROUP_SIZE));
+
 // main function
 void main() {
     uint x = gl_GlobalInvocationID.x;
-    uint workgroups = uint(ceil(float(data_elements) / WORKGROUP_SIZE));
+    uint workgroup_ID = x / WORKGROUP_SIZE;
+	uint workgroups = data_elements / WORKGROUP_SIZE + 1;
+	signal[workgroup_ID] = 0;
+    
     if (x < data_elements) {
         // copy elements from data to result
         result[x] = data[x];
@@ -46,16 +52,18 @@ void main() {
             barrier();
         }
         if (gl_LocalInvocationID.x == 0) {
-            atomicAdd(finished[0], 1);
+            signal[workgroup_ID] = 1;
         }
 
         // find minimum across workgroups
         if (x == 0) {
-            while (finished[0] < workgroups - 1) {
-                // wait for all workgroups to finish
-            }
             float minimum = result[0];
             for (uint i = 0; i < workgroups; i++) {
+                uint loop_count = 0;
+                while (signal[i] != 1 && loop_count < 10000) {
+				    memoryBarrier();
+				    loop_count++;
+			    }
                 minimum = min(minimum, result[i * WORKGROUP_SIZE]);
             }
             result[0] = minimum;

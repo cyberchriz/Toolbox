@@ -1,49 +1,112 @@
 // this Vulkan/GLSL compute shader assigns any outliers beyond the given z-score to the specified value;
-// (Rectified Linear Unit)
 
 #version 450
+#define WORKGROUP_SIZE 256
 
-// setup source data buffer
+// setup buffers
 layout(set = 0, binding = 0) buffer DataBuffer {
-    float data[];
+	float data[];
 };
-        
-// setup result data buffer
 layout(set = 0, binding = 1) buffer ResultBuffer {
-    float result[];
+	float result[];
+};
+layout(set = 0, binding = 2) buffer SignalBuffer {
+	uint signal[];
 };
 
-// setup push constants layout (according to shader_exec OVERLOAD_2)
+// setup push constants layout
 layout(push_constant) uniform PushConstants {
-    uint data_rows;
-    uint data_cols;
-    uint data_depth;
-
-    uint result_rows;
-    uint result_cols;
-    uint result_depth;
-
-    float lower_margin;
-    float upper_margin;
-    float value;
+	uint data_elements;
+	float z_score;
+	float replacing_value;
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
-
-// setup global variables
-uint result_elements = result_rows * result_cols * result_depth;
+layout(local_size_x = WORKGROUP_SIZE) in;
 
 // main function
 void main() {
-    uint result_flat_index = gl_GlobalInvocationID.x;
-    if (result_flat_index < result_elements) {
-        float x = data[result_flat_index];
-        if (x > upper_margin || x < lower_margin) {
-            result[result_flat_index] = value;
-        }
-        else {
-            result[result_flat_index] = data[result_flat_index];
-        }
-    }
+	uint x = gl_GlobalInvocationID.x;
+	uint workgroup_ID = x / WORKGROUP_SIZE;
+	uint workgroups = data_elements / WORKGROUP_SIZE + 1;
+	float sum;
+	float mean;
+	float variance;
+	float sigma;
+	float lower_margin;
+	float upper_margin;
+
+	if (gl_LocalInvocationID.x == 0) {
+		signal[workgroup_ID] = 0;
+	}
+	
+	if (x < data_elements) {
+
+		// get local sum within workgroup via parallel reduction
+		result[x] = data[x];
+		barrier();
+		for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+			if (x % (2*i) == 0 && x+i < data_elements) {
+				result[x] += result[x+i];
+			}
+			barrier();
+		}
+		signal[workgroup_ID] = 1;
+
+		// get global sum across workgroups
+		sum = result[0];
+		for (uint i = 1; i < workgroups; i++) {
+			uint loop_count = 0;
+			while (signal[i] != 1 && loop_count < 10000) {
+				memoryBarrier();
+				loop_count++;
+			}
+			sum += result[i*WORKGROUP_SIZE];
+		}
+		barrier();
+
+		// get mean
+		mean = sum / data_elements;
+
+		// get local sum of squared mean deviations within workgroup via parallel reduction
+		float mdev = data[x] - mean;
+		result[x] = mdev * mdev;
+		barrier();
+		for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
+			if (x % (2*i) == 0 && x+i < data_elements) {
+				result[x] += result[x+i];
+			}
+			barrier();
+		}
+		signal[workgroup_ID] = 2;
+
+		// get global sum of squared mean deviations across workgroups
+		sum = result[0];
+		for (uint i = 1; i < workgroups; i++) {
+			uint loop_count = 0;
+			while (signal[i] != 2 && loop_count < 10000) {
+				memoryBarrier();
+				loop_count++;
+			}
+			sum += result[i*WORKGROUP_SIZE];
+		}
+		barrier();
+
+		// get variance and standard deviation
+		variance = sum / data_elements;
+		sigma = sqrt(variance);
+
+		// get margins
+		lower_margin = mean - z_score * sigma;
+		upper_margin = mean + z_score * sigma;
+
+		// reassign outliers
+		float value = data[x];
+		if (value > upper_margin || value < lower_margin) {
+			result[x] = replacing_value;
+		}
+		else {
+			result[x] = value;
+		}
+	}
 }

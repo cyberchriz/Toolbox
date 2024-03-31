@@ -16,8 +16,8 @@ in order to query the elapsed time (µs) since timer start */
 #include <chrono>
 #include <string>
 
-#define TIMER Timer timer(__FUNCTION__);
-#define TIMER_START Timer timer(__FUNCTION__);
+#define TIMER_NEW Timer timer(__FUNCTION__);
+#define TIMER_START timer.start();
 #define ELAPSED timer.elapsed_microsec()
 #define TIMER_STOP timer.stop();
 
@@ -26,40 +26,45 @@ class Timer {
 public:
     double elapsed_microsec(){
         end = std::chrono::high_resolution_clock::now();
-        return (std::chrono::duration_cast<std::chrono::duration<double>>(end - start)).count() / 1000;
+        return (std::chrono::duration_cast<std::chrono::duration<double>>(end - begin)).count() / 1000;
     }           
 
     // constructor
     Timer(std::string caller_function="") : caller_function(caller_function) {
-        start = std::chrono::high_resolution_clock::now();
+        begin = std::chrono::high_resolution_clock::now();
         if (caller_function == "") {
-            Log::log(INFO, "timer started");
+            Log::log(FORCE, "timer started");
         }
         else {
-            Log::log(INFO, "timer started in scope ", caller_function);
+            Log::log(FORCE, "timer started in scope ", caller_function);
         }
     }
+
+    void start() {
+        begin = std::chrono::high_resolution_clock::now();
+    }
+
     void stop() {
         if (caller_function == "") {
-            Log::log(INFO, "timer stopped after ", elapsed_microsec(), " microsec");
+            Log::log(FORCE, "timer stopped after ", elapsed_microsec(), " microsec");
         }
         else {
-            Log::log(INFO, "timer in function ", caller_function, " stopped after ", elapsed_microsec(), " microsec");
+            Log::log(FORCE, "timer in scope ", caller_function, " stopped after ", elapsed_microsec(), " microsec");
         }
         stopped = true;
-        start = std::chrono::high_resolution_clock::now();
+        begin = std::chrono::high_resolution_clock::now();
     }
 
     // destructor
     ~Timer() {
         if (!stopped) {
-            Log::log(INFO, "end of timer in scope ", caller_function, ": ", elapsed_microsec(), " microsec");
+            Log::log(FORCE, "end of timer in scope ", caller_function, ": ", elapsed_microsec(), " microsec");
             stopped = true;
-            start = std::chrono::high_resolution_clock::now();
+            begin = std::chrono::high_resolution_clock::now();
         }
     }
 private:
-    std::chrono::high_resolution_clock::time_point start, end;
+    std::chrono::high_resolution_clock::time_point begin, end;
     bool stopped = false;
     std::string caller_function = "";
 };

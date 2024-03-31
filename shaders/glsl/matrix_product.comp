@@ -2,6 +2,7 @@
 // of 'this' and 'other' and stores it in a new result matrix
 
 #version 450
+#define WORKGROUP_SIZE 256
 
 // setup source data buffer
 layout(set = 0, binding = 0) buffer DataBuffer {
@@ -31,19 +32,16 @@ layout(push_constant) uniform PushConstants {
     uint result_rows;
     uint result_cols;
     uint result_depth;
-
-    float constant1;        // not used for this shader
-    float constant2;        // not used for this shader
-    float constant3;        // not used for this shader
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
+layout(local_size_x = WORKGROUP_SIZE) in;
 
 // setup global variables
 uint data_elements = data_rows * data_cols * data_depth;
 uint other_elements = other_rows * other_cols * other_depth;
 uint result_elements = result_rows * result_cols * result_depth;
+
 uint data_subspace_x = data_depth * data_cols;
 uint other_subspace_x = other_depth * other_cols;
 uint result_subspace_x =  result_depth * result_cols;

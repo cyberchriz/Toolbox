@@ -52,20 +52,24 @@ float random(uint seed) {
   return float(state[3] & 0xffffffff) / 4294967295.0;
 }
 
-float randomGaussian(uint seed) {
-    // Generate two uniformly distributed random variables
-    float u1 = random(seed);
-    float u2 = random(seed + 1);
+// Marsaglia polar method
+float randomGaussian(uint seed, float mu, float sigma) {
+    float v1, v2, s;
+    do {
+        v1 = 2.0f * random(seed) - 1.0f;
+        v2 = 2.0f * random(seed+12345)  - 1.0f;
+        s = v1 * v1 + v2 * v2;
+    } while (s >= 1.0f || s == 0);
 
-    // Apply the Box-Muller transform to get two standard normal random variables
-    float r = sqrt(-2.0f * log(u1)) * cos(2.0f * M_PI * u2);
-    return r * sigma + mu;
+    s = sqrt((-2.0f * log(s)) / s);
+ 
+    return v1 * s * sigma + mu;
 }
 
 // main function
 void main() {
     uint x = gl_GlobalInvocationID.x;
     if (x < data_elements) {
-        data[x] = randomGaussian(seed + x) * factor;
+        data[x] = randomGaussian(seed + x, 0, 1) * factor;
     }
 }

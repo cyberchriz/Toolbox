@@ -1,5 +1,5 @@
-// this Vulkan/GLSL compute shader counts any occurrence of the specified value
-// and stores the result in an integer buffer with a single element
+// this Vulkan/GLSL compute shader calculates the product reduction of the
+// data buffer, i.e. the result of multiplication of all individual elements
 
 #version 450
 #define WORKGROUP_SIZE 256
@@ -18,14 +18,10 @@ layout(set = 0, binding = 2) buffer SignalBuffer {
 // setup push constants layout
 layout(push_constant) uniform PushConstants {
 	uint data_elements;
-	float value;
 };
 
 // setup local size according to workgroup size
 layout(local_size_x = WORKGROUP_SIZE) in;
-
-// global variables
-float epsilon = 0.0000001;
 
 // main function
 void main() {
@@ -38,20 +34,18 @@ void main() {
 	
 	if (x < data_elements) {
 
-		// check for match
-		result[x] = abs(data[x] - value) <= epsilon ? 1 : 0;
-
-		// add up partial results within workgroup via parallel reduction
+		// calculate partial product within workgroup via parallel reduction
+		result[x] = data[x];
 		barrier();
 		for (uint i = 1; i < WORKGROUP_SIZE; i*=2) {
 			if (x % (2*i) == 0 && x+i < data_elements) {
-				result[x] += result[x+i];
+				result[x] *= result[x+i];
 			}
 			barrier();
 		}
 		signal[workgroup_ID] = 1;
 
-		// for final result: add partial results across workgroups
+		// for final result: multiply partial products across workgroups
 		if (x == 0) {
 			for (uint i = 1; i < workgroups; i++) {
 				uint loop_count = 0;
@@ -59,7 +53,7 @@ void main() {
 					memoryBarrier();
 					loop_count++;
 				}
-				result[0] += result[i*WORKGROUP_SIZE];
+				result[0] *= result[i*WORKGROUP_SIZE];
 			}
 		}
 	}

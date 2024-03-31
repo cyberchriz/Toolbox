@@ -51,12 +51,18 @@ float random(uint seed) {
   return float(state[3] & 0xffffffff) / 4294967295.0;
 }
 
+// Marsaglia polar method
 float randomGaussian(uint seed, float mu, float sigma) {
-    float M_PI = 3.141592653589793;
-    float r = random(seed);
-    r /= sqrt(2 * M_PI * pow(sigma, 2));
-    float signum = random(seed+1) < 0.5 ? -1 : 1;
-    return (mu + sigma * sqrt(-2 * log(r * sqrt(2 * M_PI * pow(sigma, 2))))) * signum;
+    float v1, v2, s;
+    do {
+        v1 = 2.0f * random(seed) - 1.0f;
+        v2 = 2.0f * random(seed+12345)  - 1.0f;
+        s = v1 * v1 + v2 * v2;
+    } while (s >= 1.0f || s == 0);
+
+    s = sqrt((-2.0f * log(s)) / s);
+ 
+    return v1 * s * sigma + mu;
 }
 
 // main function

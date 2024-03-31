@@ -3,6 +3,7 @@
 // element of 'other' (of equal multidimensional index)
 
 #version 450
+#define WORKGROUP_SIZE 256
 
 // setup source data buffer
 layout(set = 0, binding = 0) buffer DataBuffer {
@@ -19,7 +20,7 @@ layout(set = 0, binding = 2) buffer ResultBuffer {
     float result[];
 };
 
-// setup push constants layout (according to shader_exec OVERLOAD_3)
+// setup push constants layout
 layout(push_constant) uniform PushConstants {
     uint data_rows;
     uint data_cols;
@@ -32,50 +33,42 @@ layout(push_constant) uniform PushConstants {
     uint result_rows;
     uint result_cols;
     uint result_depth;
-
-    float constant1;        // not used for this shader
-    float constant2;        // not used for this shader
-    float constant3;        // not used for this shader
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
+layout(local_size_x = WORKGROUP_SIZE) in;
 
 // setup global variables
 uint data_elements = data_rows * data_cols * data_depth;
 uint other_elements = other_rows * other_cols * other_depth;
 uint result_elements = result_rows * result_cols * result_depth;
-uint result_subspace_x = result_cols * result_depth;
+
 uint data_subspace_x = data_cols * data_depth;
 uint other_subspace_x = other_cols * other_depth;
-bool equal_size = data_rows == other_rows && data_cols == other_cols && data_depth == other_depth;
-float epsilon = 0.0000001;
+uint result_subspace_x = result_cols * result_depth;
+
 float nan = 0.0 / 0.0;
 
 // main function
 void main() {
-    uint result_flat_index = gl_GlobalInvocationID.x;
-    if (result_flat_index < result_elements) {
-        if (equal_size) {
-            result[result_flat_index] = data[result_flat_index] <= other[result_flat_index] + epsilon ? 1 : 0;
-        }
-        else {
-            uint result_3dx = uint(result_flat_index/result_subspace_x);
-            uint result_3dy = uint((result_flat_index % result_subspace_x) / result_depth);
-            uint result_3dz = uint((result_flat_index % result_subspace_x) % result_depth);
-            uint data_flat_index = result_3dx * data_subspace_x + result_3dy * data_depth + result_3dz;
-            if (data_flat_index < data_elements) {
-                uint other_flat_index = result_3dx * other_subspace_x + result_3dy * other_depth + result_3dz;
-                if (other_flat_index < other_elements) {
-                    result[result_flat_index] = data[data_flat_index] <= other[other_flat_index] + epsilon ? 1 : 0;
-                }
-                else {
-                    result[result_flat_index] = nan;
-                }
+    uint x = gl_GlobalInvocationID.x;
+    uint data_3dx = uint(x / data_subspace_x);
+    uint data_3dy = uint((x % data_subspace_x) / data_depth);
+    uint data_3dz = uint((x % data_subspace_x) % data_depth);
+    uint other_x = data_3dx * other_subspace_x + data_3dy * other_depth + data_3dz;
+    uint result_x = data_3dx * result_subspace_x + data_3dy * result_depth + data_3dz;
+
+    if (result_x < result_elements) {
+        if (x < data_elements) {
+            if (other_x < other_elements) {
+                result[result_x] = data[x] <= other[other_x] ? 1 : 0;
             }
             else {
-                result[result_flat_index] = nan;
+                result[result_x] = nan;
             }
+        }
+        else {
+            result[result_x] = nan;
         }
     }
 }

@@ -23,6 +23,10 @@
 #include <vulkan_core.h>
 #include <timelog.h>
 
+// forward declarations
+class VkVec;
+typedef VkVec vec;
+
 // default constants (change if needed)
 constexpr uint32_t DEFAULT_DEVICE_ID = 0;
 constexpr char* APPLICATION_NAME = "VkVec";
@@ -377,9 +381,6 @@ protected:
     void shader_exec(ShaderModule& shader, int32_t& result, const VkVec& other, const float& constant1 = 0, const float& constant2 = 0, const float& constant3 = 0) const;
     void shader_exec(ShaderModule& shader, VkVec& result, const VkVec& other1, const VkVec& other2, const float& constant1 = 0, const float& constant2 = 0, const float& constant3 = 0) const;
 };
-
-
-
 
 
 
@@ -1020,87 +1021,105 @@ void VkVec::fill_He_ELU(uint32_t fan_in) {
 // returns the lowest value of the VkVec,
 // across all dimensions
 float_t VkVec::min() const {
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("min.spv"); }
+    
     Buffer<float> result(manager->get_device(), STORAGE, this->elements);
-    Buffer<uint32_t> finished_workgroups(manager->get_device(), STORAGE, 1);
-    finished_workgroups.set(0, 0);
+    Buffer<uint32_t> signal(manager->get_device(), STORAGE, workgroups);
+    
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
         STORAGE_BUFFER,
         STORAGE_BUFFER
     };
-    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types);
     descriptor_set.bind_buffer(*this->data_buffer, 0);
     descriptor_set.bind_buffer(result, 1);
-    descriptor_set.bind_buffer(finished_workgroups, 2);
+    descriptor_set.bind_buffer(signal, 2);
 
     PushConstants push_constants;
     push_constants.add_value(this->elements);
 
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
-    TIMER;
-    command_buffer->compute(pipeline, this->elements, 1, 1, 128); TIMER_STOP;
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+    
     pipeline.destroy();
     descriptor_set.free();
+    
     return result.get(0);
 }
 
 // returns the highest value of the VkVec,
 // across all dimensions
 float_t VkVec::max() const {
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("max.spv"); }
-    Buffer<float> result(manager->get_device(), BufferUsage::STORAGE, this->elements);
-    Buffer<uint32_t> finished_workgroups(manager->get_device(), STORAGE, 1);
-    finished_workgroups.set(0, 0);
+
+    Buffer<float> result(manager->get_device(), STORAGE, this->elements);
+    Buffer<uint32_t> signal(manager->get_device(), STORAGE, workgroups);
+
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
         STORAGE_BUFFER,
         STORAGE_BUFFER
     };
-    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types);
     descriptor_set.bind_buffer(*this->data_buffer, 0);
     descriptor_set.bind_buffer(result, 1);
-    descriptor_set.bind_buffer(finished_workgroups, 2);
+    descriptor_set.bind_buffer(signal, 2);
 
     PushConstants push_constants;
     push_constants.add_value(this->elements);
 
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
-    command_buffer->compute(pipeline, this->elements, 1, 1, 128);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
 
     pipeline.destroy();
     descriptor_set.free();
+
     return result.get(0);
 }
 
 // returns the value of the VkVec with the highest
 // deviation from zero, across all dimensions
 float_t VkVec::maxabs() const {
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("maxabs.spv"); }
-    Buffer<float> result(manager->get_device(), BufferUsage::STORAGE, this->elements);
-    Buffer<uint32_t> finished_workgroups(manager->get_device(), STORAGE, 1);
-    finished_workgroups.set(0, 0);
+
+    Buffer<float> result(manager->get_device(), STORAGE, this->elements);
+    Buffer<uint32_t> signal(manager->get_device(), STORAGE, workgroups);
+
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
         STORAGE_BUFFER,
         STORAGE_BUFFER
     };
-    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types);
     descriptor_set.bind_buffer(*this->data_buffer, 0);
     descriptor_set.bind_buffer(result, 1);
-    descriptor_set.bind_buffer(finished_workgroups, 2);
+    descriptor_set.bind_buffer(signal, 2);
 
     PushConstants push_constants;
     push_constants.add_value(this->elements);
 
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
-    command_buffer->compute(pipeline, this->elements, 1, 1, 128);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
 
     pipeline.destroy();
     descriptor_set.free();
+
     return result.get(0);
 }
 
@@ -1132,31 +1151,43 @@ float_t VkVec::median() const {
 // returns the variance of all values of a vector, matrix or array
 // as a floating point number
 float_t VkVec::variance() const {
+    // std::cout << "expected variance result: " << (this->operator-((this->operator/(elements)).sum())).pow().operator/(elements - 1).sum() << std::endl;
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+    
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("variance.spv"); }
 
-    Buffer<float> result(manager->get_device(), BufferUsage::STORAGE, this->elements);
-    Buffer<uint32_t> finished_workgroups(manager->get_device(), STORAGE, 2);
-    finished_workgroups.set(0, 0);
-    finished_workgroups.set(0, 1);
+    Buffer<float> partial_sum(manager->get_device(), BufferUsage::STORAGE, this->elements);
+    Buffer<float> mdev2(manager->get_device(), BufferUsage::STORAGE, this->elements);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
+    Buffer<float> result(manager->get_device(), BufferUsage::STORAGE, 1);
+    
     static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
         STORAGE_BUFFER,
         STORAGE_BUFFER,
         STORAGE_BUFFER
     };
+    
     DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
     descriptor_set.bind_buffer(*this->data_buffer, 0);
     descriptor_set.bind_buffer(result, 1);
-    descriptor_set.bind_buffer(finished_workgroups, 2);
+    descriptor_set.bind_buffer(partial_sum, 2);
+    descriptor_set.bind_buffer(mdev2, 3);
+    descriptor_set.bind_buffer(signal, 4);
 
     PushConstants push_constants;
     push_constants.add_value(this->elements);
 
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
-    command_buffer->compute(pipeline, this->elements, 1, 1, 128);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
 
     pipeline.destroy();
     descriptor_set.free();
+    
     return result.get(0);
 }
 
@@ -1168,17 +1199,25 @@ float_t VkVec::stddev() const {
 // returns the skewness of all data of the VkVec
 // across all dimensions
 float_t VkVec::skewness() const {
+    // TODO: check this code and its shader again; result isn't correct
+    VkVec mdev = this->operator-(this->mean());
+    //std::cout << "expected result = " << mdev.pow(2).sum()/elements / std::pow(mdev.pow(3).sum()/elements, 1.5) << std:: endl;
+
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("skewness.spv"); }
 
+    Buffer<float> partial_sum(manager->get_device(), BufferUsage::STORAGE, this->elements);
     Buffer<float> mdev2(manager->get_device(), BufferUsage::STORAGE, this->elements);
     Buffer<float> mdev3(manager->get_device(), BufferUsage::STORAGE, this->elements);
     Buffer<float> result(manager->get_device(), BufferUsage::STORAGE, 1);
-    Buffer<uint32_t> finished_workgroups(manager->get_device(), STORAGE, 3);
-    finished_workgroups.set(0, 0);
-    finished_workgroups.set(0, 1);
-    finished_workgroups.set(0, 2);
+    Buffer<uint32_t> signal(manager->get_device(), STORAGE, workgroups);
+    
     static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
         STORAGE_BUFFER,
         STORAGE_BUFFER,
         STORAGE_BUFFER,
@@ -1187,32 +1226,42 @@ float_t VkVec::skewness() const {
     };
     DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
     descriptor_set.bind_buffer(*this->data_buffer, 0);
-    descriptor_set.bind_buffer(mdev2, 1);
-    descriptor_set.bind_buffer(mdev3, 2);
-    descriptor_set.bind_buffer(result, 3);
-    descriptor_set.bind_buffer(finished_workgroups, 4);
+    descriptor_set.bind_buffer(partial_sum, 1);
+    descriptor_set.bind_buffer(mdev2, 2);
+    descriptor_set.bind_buffer(mdev3, 3);
+    descriptor_set.bind_buffer(result, 4);
+    descriptor_set.bind_buffer(signal, 5);
 
     PushConstants push_constants;
     push_constants.add_value(this->elements);
 
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
-    command_buffer->compute(pipeline, this->elements, 1, 1, 128);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
 
     pipeline.destroy();
     descriptor_set.free();
+
     return result.get(0);
 }
 
 // returns the kurtosis of all data of the VkVec
 // across all dimensions
 float_t VkVec::kurtosis() const {
+    // TODO: check this code and its shader again; result isn't correct
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("kurtosis.spv"); }
 
+    Buffer<float> partial_sum(manager->get_device(), BufferUsage::STORAGE, workgroups);
     Buffer<float> mdev2(manager->get_device(), BufferUsage::STORAGE, this->elements);
     Buffer<float> mdev4(manager->get_device(), BufferUsage::STORAGE, this->elements);
     Buffer<float> result(manager->get_device(), BufferUsage::STORAGE, 1);
+    Buffer<uint32_t> signal(manager->get_device(), STORAGE, workgroups);
+    
     static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
         STORAGE_BUFFER,
         STORAGE_BUFFER,
         STORAGE_BUFFER,
@@ -1220,15 +1269,17 @@ float_t VkVec::kurtosis() const {
     };
     DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
     descriptor_set.bind_buffer(*this->data_buffer, 0);
-    descriptor_set.bind_buffer(mdev2, 1);
-    descriptor_set.bind_buffer(mdev4, 2);
-    descriptor_set.bind_buffer(result, 3);
+    descriptor_set.bind_buffer(partial_sum, 1);
+    descriptor_set.bind_buffer(mdev2, 2);
+    descriptor_set.bind_buffer(mdev4, 3);
+    descriptor_set.bind_buffer(result, 4);
+    descriptor_set.bind_buffer(signal, 5);
 
     PushConstants push_constants;
     push_constants.add_value(this->elements);
 
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
-    command_buffer->compute(pipeline, this->elements, 1, 1, 32);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
 
     pipeline.destroy();
     descriptor_set.free();
@@ -1242,10 +1293,12 @@ float_t VkVec::kurtosis() const {
 
 // returns the sum of all array elements;
 float_t VkVec::sum() const {
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sum.spv"); }
-    Buffer<uint32_t> finished_workgroups(manager->get_device(), BufferUsage::STORAGE, 1);
-    finished_workgroups.set(0, 0);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
     Buffer<float> result(manager->get_device(), BufferUsage::STORAGE, this->elements);
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -1255,13 +1308,13 @@ float_t VkVec::sum() const {
     DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
     descriptor_set.bind_buffer(*this->data_buffer, 0);
     descriptor_set.bind_buffer(result, 1);
-    descriptor_set.bind_buffer(finished_workgroups, 2);
+    descriptor_set.bind_buffer(signal, 2);
 
     PushConstants push_constants;
     push_constants.add_value(this->elements);
 
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
-    command_buffer->compute(pipeline, this->elements, 1, 1, 32);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
 
     pipeline.destroy();
     descriptor_set.free();
@@ -1270,19 +1323,63 @@ float_t VkVec::sum() const {
 
 // elementwise addition of the specified value to all values of the array
 VkVec VkVec::operator+(const float_t value) const {
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+    
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_plus_value.spv"); }
-    VkVec result(this->rows, this->cols, this->depth);
-    shader_exec(shader, result, value); // OVERLOAD_2
+    
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+    
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // returns the resulting array of the elementwise addition of two arrays
 VkVec VkVec::operator+(const VkVec& other) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+    
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_plus_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+    
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+    
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({this->rows, this->cols, this->depth});
+    push_constants.add_values({other.rows, other.cols, other.depth});
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -1333,10 +1430,33 @@ VkVec VkVec::operator-(const float_t value) const {
 // returns the resulting array of the elementwise substraction of
 // two array of equal dimensions
 VkVec VkVec::operator-(const VkVec& other) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_minus_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.rows, other.cols, other.depth });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -1379,20 +1499,64 @@ void VkVec::operator-=(const VkVec& other) {
 // returns the product reduction, i.e. the result
 // of multiplication all individual elements of the array
 float_t VkVec::product() const {
-    auto as_stdvec = this->data_buffer->read();
-    float product = as_stdvec[0];
-    for (uint32_t i = 1; i < elements; i++) {
-        product *= as_stdvec[i];
-    }
-    return product;
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
+    static ShaderModule shader(manager->get_device());
+    if (!shader.get()) { shader.read_from_file("product.spv"); }
+
+    Buffer<float> result(manager->get_device(), BufferUsage::STORAGE, this->elements);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(result, 1);
+    descriptor_set.bind_buffer(signal, 2);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+    return result.get(0);
 }
 
 // elementwise multiplication with a scalar
 VkVec VkVec::operator*(const float_t factor) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_multiply_factor.spv"); }
+
     VkVec result(this->rows, this->cols, this->depth);
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -1406,7 +1570,7 @@ VkVec VkVec::operator*(const VkVec& other) const {
     return this->matrix_product(other);
 }
 
-// Alias for tensordot matrix multiplication;
+// Alias for 2D or 3D matrix multiplication;
 // note: 'this' is getting reassigned and may change its shape as a consequence of this operation
 void VkVec::operator*=(const VkVec& other) {
     *this = this->matrix_product(other);
@@ -1419,16 +1583,41 @@ float_t VkVec::scalar_product(const VkVec& other) const {
 
 // 2D or 3d matrix dotproduct
 VkVec VkVec::matrix_product(const VkVec& other) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, other.get_cols(), this->depth);
+    
     if (other.get_rows() != this->cols || other.get_cols() != this->rows || other.get_depth() != this->depth) {
         Log::log(WARNING, "invalid usage of method VkVec::dotproduct() for matrix dotproduct: 'this' has shape {", this->rows, ",", this->cols, ",",
             this->depth, "}, therefore 'other' must have size {", this->cols, ",", this->rows, ",", this->depth, "} but has ",
             other.get_shapestring(), "; result is undefined");
         return result;
     }
+    
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("matrix_product.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, result.get_elements(), 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -1436,11 +1625,37 @@ VkVec VkVec::matrix_product(const VkVec& other) const {
 // array with the corresponding values of a second array,
 // resulting in the 'Hadamard product';
 // the dimensions of the two arrays must match!
+// if they don't: only the common elements will be part of the result array
 VkVec VkVec::Hadamard_product(const VkVec& other) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("hadamard_product.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+    
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+    
     return result;
 }
 
@@ -1468,10 +1683,35 @@ void VkVec::operator/=(const float_t quotient) {
 // resulting in the 'Hadamard division';
 // the dimensions of the two arrays must match!
 VkVec VkVec::Hadamard_division(const VkVec& other) {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("hadamard_division.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
@@ -1489,16 +1729,39 @@ void VkVec::operator%=(const float_t value) {
 // contains the remainders of the division of the values of
 // the original array by the specified number
 VkVec VkVec::operator%(const float_t value) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     if (value == 0) {
         Log::log(WARNING,
             "invalid usage of method 'VkVec VkVec::operator%(const float_t value) const' ",
             "with value=0 (zero division is undefined) --> 'this' will remain unmodified");
         return *this;
     }
+    
     VkVec result(this->rows, this->cols, this->depth);
+    
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_modulo_value.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
@@ -1509,10 +1772,32 @@ VkVec VkVec::operator%(const float_t value) const {
 // elementwise exponentiation to the power of
 // the specified exponent
 VkVec VkVec::pow(const float_t exponent) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+    
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("pow.spv"); }
-    shader_exec(shader, result, exponent); // OVERLOAD_2
+    
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(exponent);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
@@ -1540,36 +1825,125 @@ void VkVec::operator^=(const float_t exponent) {
 // the corresponding values of the second array;
 // the dimensions of the two array must match!
 VkVec VkVec::pow(const VkVec& other) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("pow_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // converts the individual values of the array
 // elementwise to their square root
 VkVec VkVec::sqrt() const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sqrt.spv"); }
-    shader_exec(shader, result, 0.0f); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 VkVec VkVec::log(float_t base) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("log.spv"); }
-    shader_exec(shader, result, base); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(base);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 VkVec VkVec::exp() const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("exp.spv"); }
-    shader_exec(shader, result, 0.0f); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
@@ -1580,40 +1954,124 @@ VkVec VkVec::exp() const {
 // rounds the values of the array elementwise
 // to their nearest integers
 VkVec VkVec::round() const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("round.spv"); }
-    shader_exec(shader, result, 0.0f); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // rounds the values of the array elementwise
 // to their next lower integers
 VkVec VkVec::floor() const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("floor.spv"); }
-    shader_exec(shader, result, 0.0f); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // returns a copy of the array that stores the values as rounded
 // to their next higher integers
 VkVec VkVec::ceil() const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("ceil.spv"); }
-    shader_exec(shader, result, 0.0f); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // returns a copy of the array that stores the
 // absolute values of the source array
 VkVec VkVec::abs() const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("abs.spv"); }
-    shader_exec(shader, result, 0.0f); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
@@ -1624,40 +2082,134 @@ VkVec VkVec::abs() const {
 // elementwise minimum of the specified value
 // and the data elements of the array
 VkVec VkVec::min(const float_t value) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("min_value.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise maximum of the specified value
 // and the data elements of the array
 VkVec VkVec::max(const float_t value) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("max_value.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // returns the result of elementwise min() comparison
 // of 'this' vs 'other'
 VkVec VkVec::min(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("min_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // returns the result of elementwise max() comparison
 // of 'this' vs 'other'
 VkVec VkVec::max(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("max_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
@@ -1668,120 +2220,384 @@ VkVec VkVec::max(const VkVec& other) const {
 // elementwise application of the cos() function
 VkVec VkVec::cos(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("cos.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the sin() function
 VkVec VkVec::sin(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sin.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the tan function
 VkVec VkVec::tan(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("tan.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the acos() function
 VkVec VkVec::acos(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("acos.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the asin() function
 VkVec VkVec::asin(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("asin.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the atan function
 VkVec VkVec::atan(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("atan.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the hyperbolic cosine function
 VkVec VkVec::cosh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("cosh.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise applicatiohn of the hyperbolic sine function
 VkVec VkVec::sinh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sinh.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the hyperbolic tangent function
 VkVec VkVec::tanh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("tanh.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the hyperbolic arc cosine function
 VkVec VkVec::acosh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("acosh.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the hyperbolic arc sine function
 VkVec VkVec::asinh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("asinh.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // elementwise application of the hyperbolic arc tangent function
 VkVec VkVec::atanh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("atanh.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
@@ -1795,53 +2611,175 @@ VkVec VkVec::atanh(AngularMeasure unit) const {
 // this method will consider any values that no more than
 // epsilon = 0.0000001 from the old value as a match
 VkVec VkVec::replace(const float_t& old_value, const float_t& new_value) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("replace.spv"); }
-    shader_exec(shader, result, old_value, new_value); // OVERLOAD_2
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(old_value);
+    push_constants.add_value(new_value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // replaces all elements of 'this' with the corresponding element of the
 // 'replacing_map' if the corresponding element of the condition map is !=0
 VkVec VkVec::replace_if(const VkVec& condition_map, const VkVec& replacing_map) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("replace_if_other.spv"); }
-    shader_exec(shader, result, condition_map, replacing_map); // OVERLOAD_8
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*condition_map.data_buffer, 1);
+    descriptor_set.bind_buffer(*replacing_map.data_buffer, 2);
+    descriptor_set.bind_buffer(*result.data_buffer, 3);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth} );
+    push_constants.add_values({ condition_map.rows, condition_map.cols, condition_map.depth });
+    push_constants.add_values({ replacing_map.rows, replacing_map.cols, replacing_map.depth });
+    push_constants.add_values({ result.rows, result.cols, result.depth });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // replaces all elements of 'this' with the corresponding element of the
 // 'replacing_map' if the corresponding element of the condition map is !=0
 VkVec VkVec::replace_if(const VkVec& condition_map, const float_t replacing_value) const {
+    static constexpr uint32_t workgroup_size = 256;
+
     VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("replace_if_value.spv"); }
-    shader_exec(shader, result, condition_map, replacing_value); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*condition_map.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ condition_map.rows, condition_map.cols, condition_map.depth });
+    push_constants.add_values({ result.rows, result.cols, result.depth });
+    push_constants.add_value(replacing_value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 // returns the number of occurrences of the specified value;
 // in order to mitigate floating point number rounding imprecisions,
-// this method will consider any values that no more than
+// this method will consider any values that differ by no more than
 // epsilon = 0.0000001 from the old value as a match
 uint32_t VkVec::find(const float_t& value) const {
-    static int32_t result; result = 0;
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("find.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_5
-    return result;
+
+    Buffer<float> result(manager->get_device(), BufferUsage::STORAGE, this->elements);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(result, 1);
+    descriptor_set.bind_buffer(signal, 2);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+    return result.get(0);
 }
 
 // returns a VkVec array of equal dimensions as the source,
 // with -1 for all corresponding negative values and +1 for all corresponding positive values
 // (0 for all zeros)
 VkVec VkVec::sign() const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sign.spv"); }
-    shader_exec(shader, result, 0.0f); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -1851,45 +2789,104 @@ VkVec VkVec::sign() const {
 
 // scale to specified range
 VkVec VkVec::scale_minmax(float_t range_from, float_t range_to) const {
-    float_t data_min = this->min();
-    float_t data_max = this->max();
-    float_t scale_factor = (range_to - range_from) / (data_max - data_min);
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("scale_minmax.spv"); }
-    shader_exec(shader, result, range_from, data_min, scale_factor); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+    descriptor_set.bind_buffer(signal, 2);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(std::min(range_from, range_to));
+    push_constants.add_value(std::max(range_from, range_to));
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // mean normalization scaling, i.e.
 // (x - mean) / (max - min)
 VkVec VkVec::scale_mean() const {
-    float_t data_min = this->min();
-    float_t data_max = this->max();
-    float_t data_mean = this->mean();
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("scale_mean.spv"); }
-    shader_exec(shader, result, data_min, data_max, data_mean); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+    descriptor_set.bind_buffer(signal, 2);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // scaling to zero mean and unit-variance, i.e.
 // (x - mean) / sigma
 VkVec VkVec::scale_standardized() const {
-    static float_t mean, stddev, sum_of_squares;
-    mean = this->mean();
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
+
+    static ShaderModule shader(manager->get_device());
+    if (!shader.get()) { shader.read_from_file("scale_standardized.spv"); }
 
     VkVec result(this->rows, this->cols, this->depth);
-    static ShaderModule shader1(manager->get_device());
-    if (!shader1.get()) { shader1.read_from_file("mdev_squared.spv"); }
-    shader_exec(shader1, result, mean); // OVERLOAD_2
-    sum_of_squares = result.sum();
-    stddev = std::sqrt(sum_of_squares / this->elements);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
 
-    static ShaderModule shader2(manager->get_device());
-    if (!shader2.get()) { shader2.read_from_file("scale_standardized.spv"); }
-    shader_exec(shader2, result, mean, stddev); // OVERLOAD_2
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+    descriptor_set.bind_buffer(signal, 2);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -1972,29 +2969,90 @@ VkVec VkVec::ident_drv() const {
 // sigmoid activation function
 // 1/(1+exp(-x))
 VkVec VkVec::sigmoid() const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sigmoid.spv"); }
-    shader_exec(shader, result, 0.0f); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // sigmoid activation derivative
 // exp(x)/pow(exp(x)+1,2)
 VkVec VkVec::sigmoid_drv() const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
-    if (!shader.get()) { shader.read_from_file("sigmoid_drv.spv"); }
-    shader_exec(shader, result, 0.0f); // OVERLOAD_2
+    if (!shader.get()) { shader.read_from_file("sigmoid.spv"); }
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // ELU activation function
 VkVec VkVec::elu(float_t alpha) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("elu.spv"); }
-    shader_exec(shader, result, alpha); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(alpha);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -2002,10 +3060,31 @@ VkVec VkVec::elu(float_t alpha) const {
 // chose alpha=0 for true ELU function;
 // small alpha value like e.g. 0.01 for 'leaky' ELU
 VkVec VkVec::elu_drv(float_t alpha) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("elu_drv.spv"); }
-    shader_exec(shader, result, alpha); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(alpha);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -2014,10 +3093,31 @@ VkVec VkVec::elu_drv(float_t alpha) const {
 // chose alpha=0 for true ReLU function;
 // small alpha value like e.g. 0.01 for 'leaky' ReLU
 VkVec VkVec::relu(float_t alpha) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("relu.spv"); }
-    shader_exec(shader, result, alpha); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(alpha);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -2025,20 +3125,62 @@ VkVec VkVec::relu(float_t alpha) const {
 // chose alpha=0 for true ReLU function;
 // small alpha value like e.g. 0.01 for 'leaky' ReLU
 VkVec VkVec::relu_drv(float_t alpha) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("relu_drv.spv"); }
-    shader_exec(shader, result, alpha); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(alpha);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // tanh activation derivative
 VkVec VkVec::tanh_drv(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("tanh_drv.spv"); }
-    shader_exec(shader, result, factor); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(factor);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -2048,77 +3190,134 @@ VkVec VkVec::tanh_drv(AngularMeasure unit) const {
 
 // truncate outliers by z-score mean deviation
 VkVec VkVec::outliers_truncate(float_t z_score) const {
-    static float_t mean, stddev, sum_of_squares, lower_margin, upper_margin = 0;
-    
-    mean = this->mean();
-    
-    VkVec result(this->rows, this->cols, this->depth);
-    static ShaderModule shader1(manager->get_device());
-    if (!shader1.get()) { shader1.read_from_file("mdev_squared.spv"); }
-    shader_exec(shader1, result, mean); // OVERLOAD_2
-    sum_of_squares = result.sum();
-    stddev = std::sqrt(sum_of_squares / this->elements);
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
 
-    lower_margin = mean - z_score * stddev;
-    upper_margin = mean + z_score * stddev;
-    
-    static ShaderModule shader2(manager->get_device());
-    if (!shader2.get()) { shader2.read_from_file("outliers_truncate.spv"); }
-    shader_exec(shader2, result, lower_margin, upper_margin); // OVERLOAD_2
+    static ShaderModule shader(manager->get_device());
+    if (!shader.get()) { shader.read_from_file("outliers_truncate.spv"); }
+
+    VkVec result(this->rows, this->cols, this->depth);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+    descriptor_set.bind_buffer(signal, 2);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(z_score);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // set outliers (by z-score) to mean
 VkVec VkVec::outliers_mean_imputation(float_t z_score) const {
-    static float_t mean, stddev, sum_of_squares, lower_margin, upper_margin = 0;
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
 
-    mean = this->mean();
+    static ShaderModule shader(manager->get_device());
+    if (!shader.get()) { shader.read_from_file("outliers_mean_imputation.spv"); }
 
     VkVec result(this->rows, this->cols, this->depth);
-    static ShaderModule shader1(manager->get_device());
-    if (!shader1.get()) { shader1.read_from_file("mdev_squared.spv"); }
-    shader_exec(shader1, result, mean); // OVERLOAD_2
-    sum_of_squares = result.sum();
-    stddev = std::sqrt(sum_of_squares / this->elements);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
 
-    lower_margin = mean - z_score * stddev;
-    upper_margin = mean + z_score * stddev;
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
 
-    static ShaderModule shader2(manager->get_device());
-    if (!shader2.get()) { shader2.read_from_file("outliers_value_imputation.spv"); }
-    shader_exec(shader2, result, lower_margin, upper_margin, mean); // OVERLOAD_2
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+    descriptor_set.bind_buffer(signal, 2);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(z_score);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // set outliers (by z-score) to value
 VkVec VkVec::outliers_value_imputation(float_t value, float_t z_score) const {
-    static float_t mean, stddev, sum_of_squares, lower_margin, upper_margin = 0;
+    static constexpr uint32_t workgroup_size = 256;
+    const uint32_t workgroups = this->elements / workgroup_size + 1;
 
-    mean = this->mean();
+    static ShaderModule shader(manager->get_device());
+    if (!shader.get()) { shader.read_from_file("outliers_value_imputation.spv"); }
 
     VkVec result(this->rows, this->cols, this->depth);
-    static ShaderModule shader1(manager->get_device());
-    if (!shader1.get()) { shader1.read_from_file("mdev_squared.spv"); }
-    shader_exec(shader1, result, mean); // OVERLOAD_2
-    sum_of_squares = result.sum();
-    stddev = std::sqrt(sum_of_squares / this->elements);
+    Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
 
-    lower_margin = mean - z_score * stddev;
-    upper_margin = mean + z_score * stddev;
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
 
-    static ShaderModule shader2(manager->get_device());
-    if (!shader2.get()) { shader2.read_from_file("outliers_value_imputation.spv"); }
-    shader_exec(shader2, result, lower_margin, upper_margin, value); // OVERLOAD_2
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+    descriptor_set.bind_buffer(signal, 2);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(z_score);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // recover -inf, +inf or nan values
 VkVec VkVec::recover() const {
-    float_t seed = (float_t)(double(rand()) / RAND_MAX);
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("recover.spv"); }
-    shader_exec(shader, result, seed); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(seed32());
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
@@ -2160,99 +3359,375 @@ VkVec& VkVec::operator=(VkVec&& other) noexcept {
 // +=================================+
 
 VkVec VkVec::operator>(const float_t value) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("greater_value.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 
 VkVec VkVec::operator>=(const float_t value) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("greaterequals_value.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 VkVec VkVec::operator==(const float_t value) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("equals_value.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 VkVec VkVec::operator!=(const float_t value) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("notequals_value.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 VkVec VkVec::operator<(const float_t value) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("less_value.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 VkVec VkVec::operator<=(const float_t value) const {
-    VkVec result(this->rows, this->cols, this->depth);
+    static constexpr uint32_t workgroup_size = 256;
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("lessequals_value.spv"); }
-    shader_exec(shader, result, value); // OVERLOAD_2
+
+    VkVec result(this->rows, this->cols, this->depth);
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*result.data_buffer, 1);
+
+    PushConstants push_constants;
+    push_constants.add_value(this->elements);
+    push_constants.add_value(value);
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
     return result;
 }
 
 // elementwise comparison with second VkVec
 VkVec VkVec::operator>(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("greater_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 VkVec VkVec::operator>=(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("greaterequals_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 VkVec VkVec::operator==(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("equals_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 VkVec VkVec::operator!=(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("notequals_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 VkVec VkVec::operator<(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("less_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 VkVec VkVec::operator<=(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("lessequals_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
@@ -2291,18 +3766,68 @@ VkVec VkVec::operator!() const {
 }
 
 VkVec VkVec::operator&&(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("and_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
 VkVec VkVec::operator||(const VkVec& other) const {
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    static constexpr uint32_t workgroup_size = 256;
+
+    VkVec result(this->rows, this->cols, this->depth);
+
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("or_other.spv"); }
-    shader_exec(shader, result, other); // OVERLOAD_3
+
+    static std::vector<DescriptorType> types = {
+        STORAGE_BUFFER,
+        STORAGE_BUFFER,
+        STORAGE_BUFFER
+    };
+
+    DescriptorSet descriptor_set(manager->get_device(), *this->descriptor_pool, types); // set 0
+    descriptor_set.bind_buffer(*this->data_buffer, 0);
+    descriptor_set.bind_buffer(*other.data_buffer, 1);
+    descriptor_set.bind_buffer(*result.data_buffer, 2);
+
+    PushConstants push_constants;
+    push_constants.add_values({ this->rows, this->cols, this->depth });
+    push_constants.add_values({ other.get_rows(), other.get_cols(), other.get_depth() });
+    push_constants.add_values({ result.get_rows(), result.get_cols(), result.get_depth() });
+
+    ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
+    command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
+
+    pipeline.destroy();
+    descriptor_set.free();
+
     return result;
 }
 
