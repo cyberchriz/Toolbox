@@ -1,18 +1,17 @@
 // this Vulkan/GLSL compute shader implements maxabs pooling
 
 #version 450
+#define WORKGROUP_SIZE 256
 
-// setup source data buffer
+// setup buffers
 layout(set = 0, binding = 0) buffer DataBuffer {
     float data[];
 };
-        
-// setup result data buffer
 layout(set = 0, binding = 1) buffer ResultBuffer {
-    float result[]; // result[0] is initialized to 0
+    float result[];
 };
 
-// setup push constants layout (according to shader_exec OVERLOAD_4)
+// setup push constants layout
 layout(push_constant) uniform PushConstants {
     uint data_rows;
     uint data_cols;
@@ -28,7 +27,7 @@ layout(push_constant) uniform PushConstants {
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
+layout(local_size_x = WORKGROUP_SIZE) in;
 
 // setup global variables
 uint data_elements = data_rows * data_cols * data_depth;
@@ -47,13 +46,13 @@ void main() {
         uint data_x = result_3dx * slider_rows;
         uint data_y = result_3dy * slider_cols;
         uint data_z = result_3dz * slider_depth;
-        float maxabs_val = nan;
+        float max_val = nan;
         uint data_flat_index =
             data_x * data_subspace_x +
             data_y * data_depth + 
             data_z;
         if (data_flat_index < data_elements) {
-            maxabs_val = abs(data[data_flat_index]);
+            max_val = data[data_flat_index];
             for (uint x = 0; x < slider_rows; x++) {
                 for (uint y = 0; y < slider_cols; y++) {
                     for (uint z = 0; z < slider_depth; z++) {
@@ -62,12 +61,12 @@ void main() {
                             (data_y + y) * data_depth + 
                             (data_z + z);
                         if (data_flat_index < data_elements) {
-                            maxabs_val = max(maxabs_val, abs(data[data_flat_index]));               
+                            max_val = max(max_val, abs(data[data_flat_index]));               
                         }
                     }
                 }
             }
         }
-        result[result_flat_index] = maxabs_val;
+        result[result_flat_index] = max_val;
     }
 }

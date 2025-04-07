@@ -2,18 +2,17 @@
 // based on a given y axis intercept and slope (as given via push constants)
 
 #version 450
+#define WORKGROUP_SIZE 256
 
-// setup source data buffer
+// setup buffers
 layout(set = 0, binding = 0) buffer DataBuffer {
     float data[];
 };
-        
-// setup result data buffer
 layout(set = 0, binding = 1) buffer ResultBuffer {
     float result[];
 };
 
-// setup push constants layout (according to shader_exec OVERLOAD_2)
+// setup push constants layout
 layout(push_constant) uniform PushConstants {
     uint data_rows;
     uint data_cols;
@@ -25,11 +24,10 @@ layout(push_constant) uniform PushConstants {
 
     float y_intercept;
     float slope;
-    float constant3;        // not used for this shader
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
+layout(local_size_x = WORKGROUP_SIZE) in;
 
 // setup global variables
 uint result_elements = result_rows * result_cols * result_depth;

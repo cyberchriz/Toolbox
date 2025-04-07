@@ -1,23 +1,20 @@
 // this Vulkan/GLSL compute shader implements a convolution operation with a filter kernel
 
 #version 450
+#define WORKGROUP_SIZE 256
 
-// setup source data buffer
+// setup buffers
 layout(set = 0, binding = 0) buffer DataBuffer {
     float data[];
 };
-
-// setup filter 'kernel' buffer
 layout(set = 0, binding = 1) buffer FilterBuffer {
     float kernel[];
 };
-
-// setup result data buffer
 layout(set = 0, binding = 2) buffer ResultBuffer {
     float result[];
 };
 
-// setup push constants layout (according to shader_exec OVERLOAD_3)
+// setup push constants layout
 layout(push_constant) uniform PushConstants {
     uint data_rows;
     uint data_cols;
@@ -30,14 +27,10 @@ layout(push_constant) uniform PushConstants {
     uint result_rows;
     uint result_cols;
     uint result_depth;
-
-    float constant1;        // not used for this shader
-    float constant2;        // not used for this shader
-    float constant3;        // not used for this shader
 };
 
 // setup local size according to workgroup size
-layout(local_size_x = 32) in;
+layout(local_size_x = WORKGROUP_SIZE) in;
 
 // setup global variables
 uint data_elements = data_rows * data_cols * data_depth;

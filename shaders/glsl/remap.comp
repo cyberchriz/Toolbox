@@ -1,0 +1,52 @@
+// this Vulkan/GLSL compute shader rearranges the array elements based on a given target index map
+
+#version 450
+#define WORKGROUP_SIZE 256
+
+// setup buffers
+layout(set = 0, binding = 0) buffer SourceBuffer {
+    float source[];
+};
+layout(set = 0, binding = 1) buffer TargetBuffer {
+    float target[];
+};
+layout(set = 0, binding = 2) buffer IndexMapBuffer {
+    float target_index_map_on_source[];
+};
+layout(set = 0, binding = 3) buffer ResultBuffer {
+    float result[];
+};
+
+// setup push constants layout
+layout(push_constant) uniform PushConstants {
+    uint source_rows;
+    uint source_cols;
+    uint source_depth;
+
+    uint index_map_rows;
+    uint index_map_cols;
+    uint index_map_depth;
+
+    uint result_rows;
+    uint result_cols;
+    uint result_depth;
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+// setup global variables
+uint source_elements = source_rows * source_cols * source_depth;
+uint index_elements = index_map_rows * index_map_cols * index_map_depth;
+uint target_elements = result_rows * result_cols * result_depth;
+
+// main function
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    if (x < index_elements) {
+        uint target_index = uint(target_index_map_on_source[x]);
+        if (target_index < target_elements && x < source_elements) {
+            result[target_index] = source[x];
+        }
+    }
+}

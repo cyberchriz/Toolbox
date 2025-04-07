@@ -1,10 +1,10 @@
-// this Vulkan/GLSL compute shader implements > operator
-// for elementwise comparison with a specified value given via push constant
+// this Vulkan/GLSL compute shader returns a copy of the data array
+// limited to the range from min_value to max_value
 
 #version 450
 #define WORKGROUP_SIZE 256
 
-// setup buffers
+// setup source buffers
 layout(set = 0, binding = 0) buffer DataBuffer {
     float data[];
 };
@@ -14,7 +14,9 @@ layout(set = 0, binding = 1) buffer ResultBuffer {
 
 // setup push constants layout
 layout(push_constant) uniform PushConstants {
-    uint result_elements;
+    uint data_elements;
+    float min_value;
+    float max_value;
 };
 
 // setup local size according to workgroup size
@@ -23,7 +25,8 @@ layout(local_size_x = WORKGROUP_SIZE) in;
 // main function
 void main() {
     uint x = gl_GlobalInvocationID.x;
-    if (x < result_elements) {
-        result[x] = data[x];
+    if (x < data_elements) {
+        float value = data[x];
+        result[x] = value < min_value ? min_value : value > max_value ? max_value : value;
     }
 }

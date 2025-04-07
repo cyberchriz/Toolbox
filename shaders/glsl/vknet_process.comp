@@ -1,0 +1,200 @@
+// this Vulkan compute shader processes a neural network with a fluid architecture
+
+#version 450
+#define WORKGROUP_SIZE 256
+
+// setup buffers
+layout(set = 0, binding = 0) buffer CellStatesBuffer {
+    float memory_states[];
+};
+layout(set = 0, binding = 1) buffer InputsBuffer {
+    float inputs[];
+};
+layout(set = 0, binding = 2) buffer OutputsBuffer {
+    float outputs[];
+};
+layout(set = 0, binding = 3) buffer LabelsBuffer {
+    float labels[];
+};
+layout(set = 0, binding = 4) buffer WeightsBuffer {
+    float weights[];
+};
+layout(set = 0, binding = 5) buffer WeightTargetsBuffer {
+    float weight_targets[];
+};
+layout(set = 0, binding = 6) buffer ErrorsBuffer {
+    float errors[];  
+};
+layout(set = 0, binding = 7) buffer UpdateFactorsBuffer {
+    float update_factors[];
+};
+layout(set = 0, binding = 8) buffer SignalBuffer {
+    uint signal[];
+};
+layout(set = 0, binding = 9) buffer UpdateStatesBuffer {
+    float update_states[];
+};
+layout(set = 0, binding = 10) buffer ActivatedStatesBuffer {
+    float activated_states[];
+};
+
+// setup push constants
+layout(push_constant) uniform PushConstants {
+    uint train;
+    uint inputs_count;
+    uint outputs_count;
+    uint neurons_count;
+    uint weights_per_neuron;
+    float learning_rate;
+    uint seed;
+};
+
+// setup local size according to workgroup size
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+// setup global variables
+uint state[4];
+bool initialized = false;
+
+void synchronize_workgroups() {
+    // wait for local workgroup to finish
+    uint workgroup_ID = gl_GlobalInvocationID.x / WORKGROUP_SIZE;
+    barrier();
+    if (gl_LocalInvocationID.x == 0) {signal[workgroup_ID] = 1;}
+
+    // check all workgroups
+    uint loop_count = 0;
+    uint workgroups = neurons_count / WORKGROUP_SIZE + 1;
+    for (uint i = 0; i < workgroups; i++) {
+        while (signal[i] != 1 && loop_count < 100000) {
+		    memoryBarrier();
+		    loop_count++;
+	    }
+        // reset signals
+        signal[i] = 0;
+    }
+}
+
+// helper function for the derivative of the activation function
+float tanh_drv(float x) {
+    return 1 - pow(tanh(x), 2);
+}
+
+// XorShift128 random number generator
+float random(uint seed) {
+
+  if (!initialized) {
+    state[0] = seed;
+    for (int i = 1; i < 4; ++i) {
+      state[i] = state[i - 1] * 0x343fd45e;
+    }
+    initialized = true;
+  }
+
+  uint x = state[0];
+  uint y = state[2];
+  state[0] = state[1];
+  state[1] = state[2];
+  state[2] = state[3];
+  state[3] = x ^ y ^ (x << 13) ^ (y << 17) ^ (x >> 15) ^ (y >> 18);
+
+  // Mask and scale to [0, 1]
+  return float(state[3] & 0xffffffff) / 4294967295.0;
+}
+
+// main function
+void main() {
+    uint neuron_id = gl_GlobalInvocationID.x;
+
+    // read inputs
+    if (neuron_id < inputs_count) {
+        update_states[neuron_id] = inputs[neuron_id];
+        activated_states[neuron_id] = tanh(update_states[neuron_id]);
+        memory_states[neuron_id] = activated_states[neuron_id];
+    }
+    else {
+        // clear update states
+        update_states[neuron_id] = 0;
+    }
+    // feed partial memory states to update states of subsequent neurons
+    for (uint w = 0; w < weights_per_neuron; w++) {
+        uint weight_id = (neuron_id * weights_per_neuron) + w;
+        uint target_id = uint(weight_targets[weight_id]);
+        if (target_id >= inputs_count) {
+            update_states[target_id] += memory_states[neuron_id] * weights[weight_id];
+        }
+    }
+    synchronize_workgroups();
+
+    // apply activation function
+    activated_states[neuron_id] = tanh(update_states[neuron_id]);
+
+    // for hidden neurons: update memory states
+    if (neuron_id >= inputs_count) {
+        memory_states[neuron_id] = (1 - update_factors[neuron_id]) * memory_states[neuron_id] +
+                                   update_factors[neuron_id] * activated_states[neuron_id];
+    }
+    // for outputs: memory states = activated_states
+    else if (neuron_id >= inputs_count && neuron_id < inputs_count + outputs_count) {
+        memory_states[neuron_id] = activated_states[neuron_id];
+        outputs[neuron_id - inputs_count] = activated_states[neuron_id];
+    }
+
+    if (bool(train)) {
+        // calculate output errors
+        if (neuron_id >= inputs_count && neuron_id < inputs_count + outputs_count) {
+            errors[neuron_id] = memory_states[neuron_id] - labels[neuron_id - inputs_count];
+        }
+        else {
+            // push partial errors through the network
+            synchronize_workgroups();
+            for (uint w = 0; w < weights_per_neuron; w++) {
+                uint weight_id = (neuron_id * weights_per_neuron) + w;
+                uint target_id = uint(weight_targets[weight_id]);
+                errors[neuron_id] = errors[neuron_id] * (1 - update_factors[neuron_id]) +
+                                    errors[target_id] * weights[weight_id] * update_factors[neuron_id];
+            }
+        }
+
+        // update weights: delta w_ij=lr*error_k*act'(net_inp_j)*out_i
+        uint weakest_weight_id = neuron_id * weights_per_neuron;
+        float weakest_weight_value = weights[weakest_weight_id];
+        uint weakest_weight_target_id = uint(weight_targets[weakest_weight_id]);
+        for (uint w = 0; w < weights_per_neuron; w++) {
+            uint weight_id = (neuron_id * weights_per_neuron) + w;
+            uint target_id = uint(weight_targets[weight_id]);
+            weights[weight_id] -= learning_rate * errors[target_id] * tanh_drv(update_states[target_id]) * memory_states[neuron_id];
+            if (abs(weights[weight_id]) < abs(weakest_weight_value)) {
+                weakest_weight_id = weight_id;
+                weakest_weight_value = weights[weight_id];
+                weakest_weight_target_id = uint(weight_targets[weight_id]);
+            }
+        }
+
+        // reassign weak connections
+        if (neuron_id >= inputs_count) {
+            uint new_target_id = 0;
+            while (new_target_id < inputs_count || new_target_id == neuron_id) {
+                new_target_id = uint(random(seed) * neurons_count);
+            }
+            // find weakest weight at new target
+            uint weakest_second_weight_id = new_target_id * weights_per_neuron;
+            float weakest_second_weight_value = weights[weakest_second_weight_id];
+            uint weakest_second_weight_target_id = uint(weight_targets[weakest_second_weight_id]);
+            for (uint w = 0; w < weights_per_neuron; w++) {
+                uint weight_id = new_target_id * weights_per_neuron + w;
+                uint target_id = uint(weight_targets[weight_id]);
+                if (abs(weights[weight_id]) < abs(weakest_second_weight_value)) {
+                    weakest_second_weight_id = weight_id;
+                    weakest_second_weight_value = weights[weight_id];
+                    weakest_second_weight_target_id = uint(weight_targets[weight_id]);
+                }
+            }
+            // swap connections
+            weight_targets[weakest_second_weight_target_id] = neuron_id;
+            weights[weakest_second_weight_id] = weakest_weight_value;
+            weight_targets[weakest_weight_target_id] = weakest_second_weight_target_id;
+            weights[weakest_weight_id] = weakest_second_weight_value;
+        }
+    }
+}

@@ -61,9 +61,9 @@ void main() {
             for (uint i = 0; i < workgroups; i++) {
                 uint loop_count = 0;
                 while (signal[i] != 1 && loop_count < 10000) {
-				    memoryBarrier();
-				    loop_count++;
-			    }
+		            memoryBarrier();
+		            loop_count++;
+	            }
                 minimum = min(minimum, result[i * WORKGROUP_SIZE]);
             }
             result[0] = minimum;

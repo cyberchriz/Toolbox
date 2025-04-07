@@ -62,7 +62,7 @@ void main() {
 
 		// calculate squared mean deviations
 		float mdev = data[x] - mean;
-		mdev2[x] = (mdev * mdev) / (data_elements - 1);
+		mdev2[x] = (mdev * mdev) / data_elements;
 		barrier();
 
 		// calculate partial sum of squared mean deviations (within workgroup) via parallel reduction

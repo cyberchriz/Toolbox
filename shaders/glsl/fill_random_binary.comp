@@ -3,7 +3,7 @@
 // to zero and the rest to 1 (default: 0.5, i.e. 50%)
 
 #version 450
-#define WORKGROUP_SIZE 128
+#define WORKGROUP_SIZE 256
 
 // setup source data buffer
 layout(set = 0, binding = 0) buffer DataBuffer {

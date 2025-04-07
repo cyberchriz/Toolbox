@@ -18,6 +18,21 @@ if(NOT $ENV{CMAKE_BUILD_TYPE})
 		set(ENV{CMAKE_BUILD_TYPE} ${CMAKE_BUILD_TYPE})
 endif()
 
+# language setup
+set(CMAKE_PROJECT_LANGUAGES "C;CXX" CACHE STRING "available languages: C, CXX, CSharp, CUDA, OBJC, OBJCXX, Fortran, HIP, ISPC, Swift, ASM, ASM_NASM, ASM_MARMASM, ASM_MASM, ASM-ATT") 
+set(CMAKE_CXX_STANDARD_DEFAULT "17" CACHE STRING "required C/C++ standard")
+	set_property(CACHE CMAKE_CXX_STANDARD_DEFAULT PROPERTY STRINGS 98 11 14 17 20 23)
+	set(CMAKE_CXX_STANDARD_REQUIRED "TRUE")
+
+# define project
+project(
+	${CMAKE_PROJECT_NAME}
+	VERSION ${CMAKE_PROJECT_VERSION}
+	DESCRIPTION ${CMAKE_PROJECT_DESCRIPTION}
+	LANGUAGES ${CMAKE_PROJECT_LANGUAGES}
+)
+enable_language(${CMAKE_PROJECT_LANGUAGES})
+
 # set essential folders
 set(CMAKE_SOURCE_DIR "${CMAKE_SOURCE_DIR}" CACHE PATH "project root path (top level)")
 set(SOURCE_DIR "${CMAKE_SOURCE_DIR}/sources" CACHE PATH "sources folder corresponding to the current CMakeLists.txt")
@@ -27,21 +42,6 @@ set(CMAKE_CURRENT_BINARY_DIR ${CMAKE_BINARY_DIR})
 set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}")
 set(GLSL_FOLDER "${CMAKE_SOURCE_DIR}/shaders/glsl" CACHE PATH "folder for GLSL shaders")
 set(SPIRV_FOLDER "${CMAKE_SOURCE_DIR}/shaders/spirv" CACHE PATH "folder for SPIR-V files")
-
-# language setup
-set(CMAKE_PROJECT_LANGUAGES "C;CXX" CACHE STRING "available languages: C, CXX, CSharp, CUDA, OBJC, OBJCXX, Fortran, HIP, ISPC, Swift, ASM, ASM_NASM, ASM_MARMASM, ASM_MASM, ASM-ATT") 
-set(CMAKE_CXX_STANDARD_DEFAULT "17" CACHE STRING "required C/C++ standard")
-	set_property(CACHE CMAKE_CXX_STANDARD_DEFAULT PROPERTY STRINGS 98 11 14 17 20 23)
-	set(CMAKE_CXX_STANDARD_REQUIRED "TRUE")
-enable_language(${CMAKE_PROJECT_LANGUAGES})
-
-# define project
-project(
-	${CMAKE_PROJECT_NAME}
-	VERSION ${CMAKE_PROJECT_VERSION}
-	DESCRIPTION ${CMAKE_PROJECT_DESCRIPTION}
-	LANGUAGES ${CMAKE_PROJECT_LANGUAGES}
-)
 
 # compiler setup
 set(PROJECT_COMPILER "AUTO" CACHE STRING "compiler model")
@@ -126,7 +126,7 @@ if (GLSL_SHADER_SOURCES)
 	  )
 	  message(STATUS "glslangValidator version: ${GLSL_VERSION}")
 	else()
-	  message(FATAL_ERROR "glslangValidator executable not found")
+	  message(FATAL_ERROR "glslangValidator (GLSL compiler) executable not found")
 	endif()
 endif()
 
