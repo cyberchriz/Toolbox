@@ -12,23 +12,22 @@
       "ctestCommandArgs": "",
       "variables": [
         {
-          "name": "ENTRYPOINT_FILE",
-          "value": "C:/Users/Admin/source/repos/Toolbox/sources/vknet_test.cpp",
-          "type": "STRING"
+          "name": "COMPILE_GLSL_SHADERS",
+          "value": "False",
+          "type": "BOOL"
         }
       ]
     },
     {
       "name": "x64-Release",
       "generator": "Ninja",
-      "configurationType": "RelWithDebInfo",
+      "configurationType": "Release",
       "buildRoot": "${projectDir}\\out\\build\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
-      "inheritEnvironments": [ "msvc_x64_x64" ],
-      "variables": []
+      "inheritEnvironments": [ "msvc_x64_x64" ]
     }
   ]
 }

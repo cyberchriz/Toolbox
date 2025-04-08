@@ -34,7 +34,7 @@ This library also comes with the option to handle Instance, Device and CommandPo
 */
 
 // include headers
-#pragma once
+#pragma once // not strictly necessary if the included header files also all come with include guards, but just to be on the safe side
 #define NOMINMAX
 #include "log.h"
 #include <cmath>
@@ -51,6 +51,7 @@ This library also comes with the option to handle Instance, Device and CommandPo
 #include <vulkan/vulkan.h>
 #include <array>
 #include <variant>
+#include <optional>
 
 // --- Platform-Specific Headers ---
 #ifdef _WIN32
@@ -78,6 +79,7 @@ This library also comes with the option to handle Instance, Device and CommandPo
 #else
 #error "surface support for iOS/other Apple platform not implemented"
 #endif
+#include <optional>
 
 #else
 #error "Unsupported platform: No Vulkan WSI platform defined."
@@ -90,6 +92,11 @@ class CommandBuffer;
 class ShaderModule;
 class DescriptorSet;
 class Event;
+class ImageView;
+class Image;
+class MemoryBarrier;
+template<typename T> class BufferMemoryBarrier;
+class ImageMemoryBarrier;
 
 enum BufferUsage {
     VERTEX,
@@ -163,12 +170,6 @@ public:
             vkDestroyInstance(instance, nullptr);
             instance = nullptr;
             Log::info("[INSTANCE DESTROYED]");
-        }
-        if (enabled_layer_names_ptr != nullptr) {
-            delete[] enabled_layer_names_ptr;
-        }
-        if (enabled_instance_extension_names_ptr != nullptr) {
-            delete[] enabled_instance_extension_names_ptr;
         }
     }
 
@@ -265,12 +266,12 @@ public:
             Log::error("Failed to create Vulkan Instance (VkResult=", result, ")");
         }
     }
-
+    
     // return a reference to the Vulkan instance
     VkInstance get() const {
         return instance;
     }
-
+    
 protected:
     VkInstance instance = nullptr;
     VkApplicationInfo application_info = {};
@@ -360,12 +361,19 @@ public:
         vkGetPhysicalDeviceQueueFamilyProperties(physical, &num_queue_families, queue_families.data());
         std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
 
-        // Iterate over the queue families to find appropriate queue indices
+        // Iterate over the queue families to find appropriate queue indices;
+		// check for graphics, compute, and transfer queue support;
+		// assign the first available queue family index for each type;
+		// try to use dedicated indices for each queue type if available;
+        int graphics_fallback = -1;
+		int compute_fallback = -1;
+		int transfer_fallback = -1;
+
         for (uint32_t i = 0; i < num_queue_families; ++i) {
             const VkQueueFamilyProperties& queue_family = queue_families[i];
 
             // Check for graphics queue support
-            if (!graphics_queue_assigned && (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+            if (!graphics_queue_assigned && (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
                 graphics_queue_family_index = i;
                 queue_create_infos.push_back({});
                 queue_create_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -374,6 +382,8 @@ public:
                 queue_create_infos[i].pQueuePriorities = &priority;
                 graphics_queue_assigned = true;
                 Log::info("GRAPHICS queue supported -> added to queue_create_infos for this device");
+				compute_fallback = queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT ? i : -1;
+				transfer_fallback = queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT ? i : -1;
                 continue;
             }
 
@@ -387,6 +397,8 @@ public:
                 queue_create_infos[i].pQueuePriorities = &priority;
                 compute_queue_assigned = true;
                 Log::info("COMPUTE queue supported -> added to queue_create_infos for this device");
+				graphics_fallback = queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT ? i : -1;
+				transfer_fallback = queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT ? i : -1;
                 continue;
             }
 
@@ -400,15 +412,49 @@ public:
                 queue_create_infos[i].pQueuePriorities = &priority;
                 transfer_queue_assigned = true;
                 Log::info("TRANSFER queue supported -> added to queue_create_infos for this device");
+				graphics_fallback = queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT ? i : -1;
+				compute_fallback = queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT ? i : -1;
                 continue;
             }
         }
 
+		// If no dedicated queue family was found for a type, use the fallback
+        if (!graphics_queue_assigned) {
+            if (graphics_fallback != -1) {
+                graphics_queue_family_index = graphics_fallback;
+                graphics_queue_assigned = true;
+                Log::info("no dedicated GRAPHICS queue family found; using fallback queue family index ", graphics_queue_family_index, " (shared queue)");
+            }
+			else {
+				Log::warning("no dedicated GRAPHICS queue family found; no fallback available");
+            }
+        }
+		if (!compute_queue_assigned) {
+			if (compute_fallback != -1) {
+				compute_queue_family_index = compute_fallback;
+				compute_queue_assigned = true;
+				Log::info("no dedicated COMPUTE queue family found; using fallback queue family index ", compute_queue_family_index, " (shared queue)");
+			}
+            else {
+				Log::warning("no dedicated COMPUTE queue family found; no fallback available");
+            }
+		}
+        if (!transfer_queue_assigned) {
+            if (transfer_fallback != -1) {
+			    transfer_queue_family_index = transfer_fallback;
+			    transfer_queue_assigned = true;
+			    Log::info("no dedicated TRANSFER queue family found; using fallback queue family index ", transfer_queue_family_index, " (shared queue)");
+			}
+			else {
+				Log::warning("no dedicated TRANSFER queue family found; no fallback available");
+			}
+		}
+
         // Create logical device
         device_create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
         device_create_info.pQueueCreateInfos = queue_create_infos.data();
-        device_create_info.ppEnabledExtensionNames = device_extension_names_ptr;
-        device_create_info.enabledExtensionCount = extension_count;
+        device_create_info.ppEnabledExtensionNames = device_extension_names.data();
+        device_create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
         device_create_info.pEnabledFeatures = &enabled_features;
         VkResult result = vkCreateDevice(physical, &device_create_info, nullptr, &logical);
         if (result == VK_SUCCESS) {
@@ -443,8 +489,8 @@ public:
     }
 
     // Move Assignment
-    Device& operator=(Device&& other) {
-        if (this != other) {
+    Device& operator=(Device&& other) noexcept {
+        if (this != &other) {
             destroy(); // release resource from 'this'
             move_resources(other);
             Log::info("Device resources from 'other' moved to 'this'");
@@ -468,6 +514,16 @@ public:
     VkPhysicalDeviceProperties& get_properties() { return properties; }
     VkPhysicalDeviceProperties2& get_properties2() { return properties2; }
     std::vector<const char*>& get_extensions() { return extensions; }
+	std::vector<const char*>& get_device_extension_names() { return device_extension_names; }
+	
+    VkPhysicalDeviceMemoryProperties& get_memory_properties() {
+        static bool properties_queried = false;
+		if (!properties_queried) {
+			vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties);
+			properties_queried = true;
+		}
+        return memory_properties;
+    }
 
     // destructor
     ~Device() {
@@ -484,14 +540,10 @@ protected:
             logical = nullptr;
             Log::info("[LOGICAL DEVICE DESTROYED]");
         }
-        if (device_extension_names_ptr != nullptr) {
-            delete[] device_extension_names_ptr;
-            device_extension_names_ptr = nullptr;
-        }
     }
 
     // helper method for move constructor and move assignment
-    void move_resources(Device&& other) {
+    void move_resources(Device& other) {
         // Transfer ownership of Vulkan handles/resources using std::exchange;
         // std::move may not be supported with some Vulkan objects
         this->physical = std::exchange(other.physical, nullptr);
@@ -502,12 +554,14 @@ protected:
         this->graphics_queue_assigned = std::move(other.graphics_queue_assigned);
         this->compute_queue_assigned = std::move(other.compute_queue_assigned);
         this->transfer_queue_assigned = std::move(other.transfer_queue_assigned);
-        this->graphics_queue_family_index = std::move(other.graphics_queue_family_index, 0);
-        this->compute_queue_family_index = std::move(other.compute_queue_family_index, 0);
-        this->transfer_queue_family_index = std::move(other.transfer_queue_family_index, 0);
+        this->graphics_queue_family_index = std::move(other.graphics_queue_family_index);
+        this->compute_queue_family_index = std::move(other.compute_queue_family_index);
+        this->transfer_queue_family_index = std::move(other.transfer_queue_family_index);
         this->properties = std::exchange(other.properties, VkPhysicalDeviceProperties{});
         this->properties2 = std::exchange(other.properties2, VkPhysicalDeviceProperties2{});
-        this->extensions = std::move(other.get_extensions);
+        this->extensions = std::move(other.get_extensions());
+		this->device_extension_names = std::move(other.device_extension_names);
+		this->memory_properties = std::exchange(other.memory_properties, VkPhysicalDeviceMemoryProperties{});
     }
 
     VkPhysicalDevice physical = nullptr;
@@ -524,14 +578,222 @@ protected:
     VkPhysicalDeviceProperties properties = {};
     VkPhysicalDeviceProperties2 properties2 = {};
     std::vector<const char*> extensions;
+    std::vector<const char*> device_extension_names;
+    VkPhysicalDeviceMemoryProperties memory_properties = {};
 };
 
 class Image {
-    // TODO
+    friend class ImageView;
+public:
+    Image() = delete;
+    Image(
+        Device& device,
+        VkImageType type,
+        VkFormat format,
+        VkExtent3D extent,
+        uint32_t mip_levels = 1,
+        uint32_t array_layers = 1,
+        VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
+        VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL,
+        VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED
+    ) : logical(device.get_logical()), format(format), extent(extent), layout(initial_layout) {
+
+        VkImageCreateInfo image_info{};
+        image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        image_info.imageType = type;
+        image_info.format = format;
+        image_info.extent = extent;
+        image_info.mipLevels = mip_levels;
+        image_info.arrayLayers = array_layers;
+        image_info.samples = samples;
+        image_info.tiling = tiling;
+        image_info.usage = usage;
+		image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // or VK_SHARING_MODE_CONCURRENT if needed
+        image_info.initialLayout = initial_layout;
+
+        VkResult result = vkCreateImage(logical, &image_info, nullptr, &image);
+        if (result != VK_SUCCESS) {
+            Log::error("in constructor Image::Image(...): failed to create image (VkResult=", result, ")");
+        }
+
+        VkMemoryRequirements memory_requirements;
+        vkGetImageMemoryRequirements(logical, image, &memory_requirements);
+
+        uint32_t memory_type_index = find_memory_type(device, memory_properties, memory_requirements.memoryTypeBits);
+        if (memory_type_index == UINT32_MAX) {
+            vkDestroyImage(logical, image, nullptr);
+            image = VK_NULL_HANDLE;
+            Log::error("in constructor Image::Image(...): could not find suitable memory type for image.");
+        }
+
+        VkMemoryAllocateInfo memory_allocation_info = {};
+        memory_allocation_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memory_allocation_info.allocationSize = memory_requirements.size;
+        memory_allocation_info.memoryTypeIndex = memory_type_index;
+
+        result = vkAllocateMemory(logical, &memory_allocation_info, nullptr, &memory);
+        if (result != VK_SUCCESS) {
+            vkDestroyImage(logical, image, nullptr);
+            image = VK_NULL_HANDLE;
+            Log::error("in constructor Image::Image(...): Failed to allocate image memory (VkResult=", result, ")");
+        }
+
+        result = vkBindImageMemory(logical, image, memory, 0);
+        if (result != VK_SUCCESS) {
+            vkFreeMemory(logical, memory, nullptr);
+            vkDestroyImage(logical, image, nullptr);
+            memory = VK_NULL_HANDLE;
+            image = VK_NULL_HANDLE;
+            Log::error("in constructor Image::Image(...): Failed to bind image memory (VkResult=", result, ")");
+        }
+        Log::debug("in constructor Image::Image(...): image created successfully (handle: ", image, ")");
+    }
+
+    // Move semantics
+    Image(Image&& other) noexcept :
+        logical(std::exchange(other.logical, nullptr)),
+        image(std::exchange(other.image, VK_NULL_HANDLE)),
+        memory(std::exchange(other.memory, VK_NULL_HANDLE)),
+        format(other.format),
+        extent(other.extent),
+        layout(other.layout)
+    {
+    }
+
+    Image& operator=(Image&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            logical = std::exchange(other.logical, nullptr);
+            image = std::exchange(other.image, VK_NULL_HANDLE);
+            memory = std::exchange(other.memory, VK_NULL_HANDLE);
+            format = other.format;
+            extent = other.extent;
+            layout = other.layout;
+        }
+        return *this;
+    }
+
+    // Delete copy
+    Image(const Image&) = delete;
+    Image& operator=(const Image&) = delete;
+
+    ~Image() {
+        destroy();
+    }
+
+    // --- Getters ---
+    VkImage get() const { return image; }
+    
+    VkFormat get_format() const { return format; }
+    
+    VkExtent3D get_extent() const { return extent; }
+    
+    VkImageLayout get_layout() const { return layout; }
+	
+    VkDeviceMemory get_memory() const { return memory; }
+
+protected:
+    void destroy() {
+        if (memory != VK_NULL_HANDLE) {
+            vkFreeMemory(logical, memory, nullptr);
+            memory = VK_NULL_HANDLE;
+        }
+        if (image != VK_NULL_HANDLE) {
+            Log::info("Destroying image (handle: ", image, ")");
+            vkDestroyImage(logical, image, nullptr);
+            image = VK_NULL_HANDLE;
+        }
+    }
+
+    // Helper (can reuse from Buffer or Device)
+    uint32_t find_memory_type(Device& device, VkMemoryPropertyFlags properties, uint32_t type_filter) {
+        const auto& mem_properties = device.get_memory_properties();
+        for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+            if ((type_filter & (1 << i)) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+                return i;
+            }
+        }
+        return UINT32_MAX;
+    }
+
+    VkDevice logical = nullptr;
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkFormat format;
+    VkExtent3D extent;
+    VkImageLayout layout; // Track current layout
 };
 
 class ImageView {
-    // TODO
+public:
+    ImageView() = delete;
+    ImageView(Device& device, const Image& image, VkImageViewType view_type, VkImageAspectFlags aspect_flags, uint32_t base_mip_level = 0, uint32_t level_count = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1)
+        : logical(device.get_logical()) {
+
+        VkImageViewCreateInfo view_info{};
+        view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_info.image = image.get(); // Use image handle from Image class
+        view_info.viewType = view_type;
+        view_info.format = image.get_format(); // Use format from Image class
+        view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_info.subresourceRange.aspectMask = aspect_flags;
+        view_info.subresourceRange.baseMipLevel = base_mip_level;
+        view_info.subresourceRange.levelCount = level_count;
+        view_info.subresourceRange.baseArrayLayer = base_array_layer;
+        view_info.subresourceRange.layerCount = layer_count;
+
+        VkResult result = vkCreateImageView(logical, &view_info, nullptr, &image_view);
+        if (result != VK_SUCCESS) {
+            Log::error("Failed to create image view (VkResult=", result, ")");
+            // Handle error
+            return;
+        }
+        Log::info("ImageView created successfully (handle: ", image_view, ")");
+    }
+
+    // Move semantics
+    ImageView(ImageView&& other) noexcept :
+        logical(std::exchange(other.logical, nullptr)),
+        image_view(std::exchange(other.image_view, VK_NULL_HANDLE))
+    {
+    }
+
+    ImageView& operator=(ImageView&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            logical = std::exchange(other.logical, nullptr);
+            image_view = std::exchange(other.image_view, VK_NULL_HANDLE);
+        }
+        return *this;
+    }
+
+    // Delete copy
+    ImageView(const ImageView&) = delete;
+    ImageView& operator=(const ImageView&) = delete;
+
+
+    ~ImageView() {
+        destroy();
+    }
+
+    VkImageView get() const { return image_view; }
+
+protected:
+    void destroy() {
+        if (image_view != VK_NULL_HANDLE) {
+            Log::info("Destroying image view (handle: ", image_view, ")");
+            vkDestroyImageView(logical, image_view, nullptr);
+            image_view = VK_NULL_HANDLE;
+        }
+    }
+
+    VkDevice logical = nullptr;
+    VkImageView image_view = VK_NULL_HANDLE;
 };
 
 class RenderAttachment {
@@ -632,9 +894,9 @@ public:
         }
     }
 protected:
-    std::optional<<std::vector<VkAttachmentReference>> color_attachment_reference;
-    std::optional<<std::vector<VkAttachmentReference>> input_attachment_reference;
-    std::optional<<std::vector<VkAttachmentReference>> preserve_attachment_reference;
+    std::optional<std::vector<VkAttachmentReference>> color_attachment_reference;
+    std::optional<std::vector<VkAttachmentReference>> input_attachment_reference;
+    std::optional<std::vector<VkAttachmentReference>> preserve_attachment_reference;
     std::optional<VkAttachmentReference> depth_attachment_reference;
     std::optional<VkAttachmentReference> resolve_attachment_reference;
     bool finalized = false; // this flag is updated by the parent RenderPass class (as a friend class) after the subpass has been added
@@ -656,30 +918,12 @@ public:
     RenderAttachment add_attachment(
         RenderAttachment::Type type,
             VkFormat format = VK_FORMAT_R32G32_SFLOAT,
-            VkImageViewType = VK_IMAGE_VIEW_TYPE_2D,
-            VkImageAspectFlags aspect_mask = VK_IMAGE_COLOR_BIT,
             VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED,
             VkImageLayout final_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
             VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_CLEAR,
             VkAttachmentStoreOp store_op = VK_ATTACHMENT_STORE_OP_STORE
         ) {
         uint32_t id = attachment_description.size();
-        
-        // the image view create info is only prepared here;
-        // it needs to be finalized by the swapchain, because the VkImage object is unknown at this point
-        image_view_create_info.resize(id + 1);
-        image_view_create_info[id].sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        image_view_create_info[id].viewType = view_type;
-        image_view_create_info[id].format = format;
-        image_view_create_info[id].components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info[id].components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info[id].components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info[id].components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info[id].subresourceRange.aspectMask = aspect_mask;
-        image_view_create_info[id].subresourceRange.baseMipLevel = 0;
-        image_view_create_info[id].subresourceRange.levelCount = 1;
-        image_view_create_info[id].subresourceRange.baseArrayLayer = 0;
-        image_view_create_info[id].subresourceRange.layerCount = 1;
 
         attachment_description.resize(id + 1);
         attachment_description[id] = {};
@@ -739,7 +983,7 @@ public:
         
         if (subpass.input_attachment_reference.has_value()) {
             subpass_description[id].inputAttachmentCount = static_cast<uint32_t>(subpass.input_attachment_reference.size());
-            subpass_description[id].pInputAttachments = subpass.input_attachment_reference.data();
+            subpass_description[id].pInputAttachments = subpass.input_attachment_reference.empty() ? nullptr : subpass.input_attachment_reference.data();
         }
         else {
             subpass_description[id].inputAttachmentCount = 0;
@@ -748,7 +992,7 @@ public:
 
         if (subpass.color_attachment_reference.has_value()) {
             subpass_description[id].colorAttachmentCount = static_cast<uint32_t>(subpass.color_attachment_reference.size());
-            subpass_description[id].pColorAttachments = subpass.color_attachment_reference.data();
+            subpass_description[id].pColorAttachments = subpass.color_attachment_reference.empty() ? nullptr : subpass.color_attachment_reference.data();
         }
         else {
             subpass_description[id].colorAttachmentCount = 0;
@@ -772,7 +1016,7 @@ public:
 
         if (subpass.preserve_attachment_reference.has_value()) {
             subpass_description[id].preserveAttachmentCount = static_cast<uint32_t>(subpass.preserve_attachment_reference.size());
-            subpass_description[id].pPreserveAttachment = subpass.preserve_attachment_reference.data();
+            subpass_description[id].pPreserveAttachment = subpass.preserve_attachment_reference.empty() ? nullptr : subpass.preserve_attachment_reference.data();
         }
         else {
             subpass_description[id].preserveAttachmentCount = 0;
@@ -846,7 +1090,6 @@ public:
     uint32_t get_subpass_count() const { return subpass_description.size(); }
     bool has_depth_stencil() const { return depth_stencil_flag; }
     std::vector<VkAttachmentDescription>& get_attachment_descriptions() { return attachment_description; }
-    std::vector<VkImageViewCreateInfo>& get_image_view_create_infos() {return image_view_create_info;}
 
     void destroy() {
         if (renderpass != nullptr) {
@@ -877,7 +1120,6 @@ protected:
     std::vector<VkAttachmentDescription> attachment_description;
     std::vector<VkSubpassDescription> subpass_description;
     std::vector<VkSubpassDependency> subpass_dependency;
-    std::vector<VkImageViewCreateInfo> image_view_create_info;
 };
 
 // Platform Agnostic Surface Class
@@ -1145,17 +1387,70 @@ protected:
     VkSurfaceKHR surface = VK_NULL_HANDLE;
 };
 
+class SurfaceFormat {
+public:
+	SurfaceFormat(VkFormat format = VK_FORMAT_R32G32_SFLOAT, VkColorSpaceKHR color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) : format(format), color_space(color_space) {
+		surface_format.format = format;
+		surface_format.colorSpace = color_space;
+    }
+	
+    // Move constructor
+	SurfaceFormat(SurfaceFormat&& other) noexcept : format(std::exchange(other.format, VK_FORMAT_UNDEFINED)), color_space(std::exchange(other.color_space, VK_COLOR_SPACE_MAX_ENUM_KHR)) {}
+	
+    // Move assignment
+	SurfaceFormat& operator=(SurfaceFormat&& other) noexcept {
+		if (this != &other) {
+			format = std::exchange(other.format, VK_FORMAT_UNDEFINED);
+			color_space = std::exchange(other.color_space, VK_COLOR_SPACE_MAX_ENUM_KHR);
+		}
+		return *this;
+	}
+	// Deleted copy constructor and assignment
+	SurfaceFormat(const SurfaceFormat&) = delete;
+	SurfaceFormat& operator=(const SurfaceFormat&) = delete;
+
+	// Destructor
+	~SurfaceFormat() {}
+
+	// Getters
+    VkSurfaceFormatKHR get() const { return surface_format; }
+    VkFormat get_format() const { return format; }
+	VkColorSpaceKHR get_color_space() const { return color_space; }
+
+    // Setters
+    void set_format(VkFormat format) { this->format = format; surface_format.format = format; }
+    void set_color_space(VkColorSpaceKHR color_space) { this->color_space = color_space; surface_format.color_space = color_space; }
+private:
+	VkFormat format;
+	VkColorSpaceKHR color_space;
+    VkSurfaceFormatKHR surface_format = {};
+};
+
 class Swapchain {
 public:
     // constructor
     Swapchain() = delete;
-    Swapchain(Device& device, Surface& surface, RenderPass& renderpass, VkImageUsageFlags usage, VkFormat image_format, uint32_t window_width = 1920, uint32_t window_height = 1080, uint32_t min_image_count = 3, VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D, VkPresentModeKHR present_mode_preference = VK_PRESENT_MODE_FIFO_KHR) {
-        this->logical = device.get_logical();
+    Swapchain(
+        Device& device,
+        Surface& surface,
+        SurfaceFormat& surface_format,
+        RenderPass& renderpass,
+        VkImageUsageFlags usage,
+        uint32_t extent_width = 1920,
+        uint32_t extent_height = 1080,
+        uint32_t min_image_count = 3,
+        VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D,
+        VkPresentModeKHR present_mode_preference = VK_PRESENT_MODE_FIFO_KHR
+    ) {
+		// store member variables according to constructor arguments
         if (!surface.get_physical_device_support(device, QueueFamily::GRAPHICS)) {
             Log::error("invalid swapchain call: physical device doesn't support graphics queue family present to this surface");
         }
+        this->device = &device;
+        this->logical = device.get_logical();
         surface_capabilities = surface.get_capabilities(device);
-        this->image_format = image_format;
+		this->view_type = view_type;
+		this->surface_format = surface_format;
 
         // chose present mode
         std::vector<VkPresentModeKHR> available_present_modes = surface.get_present_modes(device);
@@ -1185,21 +1480,21 @@ public:
             Log::warning("in swapchain constructor: surface capabilities require min image count of >=", image_count, " -> adjusted accordingly");
         }
 
-        // adjust window dimensions
+        // adjust image extent
         // (note: std::min & std::max can't be used to replace the if statements due to an IntelliSense bug)
-        window_dimensions.width = window_width;
-        if (window_dimensions.width > surface_capabilities.maxImageExtent.width) {
-            window_dimensions.width = surface_capabilities.maxImageExtent.width;
+        extent.width = window_width;
+        if (extent.width > surface_capabilities.maxImageExtent.width) {
+            extent.width = surface_capabilities.maxImageExtent.width;
         }
-        else if (window_dimensions.width < surface_capabilities.minImageExtent.width) {
-            window_dimensions.width = surface_capabilities.minImageExtent.width;
+        else if (extent.width < surface_capabilities.minImageExtent.width) {
+            extent.width = surface_capabilities.minImageExtent.width;
         }
-        window_dimensions.height = window_height;
-        if (window_dimensions.height > surface_capabilities.maxImageExtent.height) {
-            window_dimensions.height = surface_capabilities.maxImageExtent.height;
+        extent.height = window_height;
+        if (extent.height > surface_capabilities.maxImageExtent.height) {
+            extent.height = surface_capabilities.maxImageExtent.height;
         }
-        else if (window_dimensions.height < surface_capabilities.minImageExtent.height) {
-            window_dimensions.height = surface_capabilities.minImageExtent.height;
+        else if (extent.height < surface_capabilities.minImageExtent.height) {
+            extent.height = surface_capabilities.minImageExtent.height;
         }
 
         // setup swapchain details
@@ -1207,9 +1502,9 @@ public:
         create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
         create_info.surface = surface.get();
         create_info.minImageCount = image_count;
-        create_info.imageFormat = image_format.format;
-        create_info.imageColorSpace = image_format.colorSpace;
-        create_info.imageExtent = window_dimensions;
+		create_info.imageFormat = surface_format.get_format(); // e.g., VK_FORMAT_B8G8R8A8_SRGB
+		create_info.imageColorSpace = surface_format.get_color_space(); // e.g., VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+        create_info.imageExtent = extent;
         create_info.imageArrayLayers = 1; // Use > 1 for stereoscopic rendering
         create_info.imageUsage = usage; // e.g., VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
         create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -1234,81 +1529,280 @@ public:
         vkGetSwapchainImagesKHR(logical, swapchain, &num_images, nullptr);
         image.resize(num_images);
         vkGetSwapchainImagesKHR(logical, swapchain, &num_images, image.data());
-        Log::debug("in swapchain: retrieved ", num_images, " images.");
 
-        // create framebuffers
-        framebuffer.resize(num_images);
-        image_view.resize(num_images)
-        VkFramebufferCreateInfo framebuffer_create_info = {};
-        framebuffer_create_info.renderPass = renderpass.get();
-        framebuffer_create_info.attachmentCount = renderpass.get_attachment_count();
-        framebuffer_create_info.width = window_dimensions.width;
-        framebuffer_create_info.height = window_dimensions.height;
-        framebuffer_create_info.layers = 1;
-        framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        // cycle through framebuffers (create one framebuffer per image)
+        // create image views for swapchain images
+        color_image_views.resize(num_images);
         for (uint32_t i = 0; i < num_images; i++) {
-            image_view[i].resize(framebuffer_create_info.attachmentCount);
-            // cycle through render attachments (for each framebuffer: create one imageview per render attachment)
-            for (uint32_t j = 0; j < framebutter_create_info.attachmentCount; j++) {
-                renderpass.get_image_view_create_infos()[i].image = image[i];
-                result = vkCreateImageView(logical, &renderpass.get_image_view_create_infos()[i], nullptr, &image_view[i][j]);
-                if (result != VK_SUCCESS) {
-                    Log::error("Failed to create image view (framebuffer ", i, ", image_view ", j, ") for swapchain(VkResult = ", result, ")");
-                }
-            }
+            VkImageViewCreateInfo view_info = {};
+            view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            view_info.image = images[i];
+            view_info.viewType = view_type; // e.g. VK_IMAGE_VIEW_TYPE_2D (assuming 2D)
+			view_info.format = suface_format.get_format();
+            view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            view_info.subresourceRange.baseMipLevel = 0;
+            view_info.subresourceRange.levelCount = 1;
+            view_info.subresourceRange.baseArrayLayer = 0;
+            view_info.subresourceRange.layerCount = 1;
 
-            framebuffer_create_info.pAttachments = &image_view[i];
-            result = vkCreateFramebuffer(logical, &framebuffer_create_info, 0, &framebuffer[i]);
+            result = vkCreateImageView(logical, &view_info, nullptr, &color_image_views[i]);
             if (result != VK_SUCCESS) {
-                Log::warning("Failed to create framebuffer ", i, " for swapchain (VkResult=", result, ")");
+                Log::error("Failed to create swapchain image view ", i);
             }
         }
+        Log::info("Swapchain created with ", num_images, " images/views.");
+
     }
 
-    void acquire_next_image() {
-        // TODO; 
-        // Needs vkAcquireNextImageKHR.
-        // Requires a VkSemaphore (to signal when the image is ready for rendering),
-        // optionally a VkFence (if CPU needs to wait).
-        // Stores the acquired image index.
-        // Handles VK_SUBOPTIMAL_KHR / VK_ERROR_OUT_OF_DATE_KHR (likely requires recreating the swapchain).
+    void create_framebuffers(RenderPass& renderpass, const std::vector<ImageView>& attachments_imageviews) {
+
+        framebuffer.resize(num_images);
+        uint32_t expected_attachments = renderpass.get_attachment_count();
+
+        for (uint32_t i = 0; i < num_images; i++) {
+            std::vector<VkImageView> attachments;
+            // add swapchain color view first (assuming it's attachment 0 in the render pass)
+            attachments.push_back(color_image_views[i]);
+            // add other attachments provided externally (if any), e.g. depth buffer view;
+            // the order must match the order in the render pass !!
+            for (uint32_t j = 0; j < attachments_imageviews.size(); j++) {
+                if (attachments_imageviews[j].get() != nullptr) {
+                    attachments.push_back(attachments_imageviews[j].get());
+                }
+            }
+            if (attachments.size() != expected_attachments) {
+                Log::error("Framebuffer creation failed: Mismatched attachment count (expected ", expected_attachments, ", got ", attachments.size(), ")");
+            }
+            VkFramebufferCreateInfo framebuffer_create_info = {};
+            framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebuffer_create_info.renderPass = renderpass.get();
+            framebuffer_create_info.attachmentCount = extected_attachments;
+            framebuffer_create_info.pAttachments = attachments.data();
+            framebuffer_create_info.width = extent.width;
+            framebuffer_create_info.height = extent.height;
+            framebuffer_create_info.layers = 1;
+
+            VkResult result = vkCreateFramebuffer(logical, &framebuffer_info, nullptr, &framebuffers_[i]);
+            if (result != VK_SUCCESS) {
+                Log::error("Failed to create framebuffer ", i, " (VkResult=", result, ")");
+            }
+        }
+
+        Log::info("Swapchain framebuffers created successfully.");
     }
 
-    void present_rendered_image() {
-        // TODO;
-        // Needs vkQueuePresentKHR.
-        // Requires the VkQueue used for presentation (usually Graphics queue),
-        // requires one or more VkSemaphores (to wait for rendering to finish before presenting).
-        // Uses the stored image index from acquire. Also handles suboptimal/out-of-date results.
+    void acquire_next_image(Semaphore image_available_semaphore, std::optional<Fence>& fence = std::nullopt, uint64_t timeout = UINT64_MAX) {
+        VkResult result;
+        if (fence.has_value()) {
+			result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), fence.get(), &current_image_index);
+		}
+        else {
+            result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), nullptr, &current_image_index);
+        }
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            Log::warning("Swapchain out of date during acquire -> recreating");
+            this->recreate();
+        }
+        else if (result == VK_SUBOPTIMAL_KHR) {
+            Log::info("Swapchain suboptimal during acquire. Okay to continue, but should be recreated soon.");
+        }
+        else if (result != VK_SUCCESS) {
+            Log::error("Failed to acquire swapchain image (VkResult=", result, ")");
+        }
+        // else: Success
+    }
+
+	// present the rendered image to the graphics queue (method overload without semaphores)
+    VkResult present_rendered_image() {
+        VkPresentInfoKHR present_info{};
+        present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        present_info.waitSemaphoreCount = 0;
+        present_info.pWaitSemaphores = nullptr;
+
+        present_info.swapchainCount = 1;
+        present_info.pSwapchains = &swapchain;
+        present_info.pImageIndices = current_image_index;
+        present_info.pResults = nullptr;
+
+        VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            Log::warning("Swapchain out of date during present -> recreating");
+            this->recreate();
+        }
+        else if (result == VK_SUBOPTIMAL_KHR) {
+            Log::info("Swapchain suboptimal during present. Okay to continue, but should be recreated soon");
+        }
+        else if (result != VK_SUCCESS) {
+            Log::error("Failed to present swapchain image (VkResult=", result, ")");
+        }
+        // else: Success
+
+        return result;
+    }
+
+    // present the rendered image to the graphics queue (method overload with single semaphore)
+    VkResult present_rendered_image(const Semaphore& wait_semaphore) {
+        VkPresentInfoKHR present_info{};
+        present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        present_info.waitSemaphoreCount = 1;
+        present_info.pWaitSemaphores = &wait_semaphore.get(); // Semaphore to wait on (e.g., rendering finished)
+
+        present_info.swapchainCount = 1;
+        present_info.pSwapchains = &swapchain;
+        present_info.pImageIndices = current_image_index;
+        present_info.pResults = nullptr;
+
+        VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            Log::warning("Swapchain out of date during present -> recreating");
+            this->recreate();
+        }
+        else if (result == VK_SUBOPTIMAL_KHR) {
+            Log::info("Swapchain suboptimal during present. Okay to continue, but should be recreated soon");
+        }
+        else if (result != VK_SUCCESS) {
+            Log::error("Failed to present swapchain image (VkResult=", result, ")");
+        }
+        // else: Success
+
+        return result;
+    }
+
+	// present the rendered image to the graphics queue (method overload with multiple semaphores)
+    VkResult present_rendered_image(const std::vector<Semaphore>& wait_semaphores) {
+        VkPresentInfoKHR present_info{};
+        present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        present_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
+		std::vector<VkSemaphore> wait_semaphore_handles(wait_semaphores.size());
+		for (VkSemaphore semaphore : wait_semaphores) {
+			wait_semaphore_handles.push_back(semaphore.get());
+		}
+        present_info.pWaitSemaphores = &wait_semaphore_handles.data(); // Semaphore to wait on (e.g., rendering finished)
+        present_info.swapchainCount = 1;
+        present_info.pSwapchains = &swapchain;
+        present_info.pImageIndices = current_image_index;
+        present_info.pResults = nullptr;
+
+        VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            Log::warning("Swapchain out of date during present -> recreating");
+            this->recreate();
+        }
+        else if (result == VK_SUBOPTIMAL_KHR) {
+            Log::info("Swapchain suboptimal during present. Okay to continue, but should be recreated soon");
+        }
+        else if (result != VK_SUCCESS) {
+            Log::error("Failed to present swapchain image (VkResult=", result, ")");
+        }
+        // else: Success
+
+        return result;
+    }
+
+    void recreate() {
+		destroy();
+		// Recreate swapchain with the same parameters
+		Swapchain new_swapchain(*device, *surface, surface_format, renderpass, usage, extent.width, extent.height, num_images, view_type);
+		swapchain = new_swapchain.get();
+		image = new_swapchain.image;
+		color_image_views = new_swapchain.color_image_views;
+		framebuffer = new_swapchain.framebuffer;
+		framebuffer_image_views = new_swapchain.framebuffer_image_views;
     }
 
     // getters
-    uint32_t get_width() const { return window_dimensions.width; }
-    uint32_t get_height() const { return window_dimensions.height; }
 
-    ~Swapchain() {
-        for (uint32_t i = 0; i < num_images; i++) {
-            vkDestroyFramebuffer(logical, framebuffer[i], nullptr);
-            uint32_t attachments = image_view[i].size();
-            for (uint32_t j = 0; j < attachments; j++) {
-                vkDestroyImageView(logical, image_view[i][j], nullptr);
-            }
-        }
-        vkDestroySwapchainKHR(logical, swapchain, nullptr);
+    uint32_t get_width() const { return extent.width; }
+
+    uint32_t get_height() const { return extent.height; }
+	
+    VkExtent2D get_extent() const { return extent; }
+	
+    VkSwapchainKHR get() const { return swapchain; }
+	
+    VkImageView get_color_image_view(uint32_t index) const {
+		if (index < color_image_views.size()) {
+			return color_image_views[index];
+		}
+		else {
+			Log::error("Invalid index for color image view: ", index);
+			return VK_NULL_HANDLE;
+		}
+	}
+
+	VkImageView get_framebuffer_image_view(uint32_t index) const {
+		if (index < framebuffer_image_views.size()) {
+			return framebuffer_image_views[index];
+		}
+		else {
+			Log::error("Invalid index for framebuffer image view: ", index);
+			return VK_NULL_HANDLE;
+		}
+	}
+
+	VkFramebuffer get_framebuffer(uint32_t index) const {
+		if (index < framebuffer.size()) {
+			return framebuffer[index];
+		}
+		else {
+			Log::error("Invalid index for framebuffer: ", index);
+			return VK_NULL_HANDLE;
+		}
+	}
+
+	VkImage get_image(uint32_t index) const {
+		if (index < image.size()) {
+			return image[index];
+		}
+		else {
+			Log::error("Invalid index for image: ", index);
+			return VK_NULL_HANDLE;
+		}
+	}
+
+	VkImage get_current_image() const { return image[current_image_index]; }
+	
+    uint32_t get_current_image_index() const { return current_image_index; }
+
+	uint32_t get_image_count() const { return num_images; }
+
+    // destructor
+	~Swapchain() {
+		destroy();
+	}
+
+    void destroy() {
+		if (swapchain != nullptr) {
+			vkDestroySwapchainKHR(logical, swapchain, nullptr);
+			swapchain = nullptr;
+		}
+		for (uint32_t i = 0; i < num_images; i++) {
+			vkDestroyImageView(logical, color_image_views[i], nullptr);
+			vkDestroyFramebuffer(logical, framebuffer[i], nullptr);
+		}
+		color_image_views.clear();
+		framebuffer.clear();
+		image.clear();
     }
 
 protected:
     uint32_t num_images = 0;
     std::vector<VkImage> image;
-    std::vector<std::vector<VkImageView>> image_view;
+    std::vector<VkImageView> color_image_views;
+    std::vector<VkImageView> framebuffer_image_views;
     std::vector<VkFramebuffer> framebuffer;
     VkSwapchainKHR swapchain = nullptr;
     VkSurfaceCapabilitiesKHR surface_capabilities;
-    VkExtent2D window_dimensions = { 1920, 1080 };
-    VkFormat image_format;
+    VkExtent2D extent = { 1920, 1080 };
+    SurfaceFormat surface_format;
     VkColorSpaceKHR color_space;
+    Device* device;
     VkDevice logical = nullptr;
+    uint32_t current_image_index = 0;
+    VkImageViewType view_type;
 };
 
 class CommandPool {
@@ -2525,7 +3019,7 @@ public:
         return vkResetFences(logical, 1, &fence);
     }
 
-    VkResult wait(uint64_t timeout_nanosec = 1000000) {
+    VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) {
         return vkWaitForFences(logical, 1, &fence, VK_TRUE, timeout_nanosec);
     }
 
@@ -2560,7 +3054,7 @@ public:
         delete semaphore; semaphore = nullptr;
     }
 
-    VkResult wait(uint64_t timeout_nanosec = 1000000000) {
+    VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) {
         wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
         wait_info.pNext = NULL;
         wait_info.flags = VK_SEMAPHORE_WAIT_ANY_BIT;
@@ -2887,6 +3381,7 @@ public:
         vkCmdCopyBuffer(buffer, src_buffer.get(), dst_buffer.get(), 1, copy_region);
     }
 
+    // add memory barrier
     void add_barrier(MemoryBarrier& barrier) {
         VkDependencyInfo dependency_info = {};
         dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -2900,6 +3395,7 @@ public:
         vkCmdPipelineBarrier2(buffer, &dependency_info);
     }
 
+	// add buffer memory barrier
     void add_barrier(BufferMemoryBarrier& barrier) {
         VkDependencyInfo dependency_info = {};
         dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -2913,6 +3409,7 @@ public:
         vkCmdPipelineBarrier2(buffer, &dependency_info);
     }
 
+	// add image memory barrier
     void add_barrier(ImageMemoryBarrier& barrier) {
         VkDependencyInfo dependency_info = {};
         dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -2926,6 +3423,7 @@ public:
         vkCmdPipelineBarrier2(buffer, &dependency_info);
     }
 
+	// add multiple barriers
     void add_barriers(
             std::optional<std::vector<MemoryBarrier>>& memory_barriers,
             std::optional<std::vector<BufferMemoryBarrier>>& buffer_memory_barriers,
@@ -2981,6 +3479,59 @@ public:
         }
 
         vkCmdPipelineBarrier2(buffer, &dependency_info);
+    }
+
+	// transition image layout
+    void transition_image_layout(Image image, VkImageLayout new_layout) {
+        VkImageMemoryBarrier2 image_memory_barrier = {};
+        image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        image_memory_barrier.oldLayout = image.get_layout();
+        image_memory_barrier.newLayout = new_layout;
+        image_memory_barrier.srcQueueFamilyIndex = device->get_graphics_queue_family_index();
+        image_memory_barrier.dstQueueFamilyIndex = device->get_graphics_queue_family_index();
+        image_memory_barrier.image = image.get();
+        image_memory_barrier.subresourceRange.aspectMask = aspect_mask;
+        image_memory_barrier.subresourceRange.baseMipLevel = 0;
+        image_memory_barrier.subresourceRange.levelCount = 1;
+        image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+        image_memory_barrier.subresourceRange.layerCount = 1;
+
+        // Determine stage and access masks based on layouts
+        VkImageAspectFlags aspect_mask;
+        VkPipelineStageFlags src_stage;
+        VkPipelineStageFlags dst_stage;
+        if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+            image_memory_barrier.srcAccessMask = 0;
+            image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        }
+        else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        }
+        else {
+            // Add more common layout transition cases or make masks parameters
+            Log::warning("Image::transition_layout: Unhandled layout transition, using default masks/stages.");
+            image_memory_barrier.srcAccessMask = 0; // Be conservative
+            image_memory_barrier.dstAccessMask = 0; // Be conservative
+        }
+        
+		// Setup dependency info
+        VkDependencyInfo dependency_info = {};
+        dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency_info.memoryBarrierCount = 0;
+        dependency_info.pMemoryBarriers = nullptr;
+        dependency_info.bufferMemoryBarrierCount = 0;
+        dependency_info.pBufferMemoryBarriers = nullptr;
+        dependency_info.imageMemoryBarrierCount = 1;
+        dependency_info.pImageMemoryBarriers = &image_memory_barrier;
+
+        vkCmdPipelineBarrier2(buffer, &dependency_info);
+
+        image.layout = new_layout;
     }
 
     void draw(uint32_t& vertex_count, uint32_t instance_count=1, uint32_t first_vertex=0, uint32_t first_instance=0) {
