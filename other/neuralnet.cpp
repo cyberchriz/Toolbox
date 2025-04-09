@@ -1,4 +1,4 @@
-#include "../headers/neuralnet.h"
+#include "neuralnet.h"
 
 // batch training
 void NeuralNet::fit_set(const Array<Array<double>>& features, const Array<Array<double>>& labels, const int batch_size, const int epochs, bool batch_gradient_averaging){

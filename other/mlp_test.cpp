@@ -1,7 +1,7 @@
 #include <iostream>
 #include <cmath>
-#include "../headers/mlp.h"
-#include "../headers/autoencoder.h"
+#include "mlp.h"
+#include "autoencoder.h"
 
 int main(){
     // set up a test network

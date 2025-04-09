@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
-#include <vulkan_core.h>
+#include <vulkan/vulkan.h>
 #include <Windows.h>
 
 // forward declarations

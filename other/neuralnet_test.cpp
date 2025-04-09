@@ -1,4 +1,4 @@
-#include "../headers/neuralnet.h"
+#include "neuralnet.h"
 
 int main(){
     Log::set_level(LOG_LEVEL_WARNING);

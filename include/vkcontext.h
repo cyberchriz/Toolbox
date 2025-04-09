@@ -52,6 +52,7 @@ This library also comes with the option to handle Instance, Device and CommandPo
 #include <array>
 #include <variant>
 #include <optional>
+#include <spirv_bin.h>
 
 // --- Platform-Specific Headers ---
 #ifdef _WIN32
@@ -110,7 +111,8 @@ enum DescriptorType {
     UNIFORM_BUFFER,
     STORAGE_BUFFER,
     STORAGE_IMAGE,
-    SAMPLED_IMAGE
+    SAMPLED_IMAGE,
+	COMBINED_IMAGE_SAMPLER
 };
 
 enum QueueFamily {
@@ -851,40 +853,39 @@ public:
         else {
             switch (attachment.type) {
                 case RenderAttachment::Type::COLOR: {
-                    uint32_t id = color_attachment_reference.size();
-                    color_attachment_reference.resize(id + 1);
-                    color_attachment_reference[id].attachment = attachment.index;
-                    color_attachment_reference[id].layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : layout;
+                    uint32_t id = color_attachment_reference.value().size();
+                    color_attachment_reference.value().resize(id + 1);
+                    color_attachment_reference.value()[id].attachment = attachment.index;
+                    color_attachment_reference.value()[id].layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : layout;
                     break;
                 }
                 case RenderAttachment::Type::DEPTH: {
-                    depth_attachment_reference.attachment = attachment.index;
-                    depth_attachment_reference.layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : layout;
+                    depth_attachment_reference.value().attachment = attachment.index;
+                    depth_attachment_reference.value().layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : layout;
                     break;
                 }
                 case RenderAttachment::Type::INPUT: {
-                    uint32_t id = input_attachment_reference.size();
-                    input_attachment_reference.resize(id + 1);
-                    input_attachment_reference[id].attachment = attachment.index;
-                    input_attachment_reference[id].layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : layout;
+                    uint32_t id = input_attachment_reference.value().size();
+                    input_attachment_reference.value().resize(id + 1);
+                    input_attachment_reference.value()[id].attachment = attachment.index;
+                    input_attachment_reference.value()[id].layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : layout;
                     break;
                 }
                 case RenderAttachment::Type::PRESERVE: {
                     if (layout == VK_IMAGE_LAYOUT_UNDEFINED) {
                         Log::warning("in method SubPass::add_attachment: please make sure to use a valid layout parameter (VkImageLayout) for the preserve attachment");
                     }
-                    uint32_t id = preserve_attachment_reference.size();
-                    preserve_attachment_reference.resize(id + 1);
-                    preserve_attachment_reference[id].attachment = attachment.index;
-                    preserve_attachment_reference[id].layout = layout;
+                    uint32_t id = preserve_attachment_reference.value().size();
+                    preserve_attachment_reference.value().resize(id + 1);
+                    preserve_attachment_reference.value()[id] = attachment.index;
                     break;
                 }
                 case RenderAttachment::Type::RESOLVE: {
                     if (layout == VK_IMAGE_LAYOUT_UNDEFINED) {
                         Log::warning("in method SubPass::add_attachment: please make sure to use a valid layout parameter (VkImageLayout) for the resolve attachment");
                     }
-                    resolve_attachment_reference.attachment = attachment.index;
-                    resolve_attachment_reference.layout = layout;
+                    resolve_attachment_reference.value().attachment = attachment.index;
+                    resolve_attachment_reference.value().layout = layout;
                     break;
                 }
                 default: {
@@ -896,7 +897,7 @@ public:
 protected:
     std::optional<std::vector<VkAttachmentReference>> color_attachment_reference;
     std::optional<std::vector<VkAttachmentReference>> input_attachment_reference;
-    std::optional<std::vector<VkAttachmentReference>> preserve_attachment_reference;
+    std::optional<std::vector<uint32_t>> preserve_attachment_reference;
     std::optional<VkAttachmentReference> depth_attachment_reference;
     std::optional<VkAttachmentReference> resolve_attachment_reference;
     bool finalized = false; // this flag is updated by the parent RenderPass class (as a friend class) after the subpass has been added
@@ -967,7 +968,7 @@ public:
         }
         }
 
-        return return RenderAttachment(type, &attachment_description[id], id);
+        return RenderAttachment(type, &attachment_description[id], id);
     }
 
     // adds a subpass to the RenderPass and returns the index of this new subpass
@@ -982,8 +983,8 @@ public:
         subpass_description[id].pipelineBindPoint = bind_point;
         
         if (subpass.input_attachment_reference.has_value()) {
-            subpass_description[id].inputAttachmentCount = static_cast<uint32_t>(subpass.input_attachment_reference.size());
-            subpass_description[id].pInputAttachments = subpass.input_attachment_reference.empty() ? nullptr : subpass.input_attachment_reference.data();
+            subpass_description[id].inputAttachmentCount = static_cast<uint32_t>(subpass.input_attachment_reference.value().size());
+            subpass_description[id].pInputAttachments = subpass.input_attachment_reference.value().empty() ? nullptr : subpass.input_attachment_reference.value().data();
         }
         else {
             subpass_description[id].inputAttachmentCount = 0;
@@ -991,8 +992,8 @@ public:
         }
 
         if (subpass.color_attachment_reference.has_value()) {
-            subpass_description[id].colorAttachmentCount = static_cast<uint32_t>(subpass.color_attachment_reference.size());
-            subpass_description[id].pColorAttachments = subpass.color_attachment_reference.empty() ? nullptr : subpass.color_attachment_reference.data();
+            subpass_description[id].colorAttachmentCount = static_cast<uint32_t>(subpass.color_attachment_reference.value().size());
+            subpass_description[id].pColorAttachments = subpass.color_attachment_reference.value().empty() ? nullptr : subpass.color_attachment_reference.value().data();
         }
         else {
             subpass_description[id].colorAttachmentCount = 0;
@@ -1000,14 +1001,14 @@ public:
         }
 
         if (subpass.resolve_attachment_reference.has_value()) {
-            subpass_description[id].pResolveAttachment = &subpass.resolve_attachment_reference;
+            subpass_description[id].pResolveAttachments = &subpass.resolve_attachment_reference.value();
         }
         else {
-            subpass_description[id].pResolveAttachment = nullptr;
+            subpass_description[id].pResolveAttachments = nullptr;
         }
 
         if (subpass.depth_attachment_reference.has_value()) {
-            subpass_description[id].pDepthStencilAttachment = &subpass.depth_attachment_reference;
+            subpass_description[id].pDepthStencilAttachment = &subpass.depth_attachment_reference.value();
             depth_stencil_flag = true;
         }
         else {
@@ -1015,12 +1016,12 @@ public:
         }
 
         if (subpass.preserve_attachment_reference.has_value()) {
-            subpass_description[id].preserveAttachmentCount = static_cast<uint32_t>(subpass.preserve_attachment_reference.size());
-            subpass_description[id].pPreserveAttachment = subpass.preserve_attachment_reference.empty() ? nullptr : subpass.preserve_attachment_reference.data();
+            subpass_description[id].preserveAttachmentCount = static_cast<uint32_t>(subpass.preserve_attachment_reference.value().size());
+            subpass_description[id].pPreserveAttachments = subpass.preserve_attachment_reference.value().empty() ? nullptr : subpass.preserve_attachment_reference.value().data();
         }
         else {
             subpass_description[id].preserveAttachmentCount = 0;
-            subpass_description[id].pPreserveAttachment = nullptr;
+            subpass_description[id].pPreserveAttachments = nullptr;
         }
         subpass.finalized = true;
         return id;
@@ -1071,7 +1072,7 @@ public:
     RenderPass& operator=(RenderPass&& other) noexcept {
         if (this != &other) {
             // Release resources held by the current object (if any)
-            this->destroy;
+            this->destroy();
 
             // Move the state from 'other' to 'this'
             move_resources(other);
@@ -1105,7 +1106,7 @@ public:
 
 protected:
     // helper method to move resources for the move constructor and move assignment
-    void move_resources(RenderPass&& other) {
+    void move_resources(RenderPass& other) {
         logical = std::exchange(other.logical, nullptr);
         renderpass = std::exchange(other.renderpass, nullptr);
         multisample_count = std::move(other.multisample_count);
@@ -1419,7 +1420,7 @@ public:
 
     // Setters
     void set_format(VkFormat format) { this->format = format; surface_format.format = format; }
-    void set_color_space(VkColorSpaceKHR color_space) { this->color_space = color_space; surface_format.color_space = color_space; }
+    void set_color_space(VkColorSpaceKHR color_space) { this->color_space = color_space; surface_format.colorSpace = color_space; }
 private:
 	VkFormat format;
 	VkColorSpaceKHR color_space;
@@ -1450,7 +1451,10 @@ public:
         this->logical = device.get_logical();
         surface_capabilities = surface.get_capabilities(device);
 		this->view_type = view_type;
-		this->surface_format = surface_format;
+		this->surface_format = &surface_format;
+        this->renderpass = &renderpass;
+        this->surface = &surface;
+        this->usage = usage;
 
         // chose present mode
         std::vector<VkPresentModeKHR> available_present_modes = surface.get_present_modes(device);
@@ -1482,14 +1486,14 @@ public:
 
         // adjust image extent
         // (note: std::min & std::max can't be used to replace the if statements due to an IntelliSense bug)
-        extent.width = window_width;
+        extent.width = extent_width;
         if (extent.width > surface_capabilities.maxImageExtent.width) {
             extent.width = surface_capabilities.maxImageExtent.width;
         }
         else if (extent.width < surface_capabilities.minImageExtent.width) {
             extent.width = surface_capabilities.minImageExtent.width;
         }
-        extent.height = window_height;
+        extent.height = extent_height;
         if (extent.height > surface_capabilities.maxImageExtent.height) {
             extent.height = surface_capabilities.maxImageExtent.height;
         }
@@ -1535,9 +1539,9 @@ public:
         for (uint32_t i = 0; i < num_images; i++) {
             VkImageViewCreateInfo view_info = {};
             view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            view_info.image = images[i];
+            view_info.image = image[i];
             view_info.viewType = view_type; // e.g. VK_IMAGE_VIEW_TYPE_2D (assuming 2D)
-			view_info.format = suface_format.get_format();
+			view_info.format = surface_format.get_format();
             view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             view_info.subresourceRange.baseMipLevel = 0;
             view_info.subresourceRange.levelCount = 1;
@@ -1575,13 +1579,13 @@ public:
             VkFramebufferCreateInfo framebuffer_create_info = {};
             framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             framebuffer_create_info.renderPass = renderpass.get();
-            framebuffer_create_info.attachmentCount = extected_attachments;
+            framebuffer_create_info.attachmentCount = expected_attachments;
             framebuffer_create_info.pAttachments = attachments.data();
             framebuffer_create_info.width = extent.width;
             framebuffer_create_info.height = extent.height;
             framebuffer_create_info.layers = 1;
 
-            VkResult result = vkCreateFramebuffer(logical, &framebuffer_info, nullptr, &framebuffers_[i]);
+            VkResult result = vkCreateFramebuffer(logical, &framebuffer_create_info, nullptr, &framebuffer[i]);
             if (result != VK_SUCCESS) {
                 Log::error("Failed to create framebuffer ", i, " (VkResult=", result, ")");
             }
@@ -1590,10 +1594,10 @@ public:
         Log::info("Swapchain framebuffers created successfully.");
     }
 
-    void acquire_next_image(Semaphore image_available_semaphore, std::optional<Fence>& fence = std::nullopt, uint64_t timeout = UINT64_MAX) {
+    void acquire_next_image(Semaphore image_available_semaphore, const std::optional<Fence>& fence = std::nullopt, uint64_t timeout = UINT64_MAX) {
         VkResult result;
         if (fence.has_value()) {
-			result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), fence.get(), &current_image_index);
+			result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), fence.value().get(), &current_image_index);
 		}
         else {
             result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), nullptr, &current_image_index);
@@ -1621,7 +1625,7 @@ public:
 
         present_info.swapchainCount = 1;
         present_info.pSwapchains = &swapchain;
-        present_info.pImageIndices = current_image_index;
+        present_info.pImageIndices = &current_image_index;
         present_info.pResults = nullptr;
 
         VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
@@ -1650,7 +1654,7 @@ public:
 
         present_info.swapchainCount = 1;
         present_info.pSwapchains = &swapchain;
-        present_info.pImageIndices = current_image_index;
+		present_info.pImageIndices = &current_image_index;
         present_info.pResults = nullptr;
 
         VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
@@ -1676,13 +1680,13 @@ public:
         present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         present_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
 		std::vector<VkSemaphore> wait_semaphore_handles(wait_semaphores.size());
-		for (VkSemaphore semaphore : wait_semaphores) {
+		for (Semaphore semaphore : wait_semaphores) {
 			wait_semaphore_handles.push_back(semaphore.get());
 		}
-        present_info.pWaitSemaphores = &wait_semaphore_handles.data(); // Semaphore to wait on (e.g., rendering finished)
+        present_info.pWaitSemaphores = wait_semaphore_handles.data(); // Semaphore to wait on (e.g., rendering finished)
         present_info.swapchainCount = 1;
         present_info.pSwapchains = &swapchain;
-        present_info.pImageIndices = current_image_index;
+        present_info.pImageIndices = &current_image_index;
         present_info.pResults = nullptr;
 
         VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
@@ -1705,7 +1709,17 @@ public:
     void recreate() {
 		destroy();
 		// Recreate swapchain with the same parameters
-		Swapchain new_swapchain(*device, *surface, surface_format, renderpass, usage, extent.width, extent.height, num_images, view_type);
+		Swapchain new_swapchain(
+			*device,
+			*surface,
+			*surface_format,
+			*renderpass,
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+			extent.width,
+			extent.height,
+			num_images,
+			view_type
+		);
 		swapchain = new_swapchain.get();
 		image = new_swapchain.image;
 		color_image_views = new_swapchain.color_image_views;
@@ -1784,8 +1798,11 @@ public:
 			vkDestroyFramebuffer(logical, framebuffer[i], nullptr);
 		}
 		color_image_views.clear();
+		framebuffer_image_views.clear();
 		framebuffer.clear();
 		image.clear();
+		num_images = 0;
+		Log::info("Swapchain destroyed.");
     }
 
 protected:
@@ -1797,9 +1814,12 @@ protected:
     VkSwapchainKHR swapchain = nullptr;
     VkSurfaceCapabilitiesKHR surface_capabilities;
     VkExtent2D extent = { 1920, 1080 };
-    SurfaceFormat surface_format;
+    SurfaceFormat* surface_format;
+    VkImageUsageFlags usage;
     VkColorSpaceKHR color_space;
     Device* device;
+    RenderPass* renderpass;
+	Surface* surface;
     VkDevice logical = nullptr;
     uint32_t current_image_index = 0;
     VkImageViewType view_type;
@@ -1850,11 +1870,11 @@ public:
         destroy();
     }
 
-    void trim() {
+    void trim() const {
         vkTrimCommandPool(logical, pool, NULL);
     }
 
-    VkResult reset(VkCommandPoolResetFlags flags = VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) {
+    VkResult reset(VkCommandPoolResetFlags flags = VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) const {
         return vkResetCommandPool(logical, pool, flags);
     }
 
@@ -1870,7 +1890,7 @@ public:
 
     ~VertexDescriptions() {}
 
-    add_attribute(uint32_t location, uint32_t binding, VkFormat format, uint32_t offset = 0) {
+    void add_attribute(uint32_t location, uint32_t binding, VkFormat format, uint32_t offset = 0) {
         uint32_t id = attribute_descriptions.size();
         attribute_descriptions.resize(id + 1);
         attribute_descriptions[id].binding = binding;
@@ -1880,18 +1900,18 @@ public:
     }
 
     // adds a binding to the vertex descriptions and returns the index of the new binding
-    uint32_t add_binding(uint32_t stride, VkVertexInputRate inputRate = VK_VERTEX_INPUT_RATE_VERTEX) {
+    uint32_t add_binding(uint32_t stride, VkVertexInputRate input_rate = VK_VERTEX_INPUT_RATE_VERTEX) {
         uint32_t id = binding_descriptions.size();
         binding_descriptions.resize(id + 1);
-        binding_descriptions[id].binding = binding;
+        binding_descriptions[id].binding = id;
         binding_descriptions[id].inputRate = input_rate;
         binding_descriptions[id].stride = stride;
         return id;
     }
 
     // getters
-    std::vector<VkVertexInputAttributeDescription>& get_attribute_descriptions() const {return attribute_descriptions;}
-    std::vector<VkVertexInputBindingDescription>& get_input_bindings() const {return binding_descriptions;}
+    const std::vector<VkVertexInputAttributeDescription>& get_attribute_descriptions() const { return attribute_descriptions; }
+    const std::vector<VkVertexInputBindingDescription>& get_input_bindings() const { return binding_descriptions; }
 
 protected:
     std::vector<VkVertexInputAttributeDescription> attribute_descriptions = {};
@@ -1902,29 +1922,48 @@ class ShaderModule {
 public:
     // constructor
     ShaderModule() = delete;
-    ShaderModule(Device& device) {
+
+	// constructor with binary data
+    ShaderModule(Device& device, const unsigned char* binary, const size_t& size_bytes) {
         this->logical = device.get_logical();
+        VkShaderModuleCreateInfo shader_module_create_info = {};
         shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    }
+        shader_module_create_info.codeSize = size_bytes;
+        shader_module_create_info.pCode = reinterpret_cast<const uint32_t*>(binary);
 
-    // set the folder name where SPIR_V files are located (default is "../shaders/spirv")
-    void set_spirv_source_folder(const std::string& folder_name) {
-        spirv_folder = folder_name;
-        if (spirv_folder.back() != '/') {
-            spirv_folder += '/';
+        // free old resource first in case a previous module exists
+        if (module != nullptr) {
+            Log::info("destroying previous shader module");
+            vkDestroyShaderModule(logical, module, nullptr);
+        }
+
+        // allocate new module
+        VkResult result = vkCreateShaderModule(logical, &shader_module_create_info, nullptr, &module);
+        if (result == VK_SUCCESS) {
+            Log::debug("new shader module successfully created (handle: ", module, ")");
+        }
+        else {
+            Log::error("failed to create shader module (VkResult = ", result, ")");
         }
     }
 
-    // set the folder name where SPIR_V files are located (default is "../shaders/spirv")
-    void set_spirv_source_folder(const char* folder_name) {
-        spirv_folder = folder_name;
-        if (spirv_folder.back() != '/') {
-            spirv_folder += '/';
-        }
+	// constructor with folder & filename as string literals
+    ShaderModule(Device& device, const char* foldername, const char* filename) {
+        ShaderModule(device, std::string(foldername), std::string(filename));
     }
 
-    VkShaderModule& read_from_file(const char* filename) {
-        std::string file_path = std::string(spirv_folder) + filename;
+	// constructor with folder & filename as std::string
+    ShaderModule(Device& device, const std::string& foldername, const std::string& filename) {
+        this->logical = device.get_logical();
+        
+        std::string file_path;
+        if (foldername.back() != '/') {
+            file_path = foldername + '/' + filename;
+        }
+        else {
+			file_path = foldername + filename;
+        }
+        std::string file_path = foldername + filename;
         long file_size = 0;
         FILE* file = fopen(file_path.c_str(), "rb");
         if (!file) {
@@ -1938,6 +1977,8 @@ public:
             uint8_t* buffer = new uint8_t[file_size];
             fread(buffer, 1, file_size, file);
 
+            VkShaderModuleCreateInfo shader_module_create_info = {};
+            shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
             shader_module_create_info.codeSize = file_size;
             shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(buffer);
 
@@ -1958,10 +1999,9 @@ public:
             delete[] buffer;
             fclose(file);
         }
-        return module;
     }
 
-    VkShaderModule& get() { return module; }
+    const VkShaderModule& get() const { return module; }
 
     // destructor
     ~ShaderModule() {
@@ -1970,10 +2010,8 @@ public:
         }
     }
 private:
-    std::string spirv_folder = "../shaders/spirv/"; // =default (change using the set_spirv_source_folder() method if needed)
     VkShaderModule module = nullptr;
     VkDevice logical = nullptr;
-    VkShaderModuleCreateInfo shader_module_create_info = {};
 };
 
 class PushConstants {
@@ -2393,6 +2431,42 @@ protected:
     uint64_t size_bytes = 0;
 };
 
+// TODO: make constructor more configurable
+class Sampler {
+public:
+	Sampler() = delete;
+	Sampler(Device& device) {
+		this->logical = device.get_logical();
+		sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		sampler_create_info.pNext = NULL;
+		sampler_create_info.magFilter = VK_FILTER_LINEAR;
+		sampler_create_info.minFilter = VK_FILTER_LINEAR;
+		sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		sampler_create_info.anisotropyEnable = VK_TRUE;
+		sampler_create_info.maxAnisotropy = 16.0f;
+		sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+		sampler_create_info.compareEnable = VK_FALSE;
+		sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
+		sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		vkCreateSampler(logical, &sampler_create_info, nullptr, &sampler);
+	}
+	~Sampler() {
+		if (sampler != nullptr) {
+			vkDestroySampler(logical, sampler, nullptr);
+			Log::info("destroyed image sampler (handle: ", sampler, ")");
+			sampler = nullptr;
+		}
+	}
+	const VkSampler& get() const { return sampler; }
+protected:
+	VkSampler sampler = nullptr;
+	VkDevice logical = nullptr;
+	VkSamplerCreateInfo sampler_create_info = {};
+};
+
 class DescriptorPool {
     friend class DescriptorSet;
 public:
@@ -2504,6 +2578,7 @@ public:
         this->logical = device.get_logical();
     }
 
+	// finalizes the descriptor set layout and creates the descriptor set
     void finalize_layout() {
         layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         layout_create_info.pNext = NULL;
@@ -2541,6 +2616,7 @@ public:
         return binding_index;
     }
 
+	// replaces the buffer at the specified binding index with a new one
     template<typename T>
     void replace_buffer(uint32_t target_binding_index, Buffer<T>& buffer, DescriptorType type) {
         if (target_binding_index >= layout_bindings.size()) {
@@ -2566,14 +2642,109 @@ public:
         vkUpdateDescriptorSets(logical, 1, &descriptor_write, 0, nullptr);
     }
 
-    void bind_image() {
-        // TODO
+	// binds an image view to the next available binding index and returns this index
+    uint32_t bind_image(const ImageView& image_view, DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL, const Sampler& sampler) {
+        if (layout_finalized) {
+            Log::error("in method DescriptorSet::bind_image(): the descriptor set layout has already been finalized, i.e. no new images can be added");
+        }
+        uint32_t binding_index = static_cast<uint32_t>(layout_bindings.size());
+        layout_bindings.resize(binding_index + 1);
+        layout_create_info.bindingCount = binding_index + 1;
+
+        layout_bindings[binding_index] = {};
+        layout_bindings[binding_index].binding = binding_index;
+        layout_bindings[binding_index].descriptorType = get_descriptor_type(type);
+        layout_bindings[binding_index].descriptorCount = 1;
+        layout_bindings[binding_index].stageFlags = shader_stage_flags;
+        layout_bindings[binding_index].pImmutableSamplers = nullptr;
+
+        Log::debug("binding image view ", image_view.get(), " to descriptor set (handle: ", set, ") at binding index ", binding_index);
+
+        // Store the image view and sampler for updating the descriptor set later
+		ImageBindingInfo image_binding; // = custom struct, not part of the Vulkan API
+        image_binding.binding_index = binding_index;
+        image_binding.image_view = image_view.get();
+        image_binding.sampler = sampler.get();
+        image_binding.descriptor_type = get_descriptor_type(type);
+        image_bindings.push_back(image_binding);
+
+        return binding_index;
     }
 
-    void replace_image() {
-        // TODO
+	// replaces the image view at the specified binding index with a new one
+    void replace_image(uint32_t target_binding_index, const ImageView& image_view, DescriptorType type, const std::optional<Sampler>& sampler = std::nullopt) {
+        if (target_binding_index >= layout_bindings.size()) {
+            Log::warning("in method DescriptorSet::replace_image(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
+            return;
+        }
+
+        VkDescriptorImageInfo image_info = {};
+        if (type == DescriptorType::SAMPLED_IMAGE || type == DescriptorType::COMBINED_IMAGE_SAMPLER) {
+            if (!sampler.has_value()) {
+                Log::error("in method DescriptorSet::replace_image(): sampler is required for SAMPLED_IMAGE or COMBINED_IMAGE_SAMPLER");
+                return;
+            }
+            image_info.sampler = sampler->get();
+        }
+        image_info.imageView = image_view.get();
+        image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // Assuming this is the desired layout
+
+        VkWriteDescriptorSet descriptor_write = {};
+        descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_write.pNext = nullptr;
+        descriptor_write.dstSet = set;
+        descriptor_write.dstBinding = target_binding_index;
+        descriptor_write.dstArrayElement = 0;
+        descriptor_write.descriptorCount = 1;
+        descriptor_write.descriptorType = get_descriptor_type(type);
+        descriptor_write.pImageInfo = &image_info;
+        descriptor_write.pTexelBufferView = nullptr;
+        descriptor_write.pBufferInfo = nullptr;
+
+        vkUpdateDescriptorSets(logical, 1, &descriptor_write, 0, nullptr);
+
+        // Update the stored image binding info if it exists
+        for (auto& binding_info : image_bindings) {
+            if (binding_info.binding_index == target_binding_index) {
+                binding_info.image_view = image_view.get();
+                binding_info.sampler = sampler ? sampler->get() : VK_NULL_HANDLE;
+                binding_info.descriptor_type = get_descriptor_type(type);
+                break;
+            }
+        }
     }
 
+	// updates the descriptor set with the current image bindings
+    void update() {
+        std::vector<VkWriteDescriptorSet> descriptor_writes;
+        std::vector<VkDescriptorImageInfo> image_infos;
+
+        for (const auto& binding_info : image_bindings) {
+            VkDescriptorImageInfo image_info{};
+            if (binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+                image_info.sampler = binding_info.sampler;
+            }
+            image_info.imageView = binding_info.image_view;
+            image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            image_infos.push_back(image_info);
+
+            VkWriteDescriptorSet descriptor_write{};
+            descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptor_write.dstSet = set;
+            descriptor_write.dstBinding = binding_info.binding_index;
+            descriptor_write.dstArrayElement = 0;
+            descriptor_write.descriptorCount = 1;
+            descriptor_write.descriptorType = binding_info.descriptor_type;
+            descriptor_write.pImageInfo = &image_infos.back();
+            descriptor_write.pBufferInfo = nullptr;
+            descriptor_write.pTexelBufferView = nullptr;
+            descriptor_writes.push_back(descriptor_write);
+        }
+
+        vkUpdateDescriptorSets(logical, static_cast<uint32_t>(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
+    }
+
+	// getters
     VkDescriptorSet& get() { return set; }
     VkDescriptorSetLayout& get_layout() { return layout; }
 
@@ -2586,6 +2757,12 @@ public:
     }
 
 protected:
+    struct ImageBindingInfo {
+        uint32_t binding_index;
+        VkImageView image_view;
+        VkSampler sampler;
+        VkDescriptorType descriptor_type;
+    };
 
     VkDescriptorType get_descriptor_type(DescriptorType type) {
         switch (type) {
@@ -2593,6 +2770,7 @@ protected:
         case DescriptorType::UNIFORM_BUFFER: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         case DescriptorType::SAMPLED_IMAGE:  return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         case DescriptorType::STORAGE_IMAGE:  return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        case DescriptorType::COMBINED_IMAGE_SAMPLER: return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         default: Log::error("Invalid descriptor type."); return VK_DESCRIPTOR_TYPE_MAX_ENUM;
         }
     }
@@ -2600,6 +2778,7 @@ protected:
     VkDevice logical = nullptr;
     VkDescriptorSetLayoutCreateInfo layout_create_info = {};
     std::vector<VkDescriptorSetLayoutBinding> layout_bindings;
+    std::vector<ImageBindingInfo> image_bindings;
     VkDescriptorSet set = nullptr;
     VkDescriptorSetLayout layout = nullptr;
     bool layout_finalized = false;
@@ -2615,16 +2794,16 @@ public:
         uint32_t subpass_index,
         Swapchain& swapchain,
         ShaderModule& vertex_shader_module,
-        std::optional<ShaderModule>& fragment_shader_module,
-        std::optional<ShaderModule>& hull_shader_module = std::nullopt,
-        std::optional<ShaderModule>& domain_shader_module = std::nullopt,
+        const std::optional<ShaderModule>& fragment_shader_module = std::nullopt,
+        const std::optional<ShaderModule>& hull_shader_module = std::nullopt,
+        const std::optional<ShaderModule>& domain_shader_module = std::nullopt,
         uint32_t tessellation_patch_control_points = 3,
-        std::optional<VertexDescriptions>& vertex_descriptions = std::nullopt,
-        std::optional<PushConstants>& push_constants = std::nullopt,
-        std::optional<DescriptorSet>& descriptor_set = std::nullopt,
-        VkPipelineDepthStencilStateCreateFlagBits depth_stencil_flags = 0,
+        const std::optional<VertexDescriptions>& vertex_descriptions = std::nullopt,
+        const std::optional<PushConstants>& push_constants = std::nullopt,
+        const std::optional<DescriptorSet>& descriptor_set = std::nullopt,
+        VkPipelineDepthStencilStateCreateFlagBits depth_stencil_flags = VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_DEPTH_ACCESS_BIT_EXT,
         bool color_blend = false,
-        std::optional<std::vector<VkDynamicState>>& dynamic_states = std::nullopt
+        const std::optional<std::vector<VkDynamicState>>& dynamic_states = std::nullopt
     ) {
         this->logical = device.get_logical();
 
@@ -2643,59 +2822,59 @@ public:
         }
 
         // setup fragement shader stage
-        if (fragment_shader_module.has_value() && fragment_shader_module.get() != nullptr) {
+        if (fragment_shader_module.has_value() && fragment_shader_module.value().get() != nullptr) {
             uint32_t i = shader_stage_create_info.size();
             shader_stage_create_info.push_back({});
             shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
             shader_stage_create_info[i].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-            shader_stage_create_info[i].module = fragment_shader_module.get();
+            shader_stage_create_info[i].module = fragment_shader_module.value().get();
             shader_stage_create_info[i].pName = "main";
         }
+        
+        // add shader stage infos to pipeline create info
+        pipeline_create_info.stageCount = shader_stage_create_info.size();
+        pipeline_create_info.pStages = shader_stage_create_info.data();
 
         // setup tesselation stage
         VkPipelineTessellationStateCreateInfo tessellation_state_create_info = {};
         if (hull_shader_module.has_value() && domain_shader_module.has_value()) {
-            if (hull_shader_module.get() != nullptr) {
+            if (hull_shader_module.value().get() != nullptr) {
                 uint32_t i = shader_stage_create_info.size();
                 shader_stage_create_info.push_back({});
                 shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
                 shader_stage_create_info[i].stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-                shader_stage_create_info[i].module = hull_shader_module.get();
+                shader_stage_create_info[i].module = hull_shader_module.value().get();
                 shader_stage_create_info[i].pName = "main";
             }
 
-            if (fragment_shader_module.has_value() && fragment_shader_module.get() != nullptr) {
+            if (fragment_shader_module.has_value() && fragment_shader_module.value().get() != nullptr) {
                 uint32_t i = shader_stage_create_info.size();
                 shader_stage_create_info.push_back({});
                 shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
                 shader_stage_create_info[i].stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-                shader_stage_create_info[i].module = domain_shader_module.get();
+                shader_stage_create_info[i].module = domain_shader_module.value().get();
                 shader_stage_create_info[i].pName = "main";
             }
          
             tessellation_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
             tessellation_state_create_info.pNext = nullptr;
             tessellation_state_create_info.flags = 0; // reserved for future use
-            tessellation_state_create_info.patchControlPoints = std::min(tessellation_patch_control_point, VkPhysicalDeviceLimits::maxTessellationPatchSize);
+            tessellation_state_create_info.patchControlPoints = tessellation_patch_control_points;
             
-            pipeline_create_info.pTessellationState = &tesselation_state_create_info;
+            pipeline_create_info.pTessellationState = &tessellation_state_create_info;
         }
         else {
             pipeline_create_info.pTessellationState = nullptr;
         }
 
-        // add shader stage infos to pipeline create info
-        pipeline_create_info.stageCount = shader_stage_create_info.size();
-        pipeline_create_info.pStages = shader_stage_create_info.data();
-
         // setup vertex input state
         VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {};
-        if (vertex_descriptions.has_value) {
+        if (vertex_descriptions.has_value()) {
             vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-            vertex_input_state_create_info.vertexBindingDescriptionCount = uint32_t(vertex_descriptions.get_input_bindings().size());
-            vertex_input_state_create_info.pVertexBindingDescriptions = vertex_descriptions.get_input_bindings().data();
-            vertex_input_state_create_info.vertexAttributeDescriptionCount = uint32_t(vertex_descriptions.get_attribute_descriptions().size());
-            vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_descriptions.get_attribute_descriptions().data();
+            vertex_input_state_create_info.vertexBindingDescriptionCount = uint32_t(vertex_descriptions.value().get_input_bindings().size());
+            vertex_input_state_create_info.pVertexBindingDescriptions = vertex_descriptions.value().get_input_bindings().data();
+            vertex_input_state_create_info.vertexAttributeDescriptionCount = uint32_t(vertex_descriptions.value().get_attribute_descriptions().size());
+            vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_descriptions.value().get_attribute_descriptions().data();
             
             pipeline_create_info.pVertexInputState = &vertex_input_state_create_info;
         }
@@ -3023,7 +3202,7 @@ public:
         return vkWaitForFences(logical, 1, &fence, VK_TRUE, timeout_nanosec);
     }
 
-    VkFence& get() { return fence; }
+    VkFence& get() const { return fence; }
 private:
     VkFence fence = nullptr;
     VkDevice logical = nullptr;
@@ -3077,7 +3256,7 @@ public:
         vkSignalSemaphore(logical, &signal_info);
     }
 
-    VkSemaphore& get() { return semaphore; }
+    VkSemaphore& get() const { return semaphore; }
 
 private:
     VkSemaphore semaphore = nullptr;

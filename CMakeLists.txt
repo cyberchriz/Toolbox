@@ -361,7 +361,7 @@ message(STATUS "External dependencies configured.")
 #==============================================================================
 # Section: GLSL Shader Compilation
 #==============================================================================
-option(COMPILE_GLSL_SHADERS "Enable automatic GLSL shader compilation" ON)
+option(COMPILE_GLSL_SHADERS "Enable automatic GLSL shader (re)compilation" ON)
 if(COMPILE_GLSL_SHADERS AND EXISTS "${PROJECT_GLSL_DIR}")
     find_program(GLSLANG_VALIDATOR_EXECUTABLE NAMES glslangValidator glslc)
     if(NOT GLSLANG_VALIDATOR_EXECUTABLE)
@@ -418,6 +418,7 @@ endif()
 #==============================================================================
 
 message(STATUS "Configuring SPIR-V to C++ header generation...")
+set(OVERWRITE_SPIRV_HEADER OFF CACHE BOOL "GLSL/SPIR-V: Overwrite existing spirv_bin.h header file (if any)")
 
 # This section relies on the SPIRV_OUTPUT_FILES list generated in the GLSL section
 if(COMPILE_GLSL_SHADERS AND SPIRV_OUTPUT_FILES) # Only run if shaders were compiled
@@ -439,35 +440,40 @@ if(COMPILE_GLSL_SHADERS AND SPIRV_OUTPUT_FILES) # Only run if shaders were compi
     endforeach()
     message(STATUS "  -> SPIR-V file list written to: ${SPIRV_FILE_LIST_PATH}")
 
-    # Define the custom command to generate the header using the script
-    add_custom_command(
-        OUTPUT ${SPIRV_HEADER_OUTPUT}
-        # Command invokes CMake in script mode (-P)
-        COMMAND ${CMAKE_COMMAND}
-                -DSPIRV_FILE_LIST_PATH=${SPIRV_FILE_LIST_PATH}
-                -DOUTPUT_HEADER=${SPIRV_HEADER_OUTPUT}
-                -DGENERATED_HEADER_DIR=${GENERATED_HEADER_DIR}
-                -DPROJECT_SPIRV_DIR=${PROJECT_SPIRV_DIR}
-                -P ${SPIRV_HEADER_GENERATOR_SCRIPT}
-        # Depends on all the individual SPIR-V files and on the list file being up_to-date
-        DEPENDS ${SPIRV_OUTPUT_FILES} ${SPIRV_HEADER_GENERATOR_SCRIPT} ${SPIRV_FILE_LIST_PATH}
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        COMMENT "Generating C++ header from SPIR-V files -> ${SPIRV_HEADER_OUTPUT}"
-        VERBATIM
-    )
+    if(NOT EXISTS "${SPIRV_FILE_LIST_PATH}" OR OVERWRITE_SPIRV_HEADER)
+        
+        # Define the custom command to generate the header using the script
+        add_custom_command(
+            OUTPUT ${SPIRV_HEADER_OUTPUT}
+            # Command invokes CMake in script mode (-P)
+            COMMAND ${CMAKE_COMMAND}
+                    -DSPIRV_FILE_LIST_PATH=${SPIRV_FILE_LIST_PATH}
+                    -DOUTPUT_HEADER=${SPIRV_HEADER_OUTPUT}
+                    -DGENERATED_HEADER_DIR=${GENERATED_HEADER_DIR}
+                    -DPROJECT_SPIRV_DIR=${PROJECT_SPIRV_DIR}
+                    -P ${SPIRV_HEADER_GENERATOR_SCRIPT}
+            # Depends on all the individual SPIR-V files and on the list file being up_to-date
+            DEPENDS ${SPIRV_OUTPUT_FILES} ${SPIRV_HEADER_GENERATOR_SCRIPT} ${SPIRV_FILE_LIST_PATH}
+            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+            COMMENT "Generating C++ header from SPIR-V files -> ${SPIRV_HEADER_OUTPUT}"
+            VERBATIM
+        )
 
-    # Define a custom target that triggers the header generation
-    add_custom_target(spirv_header_target ALL # Use ALL to build automatically
-        DEPENDS ${SPIRV_HEADER_OUTPUT}
-    )
+        # Define a custom target that triggers the header generation
+        add_custom_target(spirv_header_target ALL # Use ALL to build automatically
+            DEPENDS ${SPIRV_HEADER_OUTPUT}
+        )
 
-    # Ensure the main project target depends on the header *generation target*
-    # This guarantees the header is generated before the project tries to compile files that include it.
-    add_dependencies(${PROJECT_NAME} spirv_header_target)
+        # Ensure the main project target depends on the header *generation target*
+        # This guarantees the header is generated before the project tries to compile files that include it.
+        add_dependencies(${PROJECT_NAME} spirv_header_target)
 
-    message(STATUS "Enabled generation of ${SPIRV_HEADER_OUTPUT}")
-    message(STATUS "  -> Will be generated from SPIR-V files in ${PROJECT_SPIRV_DIR}")
-    message(STATUS "  -> Generator script: ${SPIRV_HEADER_GENERATOR_SCRIPT}")
+        message(STATUS "Enabled generation of ${SPIRV_HEADER_OUTPUT}")
+        message(STATUS "  -> Will be generated from SPIR-V files in ${PROJECT_SPIRV_DIR}")
+        message(STATUS "  -> Generator script: ${SPIRV_HEADER_GENERATOR_SCRIPT}")
+    else()
+        message(STATUS "SPIR-V header generation skipped (Header already exists and OVERWRITE_SPIRV_HEADER is OFF).")
+    endif()
 
 elseif(COMPILE_GLSL_SHADERS)
     message(STATUS "SPIR-V to C++ header generation skipped (No SPIR-V files were generated).")

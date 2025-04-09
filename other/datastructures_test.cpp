@@ -1,4 +1,4 @@
-#include "../headers/datastructures.h"
+#include "datastructures.h"
 
 int main(){
     Array<int> arr{10,10};

@@ -1,4 +1,4 @@
-#include "../headers/vknet.h"
+#include "vknet.h"
 
 int main() {
 	vec inputs(10);

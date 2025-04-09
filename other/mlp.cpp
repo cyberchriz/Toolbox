@@ -1,4 +1,4 @@
-#include "../headers/mlp.h"
+#include "mlp.h"
 
 // constructor
 MLP::MLP(std::string filename){

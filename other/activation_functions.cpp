@@ -1,4 +1,4 @@
-#include "../headers/activation_functions.h"
+#include "activation_functions.h"
 constexpr auto M_E = 2.71828182845904523536;
 
 // +------------------------------------------------------------------+

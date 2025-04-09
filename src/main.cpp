@@ -1,4 +1,4 @@
-#include "../headers/vkvec.h"
+#include "vkvec.h"
 
 int main() {
 	vec A(10,10);
