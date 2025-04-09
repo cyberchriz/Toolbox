@@ -99,6 +99,7 @@ class DeviceMemoryBarrier;
 template<typename T> class BufferMemoryBarrier;
 class ImageMemoryBarrier;
 
+// global enums
 enum BufferUsage {
     VERTEX,
     STORAGE,
@@ -120,6 +121,14 @@ enum QueueFamily {
     COMPUTE,
     TRANSFER,
     UNKNOWN
+};
+
+enum AttachmentType {
+    INPUT,
+    COLOR,
+    DEPTH,
+    RESOLVE,
+    PRESERVE
 };
 
 /// class for managing a Vulkan Instance,
@@ -815,20 +824,8 @@ protected:
 
 class RenderAttachment {
 public:
-    enum Type {
-        INPUT,
-        COLOR,
-        DEPTH,
-        RESOLVE,
-        PRESERVE
-    };
-
-    Type type;
-    VkAttachmentDescription* description;
-    uint32_t index;
-
     // Constructor
-    RenderAttachment(RenderAttachment::Type type, VkAttachmentDescription* attachment_description, uint32_t index)
+    RenderAttachment(AttachmentType type, VkAttachmentDescription* attachment_description, uint32_t index)
         : type(type), description(attachment_description), index(index) {
     }
 
@@ -849,9 +846,17 @@ public:
     RenderAttachment(const RenderAttachment&) = delete;
     RenderAttachment& operator=(const RenderAttachment&) = delete;
 
-private:
+    // getters
+	AttachmentType get_type() const { return type; }
+	uint32_t get_index() const { return index; }
+
+protected:
     // Deleted default constructor
     RenderAttachment() = delete;
+
+    AttachmentType type;
+    VkAttachmentDescription* description;
+    uint32_t index;
 };
 
 class SubPass {
@@ -866,40 +871,40 @@ public:
             return;
         }
         else {
-            switch (attachment.type) {
-                case RenderAttachment::Type::COLOR: {
+            switch (attachment.get_type()) {
+                case AttachmentType::COLOR: {
                     uint32_t id = color_attachment_reference.value().size();
                     color_attachment_reference.value().resize(id + 1);
-                    color_attachment_reference.value()[id].attachment = attachment.index;
+                    color_attachment_reference.value()[id].attachment = attachment.get_index();
                     color_attachment_reference.value()[id].layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : layout;
                     break;
                 }
-                case RenderAttachment::Type::DEPTH: {
-                    depth_attachment_reference.value().attachment = attachment.index;
+                case AttachmentType::DEPTH: {
+                    depth_attachment_reference.value().attachment = attachment.get_index();
                     depth_attachment_reference.value().layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : layout;
                     break;
                 }
-                case RenderAttachment::Type::INPUT: {
+                case AttachmentType::INPUT: {
                     uint32_t id = input_attachment_reference.value().size();
                     input_attachment_reference.value().resize(id + 1);
-                    input_attachment_reference.value()[id].attachment = attachment.index;
+                    input_attachment_reference.value()[id].attachment = attachment.get_index();
                     input_attachment_reference.value()[id].layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : layout;
                     break;
                 }
-                case RenderAttachment::Type::PRESERVE: {
+                case AttachmentType::PRESERVE: {
                     if (layout == VK_IMAGE_LAYOUT_UNDEFINED) {
                         Log::warning("in method SubPass::add_attachment: please make sure to use a valid layout parameter (VkImageLayout) for the preserve attachment");
                     }
                     uint32_t id = preserve_attachment_reference.value().size();
                     preserve_attachment_reference.value().resize(id + 1);
-                    preserve_attachment_reference.value()[id] = attachment.index;
+                    preserve_attachment_reference.value()[id] = attachment.get_index();
                     break;
                 }
-                case RenderAttachment::Type::RESOLVE: {
+                case AttachmentType::RESOLVE: {
                     if (layout == VK_IMAGE_LAYOUT_UNDEFINED) {
                         Log::warning("in method SubPass::add_attachment: please make sure to use a valid layout parameter (VkImageLayout) for the resolve attachment");
                     }
-                    resolve_attachment_reference.value().attachment = attachment.index;
+                    resolve_attachment_reference.value().attachment = attachment.get_index();
                     resolve_attachment_reference.value().layout = layout;
                     break;
                 }
@@ -932,7 +937,7 @@ public:
 
     // add an attachment description
     RenderAttachment add_attachment(
-        RenderAttachment::Type type,
+        AttachmentType type,
             VkFormat format = VK_FORMAT_R32G32_SFLOAT,
             VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED,
             VkImageLayout final_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -949,30 +954,30 @@ public:
         attachment_description[id].finalLayout = final_layout;
 
         switch (type) {
-        case RenderAttachment::Type::COLOR: {
+        case AttachmentType::COLOR: {
             attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
             attachment_description[id].loadOp = load_op;
             attachment_description[id].storeOp = store_op;
             break;
         }
-        case RenderAttachment::Type::DEPTH: {
+        case AttachmentType::DEPTH: {
             attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
             attachment_description[id].stencilLoadOp = load_op;
             attachment_description[id].stencilStoreOp = store_op;
             depth_stencil_flag = true;
             break;
         }
-        case RenderAttachment::Type::INPUT: {
+        case AttachmentType::INPUT: {
             attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // Input attachments are usually single-sampled
             break;
         }
-        case RenderAttachment::Type::PRESERVE: {
+        case AttachmentType::PRESERVE: {
             attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // preserve attachments are usually single-sampled
             attachment_description[id].stencilLoadOp = load_op;
             attachment_description[id].stencilStoreOp = store_op;
             break;
         }
-        case RenderAttachment::Type::RESOLVE: {
+        case AttachmentType::RESOLVE: {
             attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // resolve attachments are usually single-sampled
             attachment_description[id].loadOp = load_op;
             attachment_description[id].storeOp = store_op;

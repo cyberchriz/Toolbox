@@ -2,8 +2,8 @@
 // description: class for parallel floating point data structure computations on the GPU (using Vulkan)
 
 
-#ifndef VKVEC_H
-#define VKVEC_H
+#ifndef NGRID_H
+#define NGRID_H
 #pragma once // not strictly necessary if the included header files also all come with include guards, but just to be on the safe side
 
 #define NOMINMAX
@@ -27,8 +27,8 @@
 template <typename T> constexpr bool is_numeric = std::is_integral<T>::value || std::is_floating_point<T>::value;
 
 // forward declarations
-class VkVec;
-typedef VkVec vec;
+class NGrid;
+typedef NGrid ngrid;
 
 // list of available activation functions
 enum ActFunc {
@@ -42,21 +42,21 @@ enum ActFunc {
 };
 
 // data structure class for parallel computing with Vulkan
-class VkVec {
+class NGrid {
 public:
     // +=================================+   
     // | Constructors & Destructors      |
     // +=================================+
 
     template <typename T, typename... Args>
-    VkVec(T size_x, Args... size_n) {
+    NGrid(T size_x, Args... size_n) {
         std::vector<T> shape = {size_x, size_n...};
     }
     
-    VkVec(const uint32_t rows = 1, const uint32_t cols = 1, const uint32_t depth = 1); // = parametric default constructor
-    VkVec(VkVec&& other) noexcept; // = move constructor
-    VkVec(const VkVec& other); // = copy constructor
-    ~VkVec(); // destructor
+    NGrid(const uint32_t rows = 1, const uint32_t cols = 1, const uint32_t depth = 1); // = parametric default constructor
+    NGrid(NGrid&& other) noexcept; // = move constructor
+    NGrid(const NGrid& other); // = copy constructor
+    ~NGrid(); // destructor
 
     // +=================================+   
     // | getters & setters               |
@@ -73,9 +73,9 @@ public:
     uint32_t get_depth() const;
     uint32_t get_elements() const;
     std::string get_shapestring() const;
-    VkVec get_row(int32_t row_index) const;
-    VkVec get_col(int32_t col_index) const;
-    VkVec get_layer(int32_t layer_index) const;
+    NGrid get_row(int32_t row_index) const;
+    NGrid get_col(int32_t col_index) const;
+    NGrid get_layer(int32_t layer_index) const;
 
     // +=================================+   
     // | Fill, Initialize                |
@@ -119,175 +119,175 @@ public:
 
     // returns the sum of all array elements
     float_t sum() const;
-    VkVec operator+(const float_t value) const;
-    VkVec operator+(const VkVec& other) const;
-    VkVec& operator++(); // prefix increment
-    VkVec operator++(int); // postfix increment
+    NGrid operator+(const float_t value) const;
+    NGrid operator+(const NGrid& other) const;
+    NGrid& operator++(); // prefix increment
+    NGrid operator++(int); // postfix increment
     void operator+=(const float_t value);
-    void operator+=(const VkVec& other);
+    void operator+=(const NGrid& other);
 
     // +=================================+   
     // | Substraction                    |
     // +=================================+
 
-    VkVec operator-(const float_t value) const;
-    VkVec operator-(const VkVec& other) const;
-    VkVec& operator--(); // prefix decrement
-    VkVec operator--(int); // postfix decrement
+    NGrid operator-(const float_t value) const;
+    NGrid operator-(const NGrid& other) const;
+    NGrid& operator--(); // prefix decrement
+    NGrid operator--(int); // postfix decrement
     void operator-=(const float_t value);
-    void operator-=(const VkVec& other);
+    void operator-=(const NGrid& other);
 
     // +=================================+   
     // | Multiplication                  |
     // +=================================+
 
     float_t product() const;
-    VkVec operator*(const float_t factor) const;
+    NGrid operator*(const float_t factor) const;
     void operator*=(const float_t factor);
-    VkVec operator*(const VkVec& other) const; // alias for matrix product
-    void operator*=(const VkVec& other); // "equals matrix product"
-    float_t scalar_product(const VkVec& other) const;
-    VkVec matrix_product(const VkVec& other) const;
-    VkVec Hadamard_product(const VkVec& other) const;
+    NGrid operator*(const NGrid& other) const; // alias for matrix product
+    void operator*=(const NGrid& other); // "equals matrix product"
+    float_t scalar_product(const NGrid& other) const;
+    NGrid matrix_product(const NGrid& other) const;
+    NGrid Hadamard_product(const NGrid& other) const;
 
     // +=================================+   
     // | Division                        |
     // +=================================+
 
-    VkVec operator/(const float_t quotient) const;
+    NGrid operator/(const float_t quotient) const;
     void operator/=(const float_t quotient);
-    VkVec Hadamard_division(const VkVec& other);
+    NGrid Hadamard_division(const NGrid& other);
 
     // +=================================+   
     // | Modulo                          |
     // +=================================+
 
     void operator%=(const float_t value);
-    VkVec operator%(const float_t num) const;
+    NGrid operator%(const float_t num) const;
 
     // +=================================+   
     // | Exponentiation & Logarithm      |
     // +=================================+
 
-    VkVec pow(const float_t exponent = 2.0f) const;
-    VkVec operator^(const float_t exponent) const;
+    NGrid pow(const float_t exponent = 2.0f) const;
+    NGrid operator^(const float_t exponent) const;
     void operator^=(const float_t exponent);
-    VkVec pow(const VkVec& other) const;
-    VkVec operator^(const VkVec& other) const;
-    VkVec sqrt() const;
-    VkVec log(float_t base = 2.718282) const;
-    VkVec exp() const;
+    NGrid pow(const NGrid& other) const;
+    NGrid operator^(const NGrid& other) const;
+    NGrid sqrt() const;
+    NGrid log(float_t base = 2.718282) const;
+    NGrid exp() const;
 
     // +=================================+   
     // | Rounding                        |
     // +=================================+
 
-    VkVec round() const;
-    VkVec floor() const;
-    VkVec ceil() const;
-    VkVec abs() const;
+    NGrid round() const;
+    NGrid floor() const;
+    NGrid ceil() const;
+    NGrid abs() const;
 
     // +=================================+   
     // | Min, Max                        |
     // +=================================+
 
-    VkVec min(const float_t value) const;
-    VkVec max(const float_t value) const;
-    VkVec min(const VkVec& other) const;
-    VkVec max(const VkVec& other) const;
+    NGrid min(const float_t value) const;
+    NGrid max(const float_t value) const;
+    NGrid min(const NGrid& other) const;
+    NGrid max(const NGrid& other) const;
 
     // +=================================+   
     // | Trigonometric Functions         |
     // +=================================+
 
-    VkVec cos(AngularMeasure unit = RAD) const;
-    VkVec sin(AngularMeasure unit = RAD) const;
-    VkVec tan(AngularMeasure unit = RAD) const;
-    VkVec acos(AngularMeasure unit = RAD) const;
-    VkVec asin(AngularMeasure unit = RAD) const;
-    VkVec atan(AngularMeasure unit = RAD) const;
-    VkVec cosh(AngularMeasure unit = RAD) const;
-    VkVec sinh(AngularMeasure unit = RAD) const;
-    VkVec tanh(AngularMeasure unit = RAD) const;
-    VkVec acosh(AngularMeasure unit = RAD) const;
-    VkVec asinh(AngularMeasure unit = RAD) const;
-    VkVec atanh(AngularMeasure unit = RAD) const;
+    NGrid cos(AngularMeasure unit = RAD) const;
+    NGrid sin(AngularMeasure unit = RAD) const;
+    NGrid tan(AngularMeasure unit = RAD) const;
+    NGrid acos(AngularMeasure unit = RAD) const;
+    NGrid asin(AngularMeasure unit = RAD) const;
+    NGrid atan(AngularMeasure unit = RAD) const;
+    NGrid cosh(AngularMeasure unit = RAD) const;
+    NGrid sinh(AngularMeasure unit = RAD) const;
+    NGrid tanh(AngularMeasure unit = RAD) const;
+    NGrid acosh(AngularMeasure unit = RAD) const;
+    NGrid asinh(AngularMeasure unit = RAD) const;
+    NGrid atanh(AngularMeasure unit = RAD) const;
 
     // +=================================+   
     // | Find, Replace                   |
     // +=================================+
 
-    VkVec replace(const float_t& old_value, const float_t& new_value) const;
-    VkVec replace_if(const VkVec& condition_map, const VkVec& replacing_map) const;
-    VkVec replace_if(const VkVec& condition_map, const float_t replacing_value) const;
+    NGrid replace(const float_t& old_value, const float_t& new_value) const;
+    NGrid replace_if(const NGrid& condition_map, const NGrid& replacing_map) const;
+    NGrid replace_if(const NGrid& condition_map, const float_t replacing_value) const;
     uint32_t find(const float_t& value) const;
-    VkVec sign() const;
+    NGrid sign() const;
 
     // +=================================+   
     // | Scaling                         |
     // +=================================+
     
-    VkVec scale_minmax(float_t range_from = 0.0f, float_t range_to = 1.0f) const;
-    VkVec scale_mean() const;
-    VkVec scale_standardized() const;
+    NGrid scale_minmax(float_t range_from = 0.0f, float_t range_to = 1.0f) const;
+    NGrid scale_mean() const;
+    NGrid scale_standardized() const;
 
     // +=================================+   
     // | Activation Functions            |
     // | (with Derivatives)              |
     // +=================================+
 
-    VkVec activation(ActFunc activation_function) const;
-    VkVec derivative(ActFunc activation_function) const;
+    NGrid activation(ActFunc activation_function) const;
+    NGrid derivative(ActFunc activation_function) const;
 
-    VkVec ident() const;                                VkVec ident_drv() const;
-    VkVec sigmoid() const;                              VkVec sigmoid_drv() const;
-    VkVec elu(float_t alpha = 0.01) const;              VkVec elu_drv(float_t alpha = 0.01) const;
-    VkVec relu(float_t alpha = 0.01) const;             VkVec relu_drv(float_t alpha = 0.01) const;
-                                                        VkVec tanh_drv(AngularMeasure unit = RAD) const;
+    NGrid ident() const;                                NGrid ident_drv() const;
+    NGrid sigmoid() const;                              NGrid sigmoid_drv() const;
+    NGrid elu(float_t alpha = 0.01) const;              NGrid elu_drv(float_t alpha = 0.01) const;
+    NGrid relu(float_t alpha = 0.01) const;             NGrid relu_drv(float_t alpha = 0.01) const;
+                                                        NGrid tanh_drv(AngularMeasure unit = RAD) const;
 
     // +=================================+   
     // | Outlier Treatment               |
     // +=================================+
     
-    VkVec outliers_truncate(float_t z_score = 3.0f) const;
-    VkVec outliers_truncate(const float_t min_value, const float_t max_value) const;
-    VkVec outliers_mean_imputation(float_t z_score = 3.0f) const;
-    VkVec outliers_value_imputation(float_t value = 0, float_t z_score = 3.0f) const;
-    VkVec recover() const;
+    NGrid outliers_truncate(float_t z_score = 3.0f) const;
+    NGrid outliers_truncate(const float_t min_value, const float_t max_value) const;
+    NGrid outliers_mean_imputation(float_t z_score = 3.0f) const;
+    NGrid outliers_value_imputation(float_t value = 0, float_t z_score = 3.0f) const;
+    NGrid recover() const;
 
     // +=================================+   
     // | Assignment                      |
     // +=================================+
 
-    VkVec& operator=(const VkVec& other); // copy assignment
-    VkVec& operator=(VkVec&& other) noexcept; // move assignment
+    NGrid& operator=(const NGrid& other); // copy assignment
+    NGrid& operator=(NGrid&& other) noexcept; // move assignment
 
     // +=================================+   
     // | Elementwise Comparison          |
     // +=================================+
 
-    VkVec operator>(const float_t value) const;
-    VkVec operator>=(const float_t value) const;
-    VkVec operator==(const float_t value) const;
-    VkVec operator!=(const float_t value) const;
-    VkVec operator<(const float_t value) const;
-    VkVec operator<=(const float_t value) const;
-    VkVec operator>(const VkVec& other) const;
-    VkVec operator>=(const VkVec& other) const;
-    VkVec operator==(const VkVec& other) const;
-    VkVec operator!=(const VkVec& other) const;
-    VkVec operator<(const VkVec& other) const;
-    VkVec operator<=(const VkVec& other) const;
+    NGrid operator>(const float_t value) const;
+    NGrid operator>=(const float_t value) const;
+    NGrid operator==(const float_t value) const;
+    NGrid operator!=(const float_t value) const;
+    NGrid operator<(const float_t value) const;
+    NGrid operator<=(const float_t value) const;
+    NGrid operator>(const NGrid& other) const;
+    NGrid operator>=(const NGrid& other) const;
+    NGrid operator==(const NGrid& other) const;
+    NGrid operator!=(const NGrid& other) const;
+    NGrid operator<(const NGrid& other) const;
+    NGrid operator<=(const NGrid& other) const;
 
     // +=================================+   
     // | Elementwise Logial Operations   |
     // +=================================+
 
-    VkVec operator&&(const bool value) const;
-    VkVec operator||(const bool value) const;
-    VkVec operator!() const;
-    VkVec operator&&(const VkVec& other) const;
-    VkVec operator||(const VkVec& other) const;
+    NGrid operator&&(const bool value) const;
+    NGrid operator||(const bool value) const;
+    NGrid operator!() const;
+    NGrid operator&&(const NGrid& other) const;
+    NGrid operator||(const NGrid& other) const;
 
     // +=================================+   
     // | Dynamic Handling & Conversion   |
@@ -295,33 +295,33 @@ public:
 
     float_t pop_first();
     float_t pop_last();
-    VkVec flatten() const;
-    VkVec erase_row(const uint32_t row_index);
-    VkVec erase_col(const uint32_t col_index);
-    VkVec erase_layer(const uint32_t depth_layer_index);
-    VkVec add_rows(const int32_t rows = 1, float_t init_value = 0.0f) const;
-    VkVec add_cols(const int32_t cols = 1, float_t init_value = 0.0f) const;
-    VkVec add_depth(const int32_t layers = 1, float_t init_value = 0.0f) const;
-    VkVec resize(const uint32_t rows, const uint32_t cols = 1, const uint32_t depth = 1, float_t init_value = 0.0f) const;
-    VkVec concatenate(const VkVec& other, const uint32_t axis = 0) const;
-    VkVec padding(const float_t value = 0.0f, const uint32_t before_rows = 1, const uint32_t after_rows = 1, const uint32_t before_cols = 0, const uint32_t after_cols = 0, const uint32_t above_layers = 0, const uint32_t below_layers = 0) const;
-    VkVec stationary() const;
-    VkVec stationary_log() const;
-    VkVec stationary_fract(float_t degree = 1.0f, float_t exponent = 1.0f) const;
-    VkVec sort() const;
-    VkVec pool_max(const int32_t slider_rows = 2, const int32_t slider_cols = 1, const int32_t slider_depth = 1) const;
-    VkVec pool_maxabs(const int32_t slider_rows = 2, const int32_t slider_cols = 1, const int32_t slider_depth = 1) const;
-    VkVec pool_min(const int32_t slider_rows = 2, const int32_t slider_cols = 1, const int32_t slider_depth = 1) const;
-    VkVec pool_mean(const int32_t slider_rows = 2, const int32_t slider_cols = 1, const int32_t slider_depth = 1) const;
-    VkVec convolution(const VkVec& kernel, bool padding = false) const;
-    VkVec transpose() const;
-    VkVec inverse(const float_t tolerance = 0.00001f, const uint32_t max_iterations = 20) const;
-    VkVec mirror(bool mirror_rows = true, bool mirror_cols = true, bool mirror_depth = true) const;
-    VkVec diagonal() const;
-    VkVec upper_trigonal() const;
-    VkVec lower_trigonal() const;
-    VkVec remap(const VkVec& source, const VkVec& target, const VkVec& target_index_map_on_source) const;
-    VkVec remap(const VkVec& target_index_map_on_source) const;
+    NGrid flatten() const;
+    NGrid erase_row(const uint32_t row_index);
+    NGrid erase_col(const uint32_t col_index);
+    NGrid erase_layer(const uint32_t depth_layer_index);
+    NGrid add_rows(const int32_t rows = 1, float_t init_value = 0.0f) const;
+    NGrid add_cols(const int32_t cols = 1, float_t init_value = 0.0f) const;
+    NGrid add_depth(const int32_t layers = 1, float_t init_value = 0.0f) const;
+    NGrid resize(const uint32_t rows, const uint32_t cols = 1, const uint32_t depth = 1, float_t init_value = 0.0f) const;
+    NGrid concatenate(const NGrid& other, const uint32_t axis = 0) const;
+    NGrid padding(const float_t value = 0.0f, const uint32_t before_rows = 1, const uint32_t after_rows = 1, const uint32_t before_cols = 0, const uint32_t after_cols = 0, const uint32_t above_layers = 0, const uint32_t below_layers = 0) const;
+    NGrid stationary() const;
+    NGrid stationary_log() const;
+    NGrid stationary_fract(float_t degree = 1.0f, float_t exponent = 1.0f) const;
+    NGrid sort() const;
+    NGrid pool_max(const int32_t slider_rows = 2, const int32_t slider_cols = 1, const int32_t slider_depth = 1) const;
+    NGrid pool_maxabs(const int32_t slider_rows = 2, const int32_t slider_cols = 1, const int32_t slider_depth = 1) const;
+    NGrid pool_min(const int32_t slider_rows = 2, const int32_t slider_cols = 1, const int32_t slider_depth = 1) const;
+    NGrid pool_mean(const int32_t slider_rows = 2, const int32_t slider_cols = 1, const int32_t slider_depth = 1) const;
+    NGrid convolution(const NGrid& kernel, bool padding = false) const;
+    NGrid transpose() const;
+    NGrid inverse(const float_t tolerance = 0.00001f, const uint32_t max_iterations = 20) const;
+    NGrid mirror(bool mirror_rows = true, bool mirror_cols = true, bool mirror_depth = true) const;
+    NGrid diagonal() const;
+    NGrid upper_trigonal() const;
+    NGrid lower_trigonal() const;
+    NGrid remap(const NGrid& source, const NGrid& target, const NGrid& target_index_map_on_source) const;
+    NGrid remap(const NGrid& target_index_map_on_source) const;
 
     // +=================================+   
     // | 1d vector statistics            |
@@ -330,11 +330,11 @@ public:
     struct CorrelationResult;
     struct RegressionResult;
 
-    CorrelationResult correlation(const VkVec& other) const;
-    RegressionResult VkVec::regression(const VkVec& other, const uint32_t power = 1) const;
+    CorrelationResult correlation(const NGrid& other) const;
+    RegressionResult NGrid::regression(const NGrid& other, const uint32_t power = 1) const;
     float_t Dickey_Fuller() const;
-    float_t Engle_Granger(const VkVec& other) const;
-    float_t covariance(const VkVec& other) const;
+    float_t Engle_Granger(const NGrid& other) const;
+    float_t covariance(const NGrid& other) const;
 
     // +=================================+   
     // | Output                          |
@@ -349,9 +349,7 @@ protected:
     // +=================================+   
     // | Protected Class Members         |
     // +=================================+
-    uint32_t rows = 0;
-    uint32_t cols = 0;
-    uint32_t depth = 0;
+	std::vector<uint32_t> shape = {}; // shape of the array
     uint32_t dimensions = 0;
 	uint32_t elements = 0;
     CommandBuffer* command_buffer = nullptr;
@@ -363,7 +361,7 @@ protected:
 
     uint32_t flat_index(uint32_t row, uint32_t col = 0, uint32_t depth_layer = 0) const;
 
-    void copy_resources(const VkVec& other);
+    void copy_resources(const NGrid& other);
 
 };
 
@@ -387,8 +385,8 @@ protected:
 // | Static Member Initializations   |
 // +=================================+
 
-DescriptorPool* VkVec::descriptor_pool = nullptr;
-VkManager* VkVec::manager = nullptr;
+DescriptorPool* NGrid::descriptor_pool = nullptr;
+VkManager* NGrid::manager = nullptr;
 
 
 // +=================================+   
@@ -399,7 +397,7 @@ VkManager* VkVec::manager = nullptr;
 // pass dimension size (elements per dimension)
 // as uint32_t rows, cols, depth;
 // row-major indexing convention applies
-VkVec::VkVec(const uint32_t rows, const uint32_t cols, const uint32_t depth) {
+NGrid::NGrid(const uint32_t rows, const uint32_t cols, const uint32_t depth) {
     dimensions = depth > 1 ? 3 : cols > 1 ? 2 : rows > 0 ? 1 : 0;
     this->rows = rows;
     this->cols = cols > 0 ? cols : 1;
@@ -441,7 +439,7 @@ VkVec::VkVec(const uint32_t rows, const uint32_t cols, const uint32_t depth) {
     if (descriptor_pool == nullptr) {
         static constexpr uint32_t max_sets_within_pool = 1;
         descriptor_pool = new DescriptorPool(manager->get_device(), max_sets_within_pool);
-        std::atexit(&VkVec::destroy_descriptor_pool);
+        std::atexit(&NGrid::destroy_descriptor_pool);
     }
 
     // add a command buffer + data buffer
@@ -452,7 +450,7 @@ VkVec::VkVec(const uint32_t rows, const uint32_t cols, const uint32_t depth) {
 }
 
 // move constructor
-VkVec::VkVec(VkVec&& other) noexcept {
+NGrid::NGrid(NGrid&& other) noexcept {
     copy_resources(other);
     if (this->command_buffer == nullptr) {
         this->command_buffer = new CommandBuffer(manager->get_device(), QueueFamily::COMPUTE, manager->get_command_pool_compute());
@@ -461,8 +459,8 @@ VkVec::VkVec(VkVec&& other) noexcept {
     this->data_buffer = other.data_buffer; other.data_buffer = nullptr;
 }
 
-// VkVec copy constructor
-VkVec::VkVec(const VkVec& other) {
+// NGrid copy constructor
+NGrid::NGrid(const NGrid& other) {
     copy_resources(other);
     if (this->command_buffer == nullptr) {
         this->command_buffer = new CommandBuffer(manager->get_device(), QueueFamily::COMPUTE, manager->get_command_pool_compute());
@@ -478,7 +476,7 @@ VkVec::VkVec(const VkVec& other) {
 }
 
 // protected helper method of object destruction
-void VkVec::destroy() {
+void NGrid::destroy() {
     if (this->data_buffer != nullptr) {
         delete this->data_buffer;
         this->data_buffer = nullptr;
@@ -490,12 +488,12 @@ void VkVec::destroy() {
 }
 
 // destructor
-VkVec::~VkVec() {
+NGrid::~NGrid() {
     this->destroy();
 }
 
 // protected helper method for copying simple class member variables
-void VkVec::copy_resources(const VkVec& other) {
+void NGrid::copy_resources(const NGrid& other) {
     this->elements = other.elements;
     this->rows = other.rows;
     this->cols = other.cols;
@@ -509,61 +507,61 @@ void VkVec::copy_resources(const VkVec& other) {
 // +=================================+
 
 // assigns a value to a data element via its index
-void VkVec::set(const float_t value, const uint32_t row_index, const uint32_t col_index, const uint32_t layer_index) {
+void NGrid::set(const float_t value, const uint32_t row_index, const uint32_t col_index, const uint32_t layer_index) {
     // using flat index as 'row' index
     this->data_buffer->set(value, row_index * this->cols * this->depth + col_index * this->depth + layer_index);
 }
 
 // copies raw data from a std::vector<float_t> to the data buffer
-// of the underlying VkVec array
-void VkVec::set(std::vector<float_t>& data) {
+// of the underlying NGrid array
+void NGrid::set(std::vector<float_t>& data) {
     data_buffer->write(data);
 }
 
 // returns the value of an array element via its flattened index
-float_t VkVec::get(const uint32_t row_index, const uint32_t col_index, const uint32_t layer_index) const {
+float_t NGrid::get(const uint32_t row_index, const uint32_t col_index, const uint32_t layer_index) const {
     // using flat index as 'row' index
     return data_buffer->get(row_index * this->cols * this->depth + col_index * this->depth + layer_index);
 }
 
 // returns a flat copy of the raw data of the underlying buffer as type std::vector<float_t>
-std::vector<float> VkVec::get() const {
+std::vector<float> NGrid::get() const {
     return data_buffer->read();
 }
 
 // returns the buffer containg the raw array data
-Buffer<float_t>* VkVec::get_data_buffer() const {
+Buffer<float_t>* NGrid::get_data_buffer() const {
     return this->data_buffer;
 }
 
 // returns the number of dimensions of the underlying array
-uint32_t VkVec::get_dimensions() const {
+uint32_t NGrid::get_dimensions() const {
     return this->dimensions;
 }
 
 // returns the number of rows, i.e. the size of the first dimension (indexed 0)
-uint32_t VkVec::get_rows() const {
+uint32_t NGrid::get_rows() const {
     return this->rows;
 }
 
 // returns the number of columns, i.e. the size of the second dimension (indexed 1)
-uint32_t VkVec::get_cols() const {
+uint32_t NGrid::get_cols() const {
     return this->cols;
 }
 
 // returns the array depth,
 // i.e. the size of the third dimension (indexed 2)
-uint32_t VkVec::get_depth() const {
+uint32_t NGrid::get_depth() const {
     return this->depth;
 }
 
 // returns the total number of elements of the underlying array
-uint32_t VkVec::get_elements() const {
+uint32_t NGrid::get_elements() const {
     return this->elements;
 }
 
 // returns the shape of the array as std::string
-std::string VkVec::get_shapestring() const {
+std::string NGrid::get_shapestring() const {
     std::string result = "{";
     if (this->rows > 0) { result += std::to_string(this->rows); }
     if (this->cols > 1 || this->depth > 1) { result += ","; result += std::to_string(this->cols); }
@@ -573,18 +571,18 @@ std::string VkVec::get_shapestring() const {
 }
 
 // returns a single row sliced from a 2d or 3d array
-VkVec VkVec::get_row(int32_t row_index)  const {
-    VkVec result(1, this->cols, this->depth);
+NGrid NGrid::get_row(int32_t row_index)  const {
+    NGrid result(1, this->cols, this->depth);
 
     if (this->dimensions == 1) {
-        Log::log(WARNING, "usage of method 'VkVec get_row(uint32_t row_index)' with a 1d array -> result contains a single scalar; ",
+        Log::log(WARNING, "usage of method 'NGrid get_row(uint32_t row_index)' with a 1d array -> result contains a single scalar; ",
             "this isn't strictly invalid, but for better efficiency consider using 'float_t get(uint32_t row)' instead");
         result.set(this->get(row_index), 0);
         return result;
     }
 
     if (row_index >= this->rows || row_index < 0) {
-        Log::log(ERROR, "invalid usage of method 'VkVec get_row(uint32_t row_index)' with invalid row index; index is ", row_index, ", the underlying array has ", this->rows, " row(s)");
+        Log::log(ERROR, "invalid usage of method 'NGrid get_row(uint32_t row_index)' with invalid row index; index is ", row_index, ", the underlying array has ", this->rows, " row(s)");
     }
 
     static constexpr uint32_t workgroup_size = 256;
@@ -611,11 +609,11 @@ VkVec VkVec::get_row(int32_t row_index)  const {
 }
 
 // returns a single column sliced from a 2d or 3d array
-VkVec VkVec::get_col(int32_t col_index) const {
-    VkVec result(this->rows, 1, this->depth);
+NGrid NGrid::get_col(int32_t col_index) const {
+    NGrid result(this->rows, 1, this->depth);
 
     if (col_index >= this->cols || col_index < 0) {
-        Log::log(ERROR, "invalid usage of method 'VkVec get_col(uint32_t col_index)' with invalid column index; index is ", col_index, ", the underlying array has ", this->cols, " column(s)");
+        Log::log(ERROR, "invalid usage of method 'NGrid get_col(uint32_t col_index)' with invalid column index; index is ", col_index, ", the underlying array has ", this->cols, " column(s)");
     }
     
     static constexpr uint32_t workgroup_size = 256;
@@ -642,11 +640,11 @@ VkVec VkVec::get_col(int32_t col_index) const {
 }
 
 // returns a single depth layer sliced from a 3d array
-VkVec VkVec::get_layer(int32_t layer_index) const {
-    VkVec result(this->rows, this->cols, 1);
+NGrid NGrid::get_layer(int32_t layer_index) const {
+    NGrid result(this->rows, this->cols, 1);
 
     if (layer_index >= this->depth || layer_index < 0) {
-        Log::log(ERROR, "invalid usage of method 'VkVec get_layer(uint32_t layer_index)' with invalid depth layer index; index is ", layer_index, ", the underlying array has ", this->depth, " depth layer(s)");
+        Log::log(ERROR, "invalid usage of method 'NGrid get_layer(uint32_t layer_index)' with invalid depth layer index; index is ", layer_index, ", the underlying array has ", this->depth, " depth layer(s)");
     }
 
     static constexpr uint32_t workgroup_size = 256;
@@ -677,7 +675,7 @@ VkVec VkVec::get_layer(int32_t layer_index) const {
 // +=================================+
 
 // fill entire array with given floating point value
-void VkVec::fill(const float_t value) {
+void NGrid::fill(const float_t value) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill.spv"); }
@@ -700,12 +698,12 @@ void VkVec::fill(const float_t value) {
 }
 
 // initialize the entire array with zeros
-void VkVec::fill_zero() {
+void NGrid::fill_zero() {
     this->fill(0.0f);
 }
 
 // fill entire array with identity matrix
-void VkVec::fill_identity() {
+void NGrid::fill_identity() {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_identity.spv"); }
@@ -727,7 +725,7 @@ void VkVec::fill_identity() {
 }
 
 // fill with values from a random normal (=gaussian) distribution
-void VkVec::fill_random_gaussian(const float_t mu, const float_t sigma) {
+void NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_random_gaussian.spv"); }
@@ -752,7 +750,7 @@ void VkVec::fill_random_gaussian(const float_t mu, const float_t sigma) {
 }
 
 // fill with values from a random uniform distribution
-void VkVec::fill_random_uniform(const float_t min, const float_t max) {
+void NGrid::fill_random_uniform(const float_t min, const float_t max) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_random_uniform.spv"); }
@@ -777,7 +775,7 @@ void VkVec::fill_random_uniform(const float_t min, const float_t max) {
 }
 
 // fill with values from a random uniform distribution
-void VkVec::fill_random_uniform_int(const int32_t min, const int32_t max) {
+void NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_random_uniform_int.spv"); }
@@ -802,7 +800,7 @@ void VkVec::fill_random_uniform_int(const int32_t min, const int32_t max) {
 }
 
 // randomly sets the specified fraction of the values to zero and the rest to 1 (default: 0.5, i.e. 50%)
-void VkVec::fill_random_binary(float_t ratio) {
+void NGrid::fill_random_binary(float_t ratio) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_random_binary.spv"); }
@@ -810,7 +808,7 @@ void VkVec::fill_random_binary(float_t ratio) {
     // check valid ratio
     if (ratio > 1 || ratio < 0) {
         Log::log(WARNING,
-            "invalid usage of method 'void VkVec::fill_binary(float_t ratio)': "
+            "invalid usage of method 'void NGrid::fill_binary(float_t ratio)': "
             "ratio argument must be between 0-1 but is ", ratio,
             " --> argument will be clipped to fit this range");
     }
@@ -835,7 +833,7 @@ void VkVec::fill_random_binary(float_t ratio) {
 }
 
 // randomly sets the specified fraction of the values to -1 and the rest to +1 (default: 0.5, i.e. 50%)
-void VkVec::fill_random_sign(float_t ratio) {
+void NGrid::fill_random_sign(float_t ratio) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_random_sign.spv"); }
@@ -843,7 +841,7 @@ void VkVec::fill_random_sign(float_t ratio) {
     // check valid ratio
     if (ratio > 1 || ratio < 0) {
         Log::log(WARNING,
-            "invalid usage of method 'void VkVec::fill_sign(float_t ratio)': "
+            "invalid usage of method 'void NGrid::fill_sign(float_t ratio)': "
             "ratio argument must be between 0-1 but is ", ratio,
             " --> argument will be clipped to fit this range");
     }
@@ -872,7 +870,7 @@ void VkVec::fill_random_sign(float_t ratio) {
 // range of numbers (with specified start parameter
 // referring to the zero position and a step parameter)
 // in all dimensions
-void VkVec::fill_range(const float_t start, const float_t step) {
+void NGrid::fill_range(const float_t start, const float_t step) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_range.spv"); }
@@ -897,7 +895,7 @@ void VkVec::fill_range(const float_t start, const float_t step) {
     descriptor_set.destroy();
 }
 
-void VkVec::fill_dropout(float_t ratio) {
+void NGrid::fill_dropout(float_t ratio) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_dropout.spv"); }
@@ -905,7 +903,7 @@ void VkVec::fill_dropout(float_t ratio) {
     // check valid ratio
     if (ratio > 1 || ratio < 0) {
         Log::log(WARNING,
-            "invalid usage of method 'void VkVec::fill_dropout(float_t ratio)': "
+            "invalid usage of method 'void NGrid::fill_dropout(float_t ratio)': "
             "ratio argument must be between 0-1 but is ", ratio,
             " --> argument will be clipped to fit this range");
     }
@@ -931,7 +929,7 @@ void VkVec::fill_dropout(float_t ratio) {
 
 // fill with normal "Xavier" weight initialization
 // (by Xavier Glorot & Bengio) for tanh activation
-void VkVec::fill_Xavier_normal(uint32_t fan_in, uint32_t fan_out) {
+void NGrid::fill_Xavier_normal(uint32_t fan_in, uint32_t fan_out) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_Xavier_normal.spv"); }
@@ -957,7 +955,7 @@ void VkVec::fill_Xavier_normal(uint32_t fan_in, uint32_t fan_out) {
 
 // fill with uniform "Xavier" weight initializiation
 // (by Xavier Glorot & Bengio), e.g. for tanh activation
-void VkVec::fill_Xavier_uniform(uint32_t fan_in, uint32_t fan_out) {
+void NGrid::fill_Xavier_uniform(uint32_t fan_in, uint32_t fan_out) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_Xavier_uniform.spv"); }
@@ -985,7 +983,7 @@ void VkVec::fill_Xavier_uniform(uint32_t fan_in, uint32_t fan_out) {
 
 // fill with uniform "Xavier" weight initialization
 // for sigmoid activation
-void VkVec::fill_Xavier_sigmoid(uint32_t fan_in, uint32_t fan_out) {
+void NGrid::fill_Xavier_sigmoid(uint32_t fan_in, uint32_t fan_out) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_Xavier_sigmoid.spv"); }
@@ -1011,7 +1009,7 @@ void VkVec::fill_Xavier_sigmoid(uint32_t fan_in, uint32_t fan_out) {
 
 // fill with "Kaiming He" normal weight initialization,
 // used for ReLU activation
-void VkVec::fill_He_ReLU(uint32_t fan_in) {
+void NGrid::fill_He_ReLU(uint32_t fan_in) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_He_ReLU.spv"); }
@@ -1036,7 +1034,7 @@ void VkVec::fill_He_ReLU(uint32_t fan_in) {
 
 // fill with modified "Kaiming He" nornal weight initialization,
 // used for ELU activation
-void VkVec::fill_He_ELU(uint32_t fan_in) {
+void NGrid::fill_He_ELU(uint32_t fan_in) {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_He_ELU.spv"); }
@@ -1060,7 +1058,7 @@ void VkVec::fill_He_ELU(uint32_t fan_in) {
 }
 
 // fills the array elements with their flat indices
-void VkVec::fill_index() {
+void NGrid::fill_index() {
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("fill_index.spv"); }
@@ -1086,9 +1084,9 @@ void VkVec::fill_index() {
 // | Distribution Properties         |
 // +=================================+
 
-// returns the lowest value of the VkVec,
+// returns the lowest value of the NGrid,
 // across all dimensions
-float_t VkVec::min() const {
+float_t NGrid::min() const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
@@ -1121,9 +1119,9 @@ float_t VkVec::min() const {
     return result.get(0);
 }
 
-// returns the highest value of the VkVec,
+// returns the highest value of the NGrid,
 // across all dimensions
-float_t VkVec::max() const {
+float_t NGrid::max() const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
@@ -1156,9 +1154,9 @@ float_t VkVec::max() const {
     return result.get(0);
 }
 
-// returns the value of the VkVec with the highest
+// returns the value of the NGrid with the highest
 // deviation from zero, across all dimensions
-float_t VkVec::maxabs() const {
+float_t NGrid::maxabs() const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
@@ -1191,21 +1189,21 @@ float_t VkVec::maxabs() const {
     return result.get(0);
 }
 
-// returns the arrithmetic mean of all values of the VkVec
-float_t VkVec::mean() const {
+// returns the arrithmetic mean of all values of the NGrid
+float_t NGrid::mean() const {
     return this->sum() / this->elements;
 }
 
-// returns the median of all values the VkVec;
-// VkVec must be 1d
-float_t VkVec::median() const {
+// returns the median of all values the NGrid;
+// NGrid must be 1d
+float_t NGrid::median() const {
 
     // confirm 1d array
     if (this->dimensions > 1) {
-        Log::log(ERROR, "invalid usage of method VkVec::median(), underlying array must be 1d but has ", this->dimensions, " dimensions");
+        Log::log(ERROR, "invalid usage of method NGrid::median(), underlying array must be 1d but has ", this->dimensions, " dimensions");
     }
 
-    VkVec sorted = this->sort();
+    NGrid sorted = this->sort();
     // odd number of elements
     if (this->rows % 2) {
         return sorted.get(elements / 2);
@@ -1218,7 +1216,7 @@ float_t VkVec::median() const {
 
 // returns the variance of all values of a vector, matrix or array
 // as a floating point number
-float_t VkVec::variance() const {
+float_t NGrid::variance() const {
     // std::cout << "expected variance result: " << (this->operator-((this->operator/(elements)).sum())).pow().operator/(elements - 1).sum() << std::endl;
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
@@ -1260,15 +1258,15 @@ float_t VkVec::variance() const {
 }
 
 // returns the standard deviation of all values a the vector, matrix or array
-float_t VkVec::stddev() const {
+float_t NGrid::stddev() const {
     return std::sqrt(this->variance());
 }
 
-// returns the skewness of all data of the VkVec
+// returns the skewness of all data of the NGrid
 // across all dimensions
-float_t VkVec::skewness() const {
+float_t NGrid::skewness() const {
     // TODO: check this code and its shader again; result isn't correct
-    VkVec mdev = this->operator-(this->mean());
+    NGrid mdev = this->operator-(this->mean());
     //std::cout << "expected result = " << mdev.pow(2).sum()/elements / std::pow(mdev.pow(3).sum()/elements, 1.5) << std:: endl;
 
     static constexpr uint32_t workgroup_size = 256;
@@ -1303,9 +1301,9 @@ float_t VkVec::skewness() const {
     return result.get(0);
 }
 
-// returns the kurtosis of all data of the VkVec
+// returns the kurtosis of all data of the NGrid
 // across all dimensions
-float_t VkVec::kurtosis() const {
+float_t NGrid::kurtosis() const {
     // TODO: check this code and its shader again; result isn't correct
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
@@ -1346,7 +1344,7 @@ float_t VkVec::kurtosis() const {
 }
 
 // returns the Euklidean norm (=distance from origin)
-float VkVec::norm() const {
+float NGrid::norm() const {
     return this->pow(2).sum();
 }
 
@@ -1355,7 +1353,7 @@ float VkVec::norm() const {
 // +=================================+
 
 // returns the sum of all array elements;
-float_t VkVec::sum() const {
+float_t NGrid::sum() const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
@@ -1385,10 +1383,10 @@ float_t VkVec::sum() const {
 }
 
 // elementwise addition of the specified value to all values of the array
-VkVec VkVec::operator+(const float_t value) const {
+NGrid NGrid::operator+(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_plus_value.spv"); }
@@ -1415,10 +1413,10 @@ VkVec VkVec::operator+(const float_t value) const {
 }
 
 // returns the resulting array of the elementwise addition of two arrays
-VkVec VkVec::operator+(const VkVec& other) const {
+NGrid NGrid::operator+(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_plus_other.spv"); }
@@ -1449,7 +1447,7 @@ VkVec VkVec::operator+(const VkVec& other) const {
 // prefix increment operator;
 // increments the values of the array by +1,
 // returns a reference to the source array itself
-VkVec& VkVec::operator++() {
+NGrid& NGrid::operator++() {
     *this += 1.0f;
     return *this;
 }
@@ -1460,8 +1458,8 @@ VkVec& VkVec::operator++() {
 // then returns the temporary copy;
 // note: more overhead then with the prefix increment
 // because of extra copy!
-VkVec VkVec::operator++(int) {
-    VkVec copy(this->rows, this->cols, this->depth);
+NGrid NGrid::operator++(int) {
+    NGrid copy(this->rows, this->cols, this->depth);
     copy = *this;
     *this += 1.0f;
     return copy;
@@ -1469,13 +1467,13 @@ VkVec VkVec::operator++(int) {
 
 // elementwise addition of the specified
 // value to the elements of the array
-void VkVec::operator+=(const float_t value) {
+void NGrid::operator+=(const float_t value) {
     *this = this->operator+(value);
 }
 
 // elementwise addition of the values of 'other'
 // to the values of the corresponding elements of 'this'
-void VkVec::operator+=(const VkVec& other) {
+void NGrid::operator+=(const NGrid& other) {
     *this = this->operator+(other);
 }
 
@@ -1485,17 +1483,17 @@ void VkVec::operator+=(const VkVec& other) {
 // +=================================+
 
 // elementwise substraction of the specified value from all values of the array
-VkVec VkVec::operator-(const float_t value) const {
-    // using the member method "VkVec operator+(const float_t value) const"
+NGrid NGrid::operator-(const float_t value) const {
+    // using the member method "NGrid operator+(const float_t value) const"
     return this->operator+(value * -1);
 }
 
 // returns the resulting array of the elementwise substraction of
 // two array of equal dimensions
-VkVec VkVec::operator-(const VkVec& other) const {
+NGrid NGrid::operator-(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_minus_other.spv"); }
@@ -1525,7 +1523,7 @@ VkVec VkVec::operator-(const VkVec& other) const {
 
 // prefix decrement operator;
 // decrements the values of the array by -1
-VkVec& VkVec::operator--() {
+NGrid& NGrid::operator--() {
     *this = *this + (-1.0f);
     return *this;
 }
@@ -1536,8 +1534,8 @@ VkVec& VkVec::operator--() {
 // then returns the temporary copy;
 // note: more overhead then with the prefix decrement
 // because of extra copy!
-VkVec VkVec::operator--(int) {
-    VkVec copy(this->rows, this->cols, this->depth);
+NGrid NGrid::operator--(int) {
+    NGrid copy(this->rows, this->cols, this->depth);
     copy= *this;
     *this = *this + (-1.0f);
     return copy;
@@ -1545,13 +1543,13 @@ VkVec VkVec::operator--(int) {
 
 // elementwise substraction of the specified
 // value from the elements of the array
-void VkVec::operator-=(const float_t value) {
+void NGrid::operator-=(const float_t value) {
     *this = *this + (value * -1);
 }
 
 // elementwise substraction of the values of 'other'
 // from the values of the corresponding elements of 'this'
-void VkVec::operator-=(const VkVec& other) {
+void NGrid::operator-=(const NGrid& other) {
     *this = this->operator-(other);
 }
 
@@ -1561,7 +1559,7 @@ void VkVec::operator-=(const VkVec& other) {
 
 // returns the product reduction, i.e. the result
 // of multiplication all individual elements of the array
-float_t VkVec::product() const {
+float_t NGrid::product() const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
@@ -1594,13 +1592,13 @@ float_t VkVec::product() const {
 }
 
 // elementwise multiplication with a scalar
-VkVec VkVec::operator*(const float_t factor) const {
+NGrid NGrid::operator*(const float_t factor) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_multiply_factor.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -1624,31 +1622,31 @@ VkVec VkVec::operator*(const float_t factor) const {
 }
 
 // elementwise multiplication (*=) with a scalar
-void VkVec::operator*=(const float_t factor) {
+void NGrid::operator*=(const float_t factor) {
     *this = this->operator*(factor);
 }
 
 // Alias for 2D or 3D matrix multiplication
-VkVec VkVec::operator*(const VkVec& other) const {
+NGrid NGrid::operator*(const NGrid& other) const {
     return this->matrix_product(other);
 }
 
 // Alias for 2D or 3D matrix multiplication;
 // note: 'this' is getting reassigned and may change its shape as a consequence of this operation
-void VkVec::operator*=(const VkVec& other) {
+void NGrid::operator*=(const NGrid& other) {
     *this = this->matrix_product(other);
 }
 
 // scalar product
-float_t VkVec::scalar_product(const VkVec& other) const {
+float_t NGrid::scalar_product(const NGrid& other) const {
     return this->Hadamard_product(other).sum();
 }
 
 // 2D or 3d matrix dotproduct
-VkVec VkVec::matrix_product(const VkVec& other) const {
+NGrid NGrid::matrix_product(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, other.get_cols(), this->depth);
+    NGrid result(this->rows, other.get_cols(), this->depth);
         
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("matrix_product.spv"); }
@@ -1682,10 +1680,10 @@ VkVec VkVec::matrix_product(const VkVec& other) const {
 // resulting in the 'Hadamard product';
 // the dimensions of the two arrays must match!
 // if they don't: only the common elements will be part of the result array
-VkVec VkVec::Hadamard_product(const VkVec& other) const {
+NGrid NGrid::Hadamard_product(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    NGrid result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
     
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("hadamard_product.spv"); }
@@ -1720,28 +1718,28 @@ VkVec VkVec::Hadamard_product(const VkVec& other) const {
 // +=================================+
 
 // elementwise division by a scalar
-VkVec VkVec::operator/(const float_t quotient) const {
+NGrid NGrid::operator/(const float_t quotient) const {
     if (quotient == 0) {
         Log::log(ERROR,
-            "invalid call of method 'VkVec VkVec::operator/(const T quotient)' ",
+            "invalid call of method 'NGrid NGrid::operator/(const T quotient)' ",
             "with quotient=0 (zero division is undefined)");
     }
     return (*this) * (1.0f / quotient);
 }
 
 // elementwise division (/=) by a scalar
-void VkVec::operator/=(const float_t quotient) {
+void NGrid::operator/=(const float_t quotient) {
     (*this) *= (1.0f / quotient);
 }
 
 // elementwise division of the values of the current
-// array by the corresponding values of a second VkVec,
+// array by the corresponding values of a second NGrid,
 // resulting in the 'Hadamard division';
 // the dimensions of the two arrays must match!
-VkVec VkVec::Hadamard_division(const VkVec& other) {
+NGrid NGrid::Hadamard_division(const NGrid& other) {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    NGrid result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("hadamard_division.spv"); }
@@ -1775,26 +1773,26 @@ VkVec VkVec::Hadamard_division(const VkVec& other) {
 // | Modulo                          |
 // +=================================+
 
-// elementwise modulo operation, converting the VkVec values
+// elementwise modulo operation, converting the NGrid values
 // to the remainders of their division by the specified number
-void VkVec::operator%=(const float_t value) {
+void NGrid::operator%=(const float_t value) {
     *this = this->operator%(value);
 }
 
-// elementwise modulo operation, resulting in an VkVec array that
+// elementwise modulo operation, resulting in an NGrid array that
 // contains the remainders of the division of the values of
 // the original array by the specified number
-VkVec VkVec::operator%(const float_t value) const {
+NGrid NGrid::operator%(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
     if (value == 0) {
         Log::log(WARNING,
-            "invalid usage of method 'VkVec VkVec::operator%(const float_t value) const' ",
+            "invalid usage of method 'NGrid NGrid::operator%(const float_t value) const' ",
             "with value=0 (zero division is undefined) --> 'this' will remain unmodified");
         return *this;
     }
     
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("operator_modulo_value.spv"); }
@@ -1827,10 +1825,10 @@ VkVec VkVec::operator%(const float_t value) const {
 
 // elementwise exponentiation to the power of
 // the specified exponent
-VkVec VkVec::pow(const float_t exponent) const {
+NGrid NGrid::pow(const float_t exponent) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("pow.spv"); }
@@ -1860,30 +1858,30 @@ VkVec VkVec::pow(const float_t exponent) const {
 // alias for pow(exponent):
 // elementwise exponentiation to the power of
 // the specified exponent
-VkVec VkVec::operator^(const float_t exponent) const {
+NGrid NGrid::operator^(const float_t exponent) const {
     return this->pow(exponent);
 }
 
 // alias for pow(other):
 // elementwise exponentiation to the power of
 // the corresponding element of 'other'
-VkVec VkVec::operator^(const VkVec& other) const {
+NGrid NGrid::operator^(const NGrid& other) const {
     return this->pow(other);
 }
 
 // elementwise exponentiation of the values of 'this'
 // to the power of the specified exponent
-void VkVec::operator^=(const float_t exponent) {
+void NGrid::operator^=(const float_t exponent) {
     *this = this->pow(exponent);
 }
 
 // elementwise exponentiation to the power of
 // the corresponding values of the second array;
 // the dimensions of the two array must match!
-VkVec VkVec::pow(const VkVec& other) const {
+NGrid NGrid::pow(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
+    NGrid result(std::min(this->rows, other.get_rows()), std::min(this->cols, other.get_cols()), std::min(this->depth, other.get_depth()));
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("pow_other.spv"); }
@@ -1915,10 +1913,10 @@ VkVec VkVec::pow(const VkVec& other) const {
 
 // converts the individual values of the array
 // elementwise to their square root
-VkVec VkVec::sqrt() const {
+NGrid NGrid::sqrt() const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sqrt.spv"); }
@@ -1944,10 +1942,10 @@ VkVec VkVec::sqrt() const {
     return result;
 }
 
-VkVec VkVec::log(float_t base) const {
+NGrid NGrid::log(float_t base) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("log.spv"); }
@@ -1974,10 +1972,10 @@ VkVec VkVec::log(float_t base) const {
     return result;
 }
 
-VkVec VkVec::exp() const {
+NGrid NGrid::exp() const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("exp.spv"); }
@@ -2009,10 +2007,10 @@ VkVec VkVec::exp() const {
 
 // rounds the values of the array elementwise
 // to their nearest integers
-VkVec VkVec::round() const {
+NGrid NGrid::round() const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("round.spv"); }
@@ -2040,10 +2038,10 @@ VkVec VkVec::round() const {
 
 // rounds the values of the array elementwise
 // to their next lower integers
-VkVec VkVec::floor() const {
+NGrid NGrid::floor() const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("floor.spv"); }
@@ -2071,10 +2069,10 @@ VkVec VkVec::floor() const {
 
 // returns a copy of the array that stores the values as rounded
 // to their next higher integers
-VkVec VkVec::ceil() const {
+NGrid NGrid::ceil() const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("ceil.spv"); }
@@ -2102,10 +2100,10 @@ VkVec VkVec::ceil() const {
 
 // returns a copy of the array that stores the
 // absolute values of the source array
-VkVec VkVec::abs() const {
+NGrid NGrid::abs() const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("abs.spv"); }
@@ -2137,10 +2135,10 @@ VkVec VkVec::abs() const {
 
 // elementwise minimum of the specified value
 // and the data elements of the array
-VkVec VkVec::min(const float_t value) const {
+NGrid NGrid::min(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("min_value.spv"); }
@@ -2169,10 +2167,10 @@ VkVec VkVec::min(const float_t value) const {
 
 // elementwise maximum of the specified value
 // and the data elements of the array
-VkVec VkVec::max(const float_t value) const {
+NGrid NGrid::max(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("max_value.spv"); }
@@ -2201,10 +2199,10 @@ VkVec VkVec::max(const float_t value) const {
 
 // returns the result of elementwise min() comparison
 // of 'this' vs 'other'
-VkVec VkVec::min(const VkVec& other) const {
+NGrid NGrid::min(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("min_other.spv"); }
@@ -2236,10 +2234,10 @@ VkVec VkVec::min(const VkVec& other) const {
 
 // returns the result of elementwise max() comparison
 // of 'this' vs 'other'
-VkVec VkVec::max(const VkVec& other) const {
+NGrid NGrid::max(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("max_other.spv"); }
@@ -2274,11 +2272,11 @@ VkVec VkVec::max(const VkVec& other) const {
 // +=================================+
 
 // elementwise application of the cos() function
-VkVec VkVec::cos(AngularMeasure unit) const {
+NGrid NGrid::cos(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("cos.spv"); }
@@ -2306,11 +2304,11 @@ VkVec VkVec::cos(AngularMeasure unit) const {
 }
 
 // elementwise application of the sin() function
-VkVec VkVec::sin(AngularMeasure unit) const {
+NGrid NGrid::sin(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sin.spv"); }
@@ -2338,11 +2336,11 @@ VkVec VkVec::sin(AngularMeasure unit) const {
 }
 
 // elementwise application of the tan function
-VkVec VkVec::tan(AngularMeasure unit) const {
+NGrid NGrid::tan(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("tan.spv"); }
@@ -2370,11 +2368,11 @@ VkVec VkVec::tan(AngularMeasure unit) const {
 }
 
 // elementwise application of the acos() function
-VkVec VkVec::acos(AngularMeasure unit) const {
+NGrid NGrid::acos(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("acos.spv"); }
@@ -2402,11 +2400,11 @@ VkVec VkVec::acos(AngularMeasure unit) const {
 }
 
 // elementwise application of the asin() function
-VkVec VkVec::asin(AngularMeasure unit) const {
+NGrid NGrid::asin(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("asin.spv"); }
@@ -2434,11 +2432,11 @@ VkVec VkVec::asin(AngularMeasure unit) const {
 }
 
 // elementwise application of the atan function
-VkVec VkVec::atan(AngularMeasure unit) const {
+NGrid NGrid::atan(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("atan.spv"); }
@@ -2466,11 +2464,11 @@ VkVec VkVec::atan(AngularMeasure unit) const {
 }
 
 // elementwise application of the hyperbolic cosine function
-VkVec VkVec::cosh(AngularMeasure unit) const {
+NGrid NGrid::cosh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("cosh.spv"); }
@@ -2498,11 +2496,11 @@ VkVec VkVec::cosh(AngularMeasure unit) const {
 }
 
 // elementwise applicatiohn of the hyperbolic sine function
-VkVec VkVec::sinh(AngularMeasure unit) const {
+NGrid NGrid::sinh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sinh.spv"); }
@@ -2530,11 +2528,11 @@ VkVec VkVec::sinh(AngularMeasure unit) const {
 }
 
 // elementwise application of the hyperbolic tangent function
-VkVec VkVec::tanh(AngularMeasure unit) const {
+NGrid NGrid::tanh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("tanh.spv"); }
@@ -2562,11 +2560,11 @@ VkVec VkVec::tanh(AngularMeasure unit) const {
 }
 
 // elementwise application of the hyperbolic arc cosine function
-VkVec VkVec::acosh(AngularMeasure unit) const {
+NGrid NGrid::acosh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("acosh.spv"); }
@@ -2594,11 +2592,11 @@ VkVec VkVec::acosh(AngularMeasure unit) const {
 }
 
 // elementwise application of the hyperbolic arc sine function
-VkVec VkVec::asinh(AngularMeasure unit) const {
+NGrid NGrid::asinh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("asinh.spv"); }
@@ -2626,11 +2624,11 @@ VkVec VkVec::asinh(AngularMeasure unit) const {
 }
 
 // elementwise application of the hyperbolic arc tangent function
-VkVec VkVec::atanh(AngularMeasure unit) const {
+NGrid NGrid::atanh(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("atanh.spv"); }
@@ -2666,10 +2664,10 @@ VkVec VkVec::atanh(AngularMeasure unit) const {
 // in order to mitigate floating point number rounding imprecisions,
 // this method will consider any values that no more than
 // epsilon = 0.0000001 from the old value as a match
-VkVec VkVec::replace(const float_t& old_value, const float_t& new_value) const {
+NGrid NGrid::replace(const float_t& old_value, const float_t& new_value) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("replace.spv"); }
@@ -2699,10 +2697,10 @@ VkVec VkVec::replace(const float_t& old_value, const float_t& new_value) const {
 
 // replaces all elements of 'this' with the corresponding element of the
 // 'replacing_map' if the corresponding element of the condition map is !=0
-VkVec VkVec::replace_if(const VkVec& condition_map, const VkVec& replacing_map) const {
+NGrid NGrid::replace_if(const NGrid& condition_map, const NGrid& replacing_map) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("replace_if_other.spv"); }
@@ -2737,10 +2735,10 @@ VkVec VkVec::replace_if(const VkVec& condition_map, const VkVec& replacing_map) 
 
 // replaces all elements of 'this' with the corresponding element of the
 // 'replacing_map' if the corresponding element of the condition map is !=0
-VkVec VkVec::replace_if(const VkVec& condition_map, const float_t replacing_value) const {
+NGrid NGrid::replace_if(const NGrid& condition_map, const float_t replacing_value) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("replace_if_value.spv"); }
@@ -2775,7 +2773,7 @@ VkVec VkVec::replace_if(const VkVec& condition_map, const float_t replacing_valu
 // in order to mitigate floating point number rounding imprecisions,
 // this method will consider any values that differ by no more than
 // epsilon = 0.0000001 from the old value as a match
-uint32_t VkVec::find(const float_t& value) const {
+uint32_t NGrid::find(const float_t& value) const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
@@ -2808,16 +2806,16 @@ uint32_t VkVec::find(const float_t& value) const {
     return result.get(0);
 }
 
-// returns a VkVec array of equal dimensions as the source,
+// returns a NGrid array of equal dimensions as the source,
 // with -1 for all corresponding negative values and +1 for all corresponding positive values
 // (0 for all zeros)
-VkVec VkVec::sign() const {
+NGrid NGrid::sign() const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sign.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -2844,14 +2842,14 @@ VkVec VkVec::sign() const {
 // +=================================+
 
 // scale to specified range
-VkVec VkVec::scale_minmax(float_t range_from, float_t range_to) const {
+NGrid NGrid::scale_minmax(float_t range_from, float_t range_to) const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("scale_minmax.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
 
     static std::vector<DescriptorType> types = {
@@ -2880,14 +2878,14 @@ VkVec VkVec::scale_minmax(float_t range_from, float_t range_to) const {
 
 // mean normalization scaling, i.e.
 // (x - mean) / (max - min)
-VkVec VkVec::scale_mean() const {
+NGrid NGrid::scale_mean() const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("scale_mean.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
 
     static std::vector<DescriptorType> types = {
@@ -2914,14 +2912,14 @@ VkVec VkVec::scale_mean() const {
 
 // scaling to zero mean and unit-variance, i.e.
 // (x - mean) / sigma
-VkVec VkVec::scale_standardized() const {
+NGrid NGrid::scale_standardized() const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("scale_standardized.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
 
     static std::vector<DescriptorType> types = {
@@ -2950,7 +2948,7 @@ VkVec VkVec::scale_standardized() const {
 // | Activation Functions            |
 // +=================================+
 
-VkVec VkVec::activation(ActFunc activation_function) const {
+NGrid NGrid::activation(ActFunc activation_function) const {
     switch (activation_function) {
     case ActFunc::RELU:
         return this->relu(0.0f);
@@ -2979,7 +2977,7 @@ VkVec VkVec::activation(ActFunc activation_function) const {
     }
 }
 
-VkVec VkVec::derivative(ActFunc activation_function) const {
+NGrid NGrid::derivative(ActFunc activation_function) const {
     switch (activation_function) {
     case ActFunc::RELU:
         return this->relu_drv(0.0f);
@@ -3009,28 +3007,28 @@ VkVec VkVec::derivative(ActFunc activation_function) const {
 }
 
 // identity activation function
-VkVec VkVec::ident() const {
-    VkVec result;
+NGrid NGrid::ident() const {
+    NGrid result;
     result = *this; // copy constructor invocation
     return result;
 }
 
 // identity activation function derivative
-VkVec VkVec::ident_drv() const {
-    VkVec result(this->rows, this->cols, this->depth);
+NGrid NGrid::ident_drv() const {
+    NGrid result(this->rows, this->cols, this->depth);
     result.fill(1.0f);
     return result;
 }
 
 // sigmoid activation function
 // 1/(1+exp(-x))
-VkVec VkVec::sigmoid() const {
+NGrid NGrid::sigmoid() const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sigmoid.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3054,13 +3052,13 @@ VkVec VkVec::sigmoid() const {
 
 // sigmoid activation derivative
 // exp(x)/pow(exp(x)+1,2)
-VkVec VkVec::sigmoid_drv() const {
+NGrid NGrid::sigmoid_drv() const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sigmoid.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3083,13 +3081,13 @@ VkVec VkVec::sigmoid_drv() const {
 }
 
 // ELU activation function
-VkVec VkVec::elu(float_t alpha) const {
+NGrid NGrid::elu(float_t alpha) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("elu.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3115,13 +3113,13 @@ VkVec VkVec::elu(float_t alpha) const {
 // ELU activation derivative;
 // chose alpha=0 for true ELU function;
 // small alpha value like e.g. 0.01 for 'leaky' ELU
-VkVec VkVec::elu_drv(float_t alpha) const {
+NGrid NGrid::elu_drv(float_t alpha) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("elu_drv.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3148,13 +3146,13 @@ VkVec VkVec::elu_drv(float_t alpha) const {
 // ReLU activation function;
 // chose alpha=0 for true ReLU function;
 // small alpha value like e.g. 0.01 for 'leaky' ReLU
-VkVec VkVec::relu(float_t alpha) const {
+NGrid NGrid::relu(float_t alpha) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("relu.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3180,13 +3178,13 @@ VkVec VkVec::relu(float_t alpha) const {
 // ReLU activation derivative;
 // chose alpha=0 for true ReLU function;
 // small alpha value like e.g. 0.01 for 'leaky' ReLU
-VkVec VkVec::relu_drv(float_t alpha) const {
+NGrid NGrid::relu_drv(float_t alpha) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("relu_drv.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3210,14 +3208,14 @@ VkVec VkVec::relu_drv(float_t alpha) const {
 }
 
 // tanh activation derivative
-VkVec VkVec::tanh_drv(AngularMeasure unit) const {
+NGrid NGrid::tanh_drv(AngularMeasure unit) const {
     float_t factor = angle(1.0f, unit, RAD, false); // conversion factor from source unit to radians
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("tanh_drv.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3246,10 +3244,10 @@ VkVec VkVec::tanh_drv(AngularMeasure unit) const {
 
 // returns a copy of the data array
 // limited to the range from min_value to max_value
-VkVec VkVec::outliers_truncate(const float_t min_value, const float_t max_value) const {
+NGrid NGrid::outliers_truncate(const float_t min_value, const float_t max_value) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("outliers_minmax.spv"); }
@@ -3278,14 +3276,14 @@ VkVec VkVec::outliers_truncate(const float_t min_value, const float_t max_value)
 }
 
 // truncate outliers by z-score mean deviation
-VkVec VkVec::outliers_truncate(float_t z_score) const {
+NGrid NGrid::outliers_truncate(float_t z_score) const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("outliers_truncate.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
 
     static std::vector<DescriptorType> types = {
@@ -3312,14 +3310,14 @@ VkVec VkVec::outliers_truncate(float_t z_score) const {
 }
 
 // set outliers (by z-score) to mean
-VkVec VkVec::outliers_mean_imputation(float_t z_score) const {
+NGrid NGrid::outliers_mean_imputation(float_t z_score) const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("outliers_mean_imputation.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
 
     static std::vector<DescriptorType> types = {
@@ -3346,14 +3344,14 @@ VkVec VkVec::outliers_mean_imputation(float_t z_score) const {
 }
 
 // set outliers (by z-score) to value
-VkVec VkVec::outliers_value_imputation(float_t value, float_t z_score) const {
+NGrid NGrid::outliers_value_imputation(float_t value, float_t z_score) const {
     static constexpr uint32_t workgroup_size = 256;
     const uint32_t workgroups = this->elements / workgroup_size + 1;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("outliers_value_imputation.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     Buffer<uint32_t> signal(manager->get_device(), BufferUsage::STORAGE, workgroups);
 
     static std::vector<DescriptorType> types = {
@@ -3381,13 +3379,13 @@ VkVec VkVec::outliers_value_imputation(float_t value, float_t z_score) const {
 }
 
 // recover -inf, +inf or nan values
-VkVec VkVec::recover() const {
+NGrid NGrid::recover() const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("recover.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3415,7 +3413,7 @@ VkVec VkVec::recover() const {
 // +=================================+
 
 // copy assignment
-VkVec& VkVec::operator=(const VkVec& other) {
+NGrid& NGrid::operator=(const NGrid& other) {
     // Check for self-assignment
     if (this != &other) {
         this->elements = other.elements;
@@ -3429,7 +3427,7 @@ VkVec& VkVec::operator=(const VkVec& other) {
 }
 
 // move assignment
-VkVec& VkVec::operator=(VkVec&& other) noexcept {
+NGrid& NGrid::operator=(NGrid&& other) noexcept {
     // Check for self-assignment
     if (this != &other) {
         // Move data from other object
@@ -3447,13 +3445,13 @@ VkVec& VkVec::operator=(VkVec&& other) noexcept {
 // | Elementwise Comparison          |
 // +=================================+
 
-VkVec VkVec::operator>(const float_t value) const {
+NGrid NGrid::operator>(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("greater_value.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3477,13 +3475,13 @@ VkVec VkVec::operator>(const float_t value) const {
 }
 
 
-VkVec VkVec::operator>=(const float_t value) const {
+NGrid NGrid::operator>=(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("greaterequals_value.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3506,13 +3504,13 @@ VkVec VkVec::operator>=(const float_t value) const {
     return result;
 }
 
-VkVec VkVec::operator==(const float_t value) const {
+NGrid NGrid::operator==(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("equals_value.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3535,13 +3533,13 @@ VkVec VkVec::operator==(const float_t value) const {
     return result;
 }
 
-VkVec VkVec::operator!=(const float_t value) const {
+NGrid NGrid::operator!=(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("notequals_value.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3564,13 +3562,13 @@ VkVec VkVec::operator!=(const float_t value) const {
     return result;
 }
 
-VkVec VkVec::operator<(const float_t value) const {
+NGrid NGrid::operator<(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("less_value.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3593,13 +3591,13 @@ VkVec VkVec::operator<(const float_t value) const {
     return result;
 }
 
-VkVec VkVec::operator<=(const float_t value) const {
+NGrid NGrid::operator<=(const float_t value) const {
     static constexpr uint32_t workgroup_size = 256;
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("lessequals_value.spv"); }
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static std::vector<DescriptorType> types = {
         STORAGE_BUFFER,
@@ -3622,11 +3620,11 @@ VkVec VkVec::operator<=(const float_t value) const {
     return result;
 }
 
-// elementwise comparison with second VkVec
-VkVec VkVec::operator>(const VkVec& other) const {
+// elementwise comparison with second NGrid
+NGrid NGrid::operator>(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("greater_other.spv"); }
@@ -3656,10 +3654,10 @@ VkVec VkVec::operator>(const VkVec& other) const {
     return result;
 }
 
-VkVec VkVec::operator>=(const VkVec& other) const {
+NGrid NGrid::operator>=(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("greaterequals_other.spv"); }
@@ -3689,10 +3687,10 @@ VkVec VkVec::operator>=(const VkVec& other) const {
     return result;
 }
 
-VkVec VkVec::operator==(const VkVec& other) const {
+NGrid NGrid::operator==(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("equals_other.spv"); }
@@ -3722,10 +3720,10 @@ VkVec VkVec::operator==(const VkVec& other) const {
     return result;
 }
 
-VkVec VkVec::operator!=(const VkVec& other) const {
+NGrid NGrid::operator!=(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("notequals_other.spv"); }
@@ -3754,10 +3752,10 @@ VkVec VkVec::operator!=(const VkVec& other) const {
 
     return result;
 }
-VkVec VkVec::operator<(const VkVec& other) const {
+NGrid NGrid::operator<(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("less_other.spv"); }
@@ -3787,10 +3785,10 @@ VkVec VkVec::operator<(const VkVec& other) const {
     return result;
 }
 
-VkVec VkVec::operator<=(const VkVec& other) const {
+NGrid NGrid::operator<=(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("lessequals_other.spv"); }
@@ -3826,9 +3824,9 @@ VkVec VkVec::operator<=(const VkVec& other) const {
 // +=================================+
 
 // elementwise logical 'and'
-VkVec VkVec::operator&&(const bool value) const {
+NGrid NGrid::operator&&(const bool value) const {
     if (value == false) {
-        VkVec result(this->rows, this->cols, this->depth);
+        NGrid result(this->rows, this->cols, this->depth);
         result.fill(0);
         return result;
     }
@@ -3838,9 +3836,9 @@ VkVec VkVec::operator&&(const bool value) const {
 }
 
 // elementwise logical 'or'
-VkVec VkVec::operator||(const bool value) const {
+NGrid NGrid::operator||(const bool value) const {
     if (value == true) {
-        VkVec result(this->rows, this->cols, this->depth);
+        NGrid result(this->rows, this->cols, this->depth);
         result.fill(1);
         return result;
     }
@@ -3850,14 +3848,14 @@ VkVec VkVec::operator||(const bool value) const {
 }
 
 // elementwise 'not'
-VkVec VkVec::operator!() const {
+NGrid NGrid::operator!() const {
     return this->operator==(0.0f);
 }
 
-VkVec VkVec::operator&&(const VkVec& other) const {
+NGrid NGrid::operator&&(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("and_other.spv"); }
@@ -3887,10 +3885,10 @@ VkVec VkVec::operator&&(const VkVec& other) const {
     return result;
 }
 
-VkVec VkVec::operator||(const VkVec& other) const {
+NGrid NGrid::operator||(const NGrid& other) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("or_other.spv"); }
@@ -3925,10 +3923,10 @@ VkVec VkVec::operator||(const VkVec& other) const {
 // +=================================+
 
 // conversion from 2d or 3d array to 1d vector
-VkVec VkVec::flatten() const {
+NGrid NGrid::flatten() const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(this->elements, 1, 1);
+    NGrid result(this->elements, 1, 1);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("flatten.spv"); }
@@ -3957,30 +3955,30 @@ VkVec VkVec::flatten() const {
 // add the specified number of rows;
 // a default value can be passed for initialization of any newly added elements;
 // a negative number of added rows can be used to remove rows
-VkVec VkVec::add_rows(const int32_t rows, float_t init_value) const {
+NGrid NGrid::add_rows(const int32_t rows, float_t init_value) const {
     return this->resize(this->rows + rows, this->cols, this->depth, init_value);
 }
 
 // add the specified number of columns;
 // a default value can be passed for initialization of any newly added elements;
 // a negative number of added columns can be used to remove columns
-VkVec VkVec::add_cols(const int32_t cols, float_t init_value) const {
+NGrid NGrid::add_cols(const int32_t cols, float_t init_value) const {
     return this->resize(this->rows, this->cols + cols, this->depth, init_value);
 }
 
 // add the specified depth layers to the z dimension;
 // a default value can be passed for initialization of any newly added elements;
 // a negative number of added depth can be used to remove a number of z dimension layers
-VkVec VkVec::add_depth(const int32_t layers, float_t init_value) const {
+NGrid NGrid::add_depth(const int32_t layers, float_t init_value) const {
     return this->resize(this->rows, this->cols, this->depth + layers, init_value);
 }
 
 // resizes the underlying array buffer to the specified dimensions;
 // any new elements get initialized to the given value (default: 0)
-VkVec VkVec::resize(const uint32_t rows, const uint32_t cols, const uint32_t depth, float_t init_value) const {
+NGrid NGrid::resize(const uint32_t rows, const uint32_t cols, const uint32_t depth, float_t init_value) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(rows, cols, depth);
+    NGrid result(rows, cols, depth);
 
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("resize.spv"); }
@@ -4008,13 +4006,13 @@ VkVec VkVec::resize(const uint32_t rows, const uint32_t cols, const uint32_t dep
     return result;
 }
 
-// stitch two VkVec arrays together along the specified axis
-VkVec VkVec::concatenate(const VkVec& other, const uint32_t axis) const {
+// stitch two NGrid arrays together along the specified axis
+NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
     static constexpr uint32_t workgroup_size = 256;
     if (axis > 2) {
-        Log::log(ERROR, "in method VkVec::concatenate() invalid axis argument (axis is ", axis, " but no values > 2 are allowed)");
+        Log::log(ERROR, "in method NGrid::concatenate() invalid axis argument (axis is ", axis, " but no values > 2 are allowed)");
     }
-    VkVec result(
+    NGrid result(
         axis == 0 ? this->rows + other.get_rows() : this->rows,
         axis == 1 ? this->cols + other.get_cols() : this->cols,
         axis == 2 ? this->depth + other.get_depth() : this->depth
@@ -4048,10 +4046,10 @@ VkVec VkVec::concatenate(const VkVec& other, const uint32_t axis) const {
 }
 
 // padding around vector/matrix/array using the passed value 
-VkVec VkVec::padding(const float_t value, const uint32_t before_rows, const uint32_t after_rows, const uint32_t before_cols, const uint32_t after_cols, const uint32_t above_layers, const uint32_t below_layers) const {
+NGrid NGrid::padding(const float_t value, const uint32_t before_rows, const uint32_t after_rows, const uint32_t before_cols, const uint32_t after_cols, const uint32_t above_layers, const uint32_t below_layers) const {
     static constexpr uint32_t workgroup_size = 256;
 
-    VkVec result(
+    NGrid result(
         before_rows + this->rows + after_rows,
         before_cols + this->cols + after_cols,
         above_layers + this->depth + below_layers
@@ -4084,9 +4082,9 @@ VkVec VkVec::padding(const float_t value, const uint32_t before_rows, const uint
     return result;
 }
 
-VkVec VkVec::pool_max(const int32_t slider_rows, const int32_t slider_cols, const int32_t slider_depth) const {
+NGrid NGrid::pool_max(const int32_t slider_rows, const int32_t slider_cols, const int32_t slider_depth) const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(
+    NGrid result(
         std::max(int(std::ceil(float_t(this->rows) / slider_rows)), 1),
         std::max(int(std::ceil(float_t(this->cols) / slider_cols)), 1),
         std::max(int(std::ceil(float_t(this->depth) / slider_depth)), 1)
@@ -4117,9 +4115,9 @@ VkVec VkVec::pool_max(const int32_t slider_rows, const int32_t slider_cols, cons
     return result;
 }
 
-VkVec VkVec::pool_maxabs(const int32_t slider_rows, const int32_t slider_cols, const int32_t slider_depth) const {
+NGrid NGrid::pool_maxabs(const int32_t slider_rows, const int32_t slider_cols, const int32_t slider_depth) const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(
+    NGrid result(
         std::max(int(std::ceil(float_t(this->rows) / slider_rows)), 1),
         std::max(int(std::ceil(float_t(this->cols) / slider_cols)), 1),
         std::max(int(std::ceil(float_t(this->depth) / slider_depth)), 1)
@@ -4148,9 +4146,9 @@ VkVec VkVec::pool_maxabs(const int32_t slider_rows, const int32_t slider_cols, c
     return result;
 }
 
-VkVec VkVec::pool_min(const int32_t slider_rows, const int32_t slider_cols, const int32_t slider_depth) const {
+NGrid NGrid::pool_min(const int32_t slider_rows, const int32_t slider_cols, const int32_t slider_depth) const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(
+    NGrid result(
         std::max(int(std::ceil(float_t(this->rows) / slider_rows)), 1),
         std::max(int(std::ceil(float_t(this->cols) / slider_cols)), 1),
         std::max(int(std::ceil(float_t(this->depth) / slider_depth)), 1)
@@ -4179,9 +4177,9 @@ VkVec VkVec::pool_min(const int32_t slider_rows, const int32_t slider_cols, cons
     return result;
 }
 
-VkVec VkVec::pool_mean(const int32_t slider_rows, const int32_t slider_cols, const int32_t slider_depth) const {
+NGrid NGrid::pool_mean(const int32_t slider_rows, const int32_t slider_cols, const int32_t slider_depth) const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(
+    NGrid result(
         std::max(int(std::ceil(float_t(this->rows) / slider_rows)), 1),
         std::max(int(std::ceil(float_t(this->cols) / slider_cols)), 1),
         std::max(int(std::ceil(float_t(this->depth) / slider_depth)), 1)
@@ -4210,9 +4208,9 @@ VkVec VkVec::pool_mean(const int32_t slider_rows, const int32_t slider_cols, con
     return result;
 }
 
-VkVec VkVec::convolution(const VkVec& kernel, bool padding) const {
+NGrid NGrid::convolution(const NGrid& kernel, bool padding) const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(
+    NGrid result(
         padding ? this->rows : this->rows - kernel.get_rows() + 1,
         padding ? this->cols : this->cols - kernel.get_cols() + 1,
         padding ? this->depth : this->depth - kernel.get_depth() + 1
@@ -4244,9 +4242,9 @@ VkVec VkVec::convolution(const VkVec& kernel, bool padding) const {
 }
 
 // turn rows into columns and vice versa
-VkVec VkVec::transpose() const {
+NGrid NGrid::transpose() const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(this->cols, this->rows, this->depth);
+    NGrid result(this->cols, this->rows, this->depth);
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("transpose.spv"); }
 
@@ -4271,11 +4269,11 @@ VkVec VkVec::transpose() const {
 }
 
 // matrix inversion (via iterative approximation)
-VkVec VkVec::inverse(const float_t tolerance,  const uint32_t max_iterations) const {
-    VkVec X(this->cols, this->rows, this->depth); X.fill_random_uniform(-1.0f, 1.0f); // = initial guess, to be iteratively refined
-    VkVec X_new(this->cols, this->rows, this->depth);
-    VkVec I(this->rows, this->cols, this->depth); I.fill_identity();
-    VkVec I2 = I * 2;
+NGrid NGrid::inverse(const float_t tolerance,  const uint32_t max_iterations) const {
+    NGrid X(this->cols, this->rows, this->depth); X.fill_random_uniform(-1.0f, 1.0f); // = initial guess, to be iteratively refined
+    NGrid X_new(this->cols, this->rows, this->depth);
+    NGrid I(this->rows, this->cols, this->depth); I.fill_identity();
+    NGrid I2 = I * 2;
     for (uint32_t i = 0; i < max_iterations; i++) {
         X_new = X * (I2 - (*this) * X);
         X_new.print("X_new:");
@@ -4290,9 +4288,9 @@ VkVec VkVec::inverse(const float_t tolerance,  const uint32_t max_iterations) co
 }
 
 // reverse sorting
-VkVec VkVec::mirror(bool mirror_rows, bool mirror_cols, bool mirror_depth) const {
+NGrid NGrid::mirror(bool mirror_rows, bool mirror_cols, bool mirror_depth) const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("mirror.spv"); }
 
@@ -4318,9 +4316,9 @@ VkVec VkVec::mirror(bool mirror_rows, bool mirror_cols, bool mirror_depth) const
 }
 
 
-VkVec VkVec::diagonal() const {
+NGrid NGrid::diagonal() const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("diagonal.spv"); }
 
@@ -4344,9 +4342,9 @@ VkVec VkVec::diagonal() const {
     return result;
 }
 
-VkVec VkVec::upper_trigonal() const {
+NGrid NGrid::upper_trigonal() const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("upper_trigonal.spv"); }
 
@@ -4370,9 +4368,9 @@ VkVec VkVec::upper_trigonal() const {
     return result;
 }
 
-VkVec VkVec::lower_trigonal() const {
+NGrid NGrid::lower_trigonal() const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(this->rows, this->cols, this->depth);
+    NGrid result(this->rows, this->cols, this->depth);
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("lower_trigonal.spv"); }
 
@@ -4397,9 +4395,9 @@ VkVec VkVec::lower_trigonal() const {
 }
 
 // rearrange the source array elements based on a target index map (holding the flat indices)
-VkVec VkVec::remap(const VkVec& source, const VkVec& target, const VkVec& target_index_map_on_source) const {
+NGrid NGrid::remap(const NGrid& source, const NGrid& target, const NGrid& target_index_map_on_source) const {
     static constexpr uint32_t workgroup_size = 256;
-    VkVec result(target.rows, target.cols, target.depth);
+    NGrid result(target.rows, target.cols, target.depth);
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("remap.spv"); }
 
@@ -4428,7 +4426,7 @@ VkVec VkVec::remap(const VkVec& source, const VkVec& target, const VkVec& target
     return result;
 }
 
-VkVec VkVec::remap(const VkVec& target_index_map_on_source) const {
+NGrid NGrid::remap(const NGrid& target_index_map_on_source) const {
     return remap(*this, *this, target_index_map_on_source);
 }
 
@@ -4437,7 +4435,7 @@ VkVec VkVec::remap(const VkVec& target_index_map_on_source) const {
 // +=================================+
 
 // return struct for correlation results
-struct VkVec::CorrelationResult {
+struct NGrid::CorrelationResult {
 public:
 
     // predict a y value for a given x element, assuming linear correlation
@@ -4469,7 +4467,7 @@ public:
 
     // constructor
     CorrelationResult(int elements) {
-        y_predict = new VkVec(elements);
+        y_predict = new NGrid(elements);
     }
 
     // destructor
@@ -4481,7 +4479,7 @@ public:
     }
 
     // public variables
-    VkVec* y_predict = nullptr;
+    NGrid* y_predict = nullptr;
     float_t x_mean = 0;
     float_t y_mean = 0;
     float_t x_variance = 0;
@@ -4501,26 +4499,26 @@ public:
     float_t MSR = 0;
 };
 
-VkVec::CorrelationResult VkVec::correlation(const VkVec& other) const {
+NGrid::CorrelationResult NGrid::correlation(const NGrid& other) const {
     CorrelationResult result(this->rows);
 
     if (this->dimensions != 1) {
-        Log::log(WARNING, "invalid usage of method VkVec::correlation(): 'this' must be a 1d array but is ", this->dimensions, "d");
+        Log::log(WARNING, "invalid usage of method NGrid::correlation(): 'this' must be a 1d array but is ", this->dimensions, "d");
         return result;
     }
 
     if (other.get_dimensions() != 1) {
-        Log::log(WARNING, "invalid usage of method VkVec::correlation(): 'other' must be a 1d array but is ", other.get_dimensions(), "d");
+        Log::log(WARNING, "invalid usage of method NGrid::correlation(): 'other' must be a 1d array but is ", other.get_dimensions(), "d");
         return result;
     }
 
     if (this->rows != other.get_rows()) {
-        Log::log(WARNING, "invalid usage of method VkVec::correlation(): 'this' has ", this->elements, " elements but 'other' has ", other.get_elements(), " elements; they must be 1d arrays of equal size");
+        Log::log(WARNING, "invalid usage of method NGrid::correlation(): 'this' has ", this->elements, " elements but 'other' has ", other.get_elements(), " elements; they must be 1d arrays of equal size");
         return result;
     }
 
     if (this->elements == 0 || this->rows == 0 || (this->rows == 1 && this->elements > this->rows)) {
-        Log::log(WARNING, "invalid usage of method VkVec::correlation(): 'this' array is empty (i.e. row elements = 0)");
+        Log::log(WARNING, "invalid usage of method NGrid::correlation(): 'this' array is empty (i.e. row elements = 0)");
         return result;
     }
 
@@ -4570,7 +4568,7 @@ VkVec::CorrelationResult VkVec::correlation(const VkVec& other) const {
 }
 
 // nested struct for polynomial regression
-struct VkVec::RegressionResult {
+struct NGrid::RegressionResult {
 public:
     // public variables
     float_t SSR = 0;
@@ -4580,9 +4578,9 @@ public:
     float_t y_mean = 0;
     float_t x_mean = 0;
     float_t r_squared;
-    VkVec* coefficients = nullptr;
-    VkVec* y_predict = nullptr;
-    VkVec* residuals = nullptr;
+    NGrid* coefficients = nullptr;
+    NGrid* y_predict = nullptr;
+    NGrid* residuals = nullptr;
 
     bool is_good_fit(float_t threshold = 0.95) const { return r_squared > threshold; }
 
@@ -4627,13 +4625,13 @@ public:
     // constructor & destructor
     RegressionResult(const uint32_t elements, const uint32_t power) : power(power) {
         if (coefficients == nullptr) {
-            coefficients = new VkVec(power + 1);
+            coefficients = new NGrid(power + 1);
         }
         if (y_predict == nullptr) {
-            y_predict = new VkVec(elements);
+            y_predict = new NGrid(elements);
         }
         if (residuals == nullptr) {
-            residuals = new VkVec(elements);
+            residuals = new NGrid(elements);
         }
     };
 
@@ -4658,32 +4656,32 @@ private:
 // use power=1 for linear regression;
 // make sure that both vectors are 1d and have the same number of
 // elements
-VkVec::RegressionResult VkVec::regression(const VkVec& other, const uint32_t power) const {
+NGrid::RegressionResult NGrid::regression(const NGrid& other, const uint32_t power) const {
 
     RegressionResult result(this->elements, power);
 
     if (this->dimensions != 1) {
-        Log::log(WARNING, "invalid usage of method VkVec::regression(): 'this' must be a 1d array but is ", this->dimensions, "d");
+        Log::log(WARNING, "invalid usage of method NGrid::regression(): 'this' must be a 1d array but is ", this->dimensions, "d");
         return result;
     }
 
     if (other.get_dimensions() != 1) {
-        Log::log(WARNING, "invalid usage of method VkVec::regression(): 'other' must be a 1d array but is ", other.get_dimensions(), "d");
+        Log::log(WARNING, "invalid usage of method NGrid::regression(): 'other' must be a 1d array but is ", other.get_dimensions(), "d");
         return result;
     }
 
     if (this->rows != other.get_rows()) {
-        Log::log(WARNING, "invalid usage of method VkVec::regression(): 'this' has ", this->elements, " elements but 'other' has ", other.get_elements(), " elements; they must be 1d arrays of equal size");
+        Log::log(WARNING, "invalid usage of method NGrid::regression(): 'this' has ", this->elements, " elements but 'other' has ", other.get_elements(), " elements; they must be 1d arrays of equal size");
         return result;
     }
 
     if (this->elements == 0 || this->rows == 0 || (this->rows == 1 && this->elements > this->rows)) {
-        Log::log(WARNING, "invalid usage of method VkVec::regression(): 'this' array is empty (i.e. row elements = 0)");
+        Log::log(WARNING, "invalid usage of method NGrid::regression(): 'this' array is empty (i.e. row elements = 0)");
         return result;
     }
 
     // Create 2d matrix of x values raised to different powers
-    VkVec X(this->elements, power + 1);
+    NGrid X(this->elements, power + 1);
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("power_matrix.spv"); }
@@ -4706,7 +4704,7 @@ VkVec::RegressionResult VkVec::regression(const VkVec& other, const uint32_t pow
     pipeline.destroy();
     descriptor_set.destroy();
 
-    VkVec Xt = X.transpose();
+    NGrid Xt = X.transpose();
     *result.coefficients = ((Xt * X).inverse() * Xt) * other;
 
     // Get R-squared value and other statistics
@@ -4730,7 +4728,7 @@ VkVec::RegressionResult VkVec::regression(const VkVec& other, const uint32_t pow
     return result;
 }
 
-float_t VkVec::pop_last() {
+float_t NGrid::pop_last() {
     if (this->dimensions != 1) {
         Log::log(WARNING, "invalid usage of method float_t pop_last() with ", this->dimensions, " array (must be 1d)");
         return NAN;
@@ -4740,7 +4738,7 @@ float_t VkVec::pop_last() {
     return result;
 }
 
-float_t VkVec::pop_first() {
+float_t NGrid::pop_first() {
     if (this->dimensions != 1) {
         Log::log(WARNING, "invalid usage of method float_t pop_first() with ", this->dimensions, " array (must be 1d)");
         return NAN;
@@ -4750,13 +4748,13 @@ float_t VkVec::pop_first() {
     return result;
 }
 
-VkVec VkVec::erase_row(const uint32_t row_index) {
+NGrid NGrid::erase_row(const uint32_t row_index) {
     if (row_index >= this->rows - 1) {
-        Log::log(WARNING, "invalid usage of method 'VkVec VkVec::erase_row(const uint32_t row_index) with a row index of ",
+        Log::log(WARNING, "invalid usage of method 'NGrid NGrid::erase_row(const uint32_t row_index) with a row index of ",
             row_index, ": the array only has ", this->rows, " row(s); function will have no effect");
         return *this;
     }
-    VkVec result(this->rows - 1, this->cols, this->depth);
+    NGrid result(this->rows - 1, this->cols, this->depth);
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("erase_row.spv"); }
@@ -4782,15 +4780,15 @@ VkVec VkVec::erase_row(const uint32_t row_index) {
     return result;
 }
 
-VkVec VkVec::erase_col(const uint32_t col_index) {
+NGrid NGrid::erase_col(const uint32_t col_index) {
     if (col_index >= this->cols - 1) {
-        Log::log(WARNING, "invalid usage of method 'VkVec VkVec::erase_col(const uint32_t col_index) with a column index of ",
+        Log::log(WARNING, "invalid usage of method 'NGrid NGrid::erase_col(const uint32_t col_index) with a column index of ",
             col_index, ": the array only has ", this->cols, " column(s); function will have no effect");
-        VkVec result;
+        NGrid result;
         result = *this;
         return result;
     }
-    VkVec result(this->rows, this->cols - 1, this->depth);
+    NGrid result(this->rows, this->cols - 1, this->depth);
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("erase_col.spv"); }
@@ -4816,15 +4814,15 @@ VkVec VkVec::erase_col(const uint32_t col_index) {
     return result;
 }
 
-VkVec VkVec::erase_layer(const uint32_t depth_layer_index) {
+NGrid NGrid::erase_layer(const uint32_t depth_layer_index) {
     if (depth_layer_index >= this->depth - 1) {
-        Log::log(WARNING, "invalid usage of method 'VkVec VkVec::erase_depth(const uint32_t depth_layer_index) with a depth layer index of ",
+        Log::log(WARNING, "invalid usage of method 'NGrid NGrid::erase_depth(const uint32_t depth_layer_index) with a depth layer index of ",
             depth_layer_index, ": the array only has ", this->depth, " layer(s); function will have no effect");
-        VkVec result;
+        NGrid result;
         result = *this;
         return result;
     }
-    VkVec result(this->rows, this->cols, this->depth - 1);
+    NGrid result(this->rows, this->cols, this->depth - 1);
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("erase_depth.spv"); }
@@ -4860,9 +4858,9 @@ VkVec VkVec::erase_layer(const uint32_t depth_layer_index) {
 // time series dataset does not have a unit root and is stationary.
 // The method for differencing is set to first order integer by default,
 // but can be changed to other methods via the method's arguments
-float_t VkVec::Dickey_Fuller() const {
+float_t NGrid::Dickey_Fuller() const {
     // correlate a copy of the array with a stationary transformation of itself
-    VkVec copy; copy = *this;
+    NGrid copy; copy = *this;
     auto correlation_result = copy.erase_row(0).correlation(this->stationary());
     float R = correlation_result.Pearson_R;
     // calculate result
@@ -4875,8 +4873,8 @@ float_t VkVec::Dickey_Fuller() const {
 // The test was proposed by Clive Granger and Robert Engle in 1987.
 // If the returned p-value is less than a chosen significance level (typically 0.05),
 // it suggests that the two time series are cointegrated and have a long-term relationship.
-// Make sure that both VkVec have the same number of elements!
-float_t VkVec::Engle_Granger(const VkVec& other) const {
+// Make sure that both NGrid have the same number of elements!
+float_t NGrid::Engle_Granger(const NGrid& other) const {
     auto regression_result = this->stationary().regression(other.stationary());
     return regression_result.residuals->Dickey_Fuller();
 }
@@ -4884,8 +4882,8 @@ float_t VkVec::Engle_Granger(const VkVec& other) const {
 // returns a stationary transformation of the vector data,
 // using first degree differencing
 // e.g. for time series data;
-VkVec VkVec::stationary() const {
-    VkVec result(this->rows, this->cols, this->depth);
+NGrid NGrid::stationary() const {
+    NGrid result(this->rows, this->cols, this->depth);
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("stationary.spv"); }
@@ -4913,8 +4911,8 @@ VkVec VkVec::stationary() const {
 // returns a stationary transformation of the vector data,
 // using first degree logreturn differencing
 // e.g. for time series data;
-VkVec VkVec::stationary_log() const {
-    VkVec result(this->rows, this->cols, this->depth);
+NGrid NGrid::stationary_log() const {
+    NGrid result(this->rows, this->cols, this->depth);
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("stationary_log.spv"); }
@@ -4942,8 +4940,8 @@ VkVec VkVec::stationary_log() const {
 // returns a stationary transformation of the vector data,
 // using fractional differencing
 // e.g. for time series data;
-VkVec VkVec::stationary_fract(float_t degree, float_t exponent) const {
-    VkVec result(this->rows, this->cols, this->depth);
+NGrid NGrid::stationary_fract(float_t degree, float_t exponent) const {
+    NGrid result(this->rows, this->cols, this->depth);
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("stationary_fract.spv"); }
@@ -4971,8 +4969,8 @@ VkVec VkVec::stationary_fract(float_t degree, float_t exponent) const {
 }
 
 // ascending sorting for 1d vectors
-VkVec VkVec::sort() const {
-    VkVec result; result = *this;
+NGrid NGrid::sort() const {
+    NGrid result; result = *this;
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("sort.spv"); }
@@ -4997,7 +4995,7 @@ VkVec VkVec::sort() const {
     return result;
 }
 
-float_t VkVec::covariance(const VkVec& other) const {
+float_t NGrid::covariance(const NGrid& other) const {
     return (*this - this->mean()).scalar_product(other - other.mean()) / this->elements;
 }
 
@@ -5007,7 +5005,7 @@ float_t VkVec::covariance(const VkVec& other) const {
 
 // print the vector or array to the console
 // use precision argument for decimal places (use negative number for unformatted full available precision)
-void VkVec::print(std::string comment, std::string delimiter, bool with_indices, bool rows_inline, int32_t precision) const {
+void NGrid::print(std::string comment, std::string delimiter, bool with_indices, bool rows_inline, int32_t precision) const {
     uint32_t decimals = std::pow(10, precision);
     std::cout << comment;
     if (comment != "") {
@@ -5076,14 +5074,14 @@ void VkVec::print(std::string comment, std::string delimiter, bool with_indices,
 
 
 // protected helper method for descriptor pool destruction
-void VkVec::destroy_descriptor_pool() {
+void NGrid::destroy_descriptor_pool() {
     if (descriptor_pool != nullptr) {
         delete descriptor_pool;
         descriptor_pool = nullptr;
     }
 }
 
-uint32_t VkVec::flat_index(uint32_t row, uint32_t col, uint32_t depth_layer) const {
+uint32_t NGrid::flat_index(uint32_t row, uint32_t col, uint32_t depth_layer) const {
     return  row * (this->cols * this->depth) +
             col * this->cols +
             depth_layer;
