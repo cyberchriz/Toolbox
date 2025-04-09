@@ -95,7 +95,7 @@ class DescriptorSet;
 class Event;
 class ImageView;
 class Image;
-class MemoryBarrier;
+class DeviceMemoryBarrier;
 template<typename T> class BufferMemoryBarrier;
 class ImageMemoryBarrier;
 
@@ -130,6 +130,12 @@ public:
     // default constructor
     Instance() {
         application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		// set defaults for application name, engine name and API version
+        application_info.pApplicationName = "Vulkan Application";
+        application_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+        application_info.pEngineName = "Generic";
+        application_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+		application_info.apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 0);
     }
 
     // Move constructor
@@ -176,20 +182,20 @@ public:
     }
 
     // set application name and version
-    void init_application(const char* name = "Vulkan Application", uint32_t major_version = 1, uint32_t minor_version = 0, uint32_t patch_version = 0) {
+    void set_application(const char* name = "Vulkan Application", uint32_t major_version = 1, uint32_t minor_version = 0, uint32_t patch_version = 0) {
         application_info.pApplicationName = name;
         application_info.applicationVersion = VK_MAKE_VERSION(major_version, minor_version, patch_version);
     }
 
     // initialize Vulkan engine and version
-    void init_engine(const char* name = "", uint32_t major_version = 0, uint32_t minor_version = 0, uint32_t patch_version = 0) {
+    void set_engine(const char* name = "", uint32_t major_version = 0, uint32_t minor_version = 0, uint32_t patch_version = 0) {
         application_info.pEngineName = name;
         application_info.engineVersion = VK_MAKE_VERSION(major_version, minor_version, patch_version);
     }
 
     // initialize Vulkan API version
-    void init_api_version(uint32_t version = VK_API_VERSION_1_2) {
-        application_info.apiVersion = version;
+    void set_api_version(uint32_t major_version = 0, uint32_t minor_version = 0, uint32_t patch_version = 0) {
+		application_info.apiVersion = VK_MAKE_API_VERSION(0, major_version, minor_version, patch_version);
     }
 
     // log names of available instance layers
@@ -212,7 +218,7 @@ public:
             layers.push_back(name);
         }
     }
-    void enable_layers(const char* layer_name) {
+    void enable_layer(const char* layer_name) {
         layers.push_back(layer_name);
     }
 
@@ -237,7 +243,7 @@ public:
             extensions.push_back(name);
         }
     }
-    void enable_extensions(const char* extension_name) {
+    void enable_extension(const char* extension_name) {
         extensions.push_back(extension_name);
     }
 
@@ -695,6 +701,9 @@ public:
     VkImageLayout get_layout() const { return layout; }
 	
     VkDeviceMemory get_memory() const { return memory; }
+
+	// --- Setters ---
+    void set_layout(VkImageLayout new_layout) { layout = new_layout; }
 
 protected:
     void destroy() {
@@ -2078,9 +2087,9 @@ public:
         return range.size;
     }
 
-    uint32_t* get_data() { return data; }
+    const uint32_t* get_data() const { return data; }
 
-    VkPushConstantRange& get_range() { return range; }
+    const VkPushConstantRange& get_range() const { return range; }
 
 protected:
     static constexpr float_t reserve = 0.5;
@@ -2745,8 +2754,8 @@ public:
     }
 
 	// getters
-    VkDescriptorSet& get() { return set; }
-    VkDescriptorSetLayout& get_layout() { return layout; }
+    const VkDescriptorSet& get() const { return set; }
+    const VkDescriptorSetLayout& get_layout() const { return layout; }
 
     // destructor
     ~DescriptorSet() {
@@ -2932,20 +2941,20 @@ public:
         
         if (descriptor_set.has_value()) {
             layout_create_info.setLayoutCount = 1;
-            layout_create_info.pSetLayouts = &descriptor_set.get_layout();
+            layout_create_info.pSetLayouts = &descriptor_set.value().get_layout();
         }
         else {
             layout_create_info.setLayoutCount = 0;
             layout_create_info.pSetLayouts = nullptr;
         }
 
-        if (push_constants.has_value() && push_constants.get_data() == nullptr) { // check for empty PushConstants object
+        if (push_constants.has_value() && push_constants.value().get_data() == nullptr) { // check for empty PushConstants object
             layout_create_info.pushConstantRangeCount = 0;
             layout_create_info.pPushConstantRanges = nullptr;
         }
         else {
             layout_create_info.pushConstantRangeCount = 1;
-            layout_create_info.pPushConstantRanges = &push_constants.get_range();
+            layout_create_info.pPushConstantRanges = &push_constants.value().get_range();
         }
 
         VkResult result = vkCreatePipelineLayout(logical, &layout_create_info, nullptr, &layout);
@@ -3005,12 +3014,12 @@ public:
 
         // setup dynamic states
         VkPipelineDynamicStateCreateInfo dynamic_state_create_info = {};
-        if (dynamic_states.has_value() {
+        if (dynamic_states.has_value()) {
             dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
             dynamic_state_create_info.pNext = nullptr;
             dynamic_state_create_info.flags = 0;
-            dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
-            dynamic_state_create_info.pDynamicStates = dynamic_states.data();
+            dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.value().size());
+            dynamic_state_create_info.pDynamicStates = dynamic_states.value().data();
 
             pipeline_create_info.pDynamicState = &dynamic_state_create_info;
         }
@@ -3202,7 +3211,7 @@ public:
         return vkWaitForFences(logical, 1, &fence, VK_TRUE, timeout_nanosec);
     }
 
-    VkFence& get() const { return fence; }
+    const VkFence& get() const { return fence; }
 private:
     VkFence fence = nullptr;
     VkDevice logical = nullptr;
@@ -3256,7 +3265,7 @@ public:
         vkSignalSemaphore(logical, &signal_info);
     }
 
-    VkSemaphore& get() const { return semaphore; }
+    const VkSemaphore& get() const { return semaphore; }
 
 private:
     VkSemaphore semaphore = nullptr;
@@ -3292,8 +3301,9 @@ public:
     }
 
     // getters
-    VkEvent& get() { return event; }
-    VkDependencyInfo& get_dependency_info() { return dependency_info; }
+    const VkEvent& get() const { return event; }
+    const VkDependencyInfo& get_dependency_info() const { return dependency_info; }
+	VkDependencyInfo* get_dependency_info_ptr() { return &dependency_info; }
 
 
 protected:
@@ -3303,17 +3313,17 @@ protected:
     
 };
 
-class MemoryBarrier {
+class DeviceMemoryBarrier {
 public:
     // constructor
-    MemoryBarrier() = delete;
-    MemoryBarrier(
+    DeviceMemoryBarrier() = delete;
+    DeviceMemoryBarrier(
         VkPipelineStageFlags2 source_stage_flags,
         VkAccessFlags2 source_access_flags,
         VkPipelineStageFlags2 target_stage_flags,
-        VkAccessFlags2 target_access_flags,
+        VkAccessFlags2 target_access_flags
     ) {
-        buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
         memory_barrier.pNext = nullptr;
         memory_barrier.srcStageMask = source_stage_flags;
         memory_barrier.srcAccessMask = source_access_flags;
@@ -3321,8 +3331,8 @@ public:
         memory_barrier.dstAccessMask = target_access_flags;
     }
     // destructor
-    ~MemoryBarrier() {}
-    VkMemoryBarrier2& get() const { return memory_barrier; }
+    ~DeviceMemoryBarrier() {}
+    const VkMemoryBarrier2& get() const { return memory_barrier; }
 protected:
     VkMemoryBarrier2 memory_barrier = {};
 };
@@ -3391,7 +3401,7 @@ public:
     }
     // destructor
     ~ImageMemoryBarrier() {}
-    VkImageMemoryBarrier2& get() const { return image_memory_barrier; }
+    const VkImageMemoryBarrier2& get() const { return image_memory_barrier; }
 protected:
     VkImageMemoryBarrier2 image_memory_barrier = {};
 };
@@ -3465,28 +3475,28 @@ public:
         begin_recording();
     }
 
-    // definition outside class (because it depends on CommandBuffer::get(), which needs to be defined first)
+	// set event on command buffer
     Event& set_event(CommandBuffer& command_buffer, std::vector<VkMemoryBarrier2> memory_barriers, std::vector<VkBufferMemoryBarrier2> buffer_memory_barriers, std::vector<VkImageMemoryBarrier2> image_memory_barriers, VkDependencyFlags flags) {
-        Event event;
-        event.get_dependency_info().sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        event.get_dependency_info().pNext = NULL;
-        event.get_dependency_info().dependencyFlags = flags;
-        event.get_dependency_info().memoryBarrierCount = static_cast<uint32_t>(memory_barriers.size());
-        event.get_dependency_info().pMemoryBarriers = memory_barriers.data();
-        event.get_dependency_info().bufferMemoryBarrierCount = static_cast<uint32_t>(buffer_memory_barriers.size());
-        event.get_dependency_info().pBufferMemoryBarriers = buffer_memory_barriers.data();
-        event.get_dependency_info().imageMemoryBarrierCount = static_cast<uint32_t>(image_memory_barriers.size());
-        event.get_dependency_info().pImageMemoryBarriers = image_memory_barriers.data();
+        Event event = Event(*device);
+        event.get_dependency_info_ptr()->sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        event.get_dependency_info_ptr()->pNext = NULL;
+        event.get_dependency_info_ptr()->dependencyFlags = flags;
+        event.get_dependency_info_ptr()->memoryBarrierCount = static_cast<uint32_t>(memory_barriers.size());
+        event.get_dependency_info_ptr()->pMemoryBarriers = memory_barriers.data();
+        event.get_dependency_info_ptr()->bufferMemoryBarrierCount = static_cast<uint32_t>(buffer_memory_barriers.size());
+        event.get_dependency_info_ptr()->pBufferMemoryBarriers = buffer_memory_barriers.data();
+        event.get_dependency_info_ptr()->imageMemoryBarrierCount = static_cast<uint32_t>(image_memory_barriers.size());
+        event.get_dependency_info_ptr()->pImageMemoryBarriers = image_memory_barriers.data();
         vkCmdSetEvent2(this->buffer, event.get(), &event.get_dependency_info());
-        return Event;
+        return event;
     }
 
-    void reset_event(Event& event, VkPipelineStageFlags& stage_mask) {
+    void reset_event(Event& event, VkPipelineStageFlags& stage_mask) const {
         vkCmdResetEvent(buffer, event.get(), stage_mask);
     }
 
-    void wait_event(Event&) {
-        vkCmdWaitEvents2(buffer, 1, &event.get(), event.get_dependency_info());
+    void wait_event(const Event& event) const {
+		vkCmdWaitEvents2(buffer, 1, &event.get(), &event.get_dependency_info());
     }
 
     void bind_pipeline(GraphicsPipeline& pipeline) {
@@ -3561,12 +3571,12 @@ public:
     }
 
     // add memory barrier
-    void add_barrier(MemoryBarrier& barrier) {
+    void add_barrier(const DeviceMemoryBarrier& barrier) const {
         VkDependencyInfo dependency_info = {};
         dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dependency_info.pNext = nullptr;
         dependency_info.memoryBarrierCount = 1;
-        dependency_info.pMemoryBarriers = barrier.get();
+        dependency_info.pMemoryBarriers = &barrier.get();
         dependency_info.bufferMemoryBarrierCount = 0;
         dependency_info.pBufferMemoryBarriers = nullptr;
         dependency_info.imageMemoryBarrierCount = 0;
@@ -3575,7 +3585,8 @@ public:
     }
 
 	// add buffer memory barrier
-    void add_barrier(BufferMemoryBarrier& barrier) {
+	template<typename T>
+    void add_barrier(const BufferMemoryBarrier<T>& barrier) {
         VkDependencyInfo dependency_info = {};
         dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dependency_info.pNext = nullptr;
@@ -3589,7 +3600,7 @@ public:
     }
 
 	// add image memory barrier
-    void add_barrier(ImageMemoryBarrier& barrier) {
+    void add_barrier(ImageMemoryBarrier& barrier) const {
         VkDependencyInfo dependency_info = {};
         dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dependency_info.pNext = nullptr;
@@ -3598,14 +3609,15 @@ public:
         dependency_info.bufferMemoryBarrierCount = 0;
         dependency_info.pBufferMemoryBarriers = nullptr;
         dependency_info.imageMemoryBarrierCount = 1;
-        dependency_info.pImageMemoryBarriers = barrier.get();
+        dependency_info.pImageMemoryBarriers = &barrier.get();
         vkCmdPipelineBarrier2(buffer, &dependency_info);
     }
 
 	// add multiple barriers
+	template<typename T>
     void add_barriers(
-            std::optional<std::vector<MemoryBarrier>>& memory_barriers,
-            std::optional<std::vector<BufferMemoryBarrier>>& buffer_memory_barriers,
+            std::optional<std::vector<DeviceMemoryBarrier>>& device_memory_barriers,
+            std::optional<std::vector<BufferMemoryBarrier<T>>>& buffer_memory_barriers,
             std::optional<std::vector<ImageMemoryBarrier>>& image_memory_barriers
         ) {
         VkDependendyInfo dependency_info = {};
@@ -3661,7 +3673,7 @@ public:
     }
 
 	// transition image layout
-    void transition_image_layout(Image image, VkImageLayout new_layout) {
+    void transition_image_layout(Image image, VkImageLayout new_layout, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT) {
         VkImageMemoryBarrier2 image_memory_barrier = {};
         image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         image_memory_barrier.oldLayout = image.get_layout();
@@ -3679,15 +3691,15 @@ public:
         VkImageAspectFlags aspect_mask;
         VkPipelineStageFlags src_stage;
         VkPipelineStageFlags dst_stage;
-        if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+        if (image_memory_barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
             image_memory_barrier.srcAccessMask = 0;
             image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
         }
-        else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        else if (image_memory_barrier.oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+            image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
             image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         }
@@ -3710,14 +3722,14 @@ public:
 
         vkCmdPipelineBarrier2(buffer, &dependency_info);
 
-        image.layout = new_layout;
+        image.set_layout(new_layout);
     }
 
     void draw(uint32_t& vertex_count, uint32_t instance_count=1, uint32_t first_vertex=0, uint32_t first_instance=0) {
         vkCmdDraw(buffer, vertex_count, instance_count, first_vertex, first_instance);
     }
 
-    void dispatch(uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1) {
+    void dispatch(uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1) const {
         // dispatch for compute
         if (usage == QueueFamily::COMPUTE) {
             const uint32_t workgroups_x = (global_size_x + workgroup_size_x - 1) / workgroup_size_x;
@@ -3869,113 +3881,108 @@ protected:
 // shared instance and device manager as singleton class
 class VkManager {
 public:
-    static VkManager* make_singleton(std::vector<const char*>& instance_layer_names,
-                                     std::vector<const char*>& instance_extension_names,
-                                     std::vector<const char*> device_extension_names,
-                                     char* application_name = "Shared Vulkan Manager",
-                                     uint32_t application_major_version = 1,
-                                     uint32_t application_minor_version = 0,
-                                     uint32_t application_patch_version = 0,
+    static VkManager* make_singleton(const std::vector<const char*>& instance_layer_names,
+                                     const std::vector<const char*>& instance_extension_names,
+                                     const std::vector<const char*>& device_extension_names,
+                                     const VkPhysicalDeviceFeatures& enabled_device_features,    
+                                     uint32_t api_major_version = 1,
+                                     uint32_t api_minor_version = 3,
+                                     uint32_t api_patch_version = 0,
                                      uint32_t default_device_id = 0) {
-        if (shared == nullptr) {
+        if (singleton == nullptr) {
             shared_instance_layer_names = instance_layer_names;
             shared_instance_extension_names = instance_extension_names;
             shared_device_extension_names = device_extension_names;
+			shared_enabled_device_features = enabled_device_features;
             shared_default_device_id = default_device_id;
-            shared_application_name = application_name;
-            shared_application_major_version = application_major_version;
-            shared_application_minor_version = application_minor_version;
-            shared_application_patch_version = application_patch_version;
+            shared_api_major_version = api_major_version;
+            shared_api_minor_version = api_minor_version;
+            shared_api_patch_version = api_patch_version;
             // calling the private constructor
-            shared = new VkManager;
+            singleton = new VkManager;
             // register static destructor
             std::atexit(&VkManager::destroy_singleton);
         }
-        return shared;
+        return singleton;
     }
 
     static Device& get_device() {return *device;}
     static Instance& get_instance() {return *instance;}
-    static VkManager* get_singleton() { return shared; }
-    static CommandPool& get_command_pool_graphics() { return *command_pool_graphics; }
-    static CommandPool& get_command_pool_compute() { return *command_pool_compute; }
-    static CommandPool& get_command_pool_transfer() { return *command_pool_transfer; }
+    static VkManager* get_singleton() { return singleton; }
+    static CommandPool& get_command_pool_graphics() { return *shared_command_pool_graphics; }
+    static CommandPool& get_command_pool_compute() { return *shared_command_pool_compute; }
+    static CommandPool& get_command_pool_transfer() { return *shared_command_pool_transfer; }
 
  private:
     // shared members
     static Instance* instance;
     static Device* device;
-    static VkManager* shared;
+    static VkManager* singleton;
     static std::vector<const char*> shared_instance_layer_names;
     static std::vector<const char*> shared_instance_extension_names;
     static std::vector<const char*> shared_device_extension_names;
+	static VkPhysicalDeviceFeatures shared_enabled_device_features;
     static uint32_t shared_default_device_id;
-    static char* shared_application_name;
-    static uint32_t shared_application_major_version;
-    static uint32_t shared_application_minor_version;
-    static uint32_t shared_application_patch_version;
-    static CommandPool* command_pool_compute;
-    static CommandPool* command_pool_graphics;
-    static CommandPool* command_pool_transfer;
+    static uint32_t shared_api_major_version;
+    static uint32_t shared_api_minor_version;
+    static uint32_t shared_api_patch_version;
+    static CommandPool* shared_command_pool_compute;
+    static CommandPool* shared_command_pool_graphics;
+    static CommandPool* shared_command_pool_transfer;
 
     // private constructor: one-time initialization on first call of get_singleton()
     VkManager() {
         instance = new Instance();
 
-        // set create flags
-        VkInstanceCreateFlags shared_instance_create_flags = 0;
-
         // finalize instance creation
-        instance->init_api_version(VK_API_VERSION_1_2);
-        instance->init_application(shared_application_name, shared_application_major_version, shared_application_minor_version, shared_application_patch_version);
-        instance->init_extensions(shared_instance_extension_names);
-        instance->init_layers(shared_instance_layer_names);
-        instance->create(shared_instance_create_flags);
-
-        // enable device features
-        VkPhysicalDeviceFeatures enabled_device_features = {};
-        enabled_device_features.imageCubeArray = VK_TRUE;
+		instance->set_api_version(shared_api_major_version, shared_api_minor_version, shared_api_patch_version);
+		instance->set_application("Shared Vulkan Manager", 1, 0, 0);
+        instance->enable_extensions(shared_instance_extension_names);
+        instance->enable_layers(shared_instance_layer_names);
+        instance->create();
 
         // finalize device creation
-        device = new Device(*instance, enabled_device_features, shared_device_extension_names, shared_default_device_id);
+        device = new Device(*instance, shared_enabled_device_features, shared_device_extension_names, shared_default_device_id);
 
         // setup command pools
         Log::debug("creating new graphics command pool");
-        command_pool_graphics = new CommandPool(*device, QueueFamily::GRAPHICS);
+        shared_command_pool_graphics = new CommandPool(*device, QueueFamily::GRAPHICS);
         Log::debug("creating new compute command pool");
-        command_pool_compute = new CommandPool(*device, QueueFamily::COMPUTE);
+        shared_command_pool_compute = new CommandPool(*device, QueueFamily::COMPUTE);
         Log::debug("creating new transfer command pool");
-        command_pool_transfer = new CommandPool(*device, QueueFamily::TRANSFER);
+        shared_command_pool_transfer = new CommandPool(*device, QueueFamily::TRANSFER);
     }
 
     // private custom destructor method
     static void destroy_singleton() {
-        if (shared != nullptr) {
+        if (singleton != nullptr) {
             Log::debug("singleton manager destructor invoked");
-            delete command_pool_graphics; command_pool_graphics = nullptr;
-            delete command_pool_compute; command_pool_compute = nullptr;
-            delete command_pool_transfer; command_pool_transfer = nullptr;
-            delete device; device = nullptr;
-            delete instance; instance = nullptr;
-            delete shared; shared = nullptr;
+            delete shared_command_pool_graphics;    shared_command_pool_graphics = nullptr;
+            delete shared_command_pool_compute;     shared_command_pool_compute = nullptr;
+            delete shared_command_pool_transfer;    shared_command_pool_transfer = nullptr;
+            delete device;                          device = nullptr;
+            delete instance;                        instance = nullptr;
+            delete singleton;                       singleton = nullptr;
         }
     }
 };
 
-// initialization of VkManager static members
+// initialization of VkManager static members from outside the class
 Instance* VkManager::instance = nullptr;
 Device* VkManager::device = nullptr;
-VkManager* VkManager::shared = nullptr;
-CommandPool* VkManager::command_pool_compute = nullptr;
-CommandPool* VkManager::command_pool_graphics = nullptr;
-CommandPool* VkManager::command_pool_transfer = nullptr;
+VkManager* VkManager::singleton = nullptr;
+CommandPool* VkManager::shared_command_pool_compute = nullptr;
+CommandPool* VkManager::shared_command_pool_graphics = nullptr;
+CommandPool* VkManager::shared_command_pool_transfer = nullptr;
 std::vector<const char*> VkManager::shared_instance_layer_names = {};
 std::vector<const char*> VkManager::shared_instance_extension_names = {};
 std::vector<const char*> VkManager::shared_device_extension_names = {};
+VkPhysicalDeviceFeatures VkManager::shared_enabled_device_features = {};
 uint32_t VkManager::shared_default_device_id = 0;
-char* VkManager::shared_application_name = "";
-uint32_t VkManager::shared_application_major_version = 1;
-uint32_t VkManager::shared_application_minor_version = 0;
-uint32_t VkManager::shared_application_patch_version = 0;
-#endif
+uint32_t VkManager::shared_api_major_version = 1;
+uint32_t VkManager::shared_api_minor_version = 3;
+uint32_t VkManager::shared_api_patch_version = 0;
+
+
+#endif // include guard close
 

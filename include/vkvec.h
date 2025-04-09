@@ -625,7 +625,7 @@ VkVec VkVec::get_col(int32_t col_index) const {
 
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
     command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
-
+    
     pipeline.destroy();
     descriptor_set.destroy();
     return result;
