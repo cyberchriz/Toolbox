@@ -138,7 +138,7 @@ public:
 		application_info.apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 0);
     }
 
-    // Move constructor
+    // move constructor
     Instance(Instance&& other) noexcept {
         this->instance = std::exchange(other.instance, nullptr);
         this->application_info = std::move(other.application_info);
@@ -491,12 +491,12 @@ public:
         Log::info("[DEVICE COMPLETED]");
     }
 
-    // Move Constructor
+    // move constructor
     Device(Device&& other) noexcept {
         move_resources(other);
     }
 
-    // Move Assignment
+    // move assignment
     Device& operator=(Device&& other) noexcept {
         if (this != &other) {
             destroy(); // release resource from 'this'
@@ -511,6 +511,9 @@ public:
     Device& operator=(const Device&) = delete;
 
     // getter functions
+    // (note: member variables can be returned by reference,
+    // because the instance is usually a high-level object,
+    // expected to stay alive as long as needed)
     VkDevice& get_logical() { return logical; }
     VkPhysicalDevice& get_physical() { return physical; }
     VkQueue& get_graphics_queue() { return graphics_queue; }
@@ -659,17 +662,17 @@ public:
         Log::debug("in constructor Image::Image(...): image created successfully (handle: ", image, ")");
     }
 
-    // Move semantics
+    // move constructor
     Image(Image&& other) noexcept :
         logical(std::exchange(other.logical, nullptr)),
         image(std::exchange(other.image, VK_NULL_HANDLE)),
         memory(std::exchange(other.memory, VK_NULL_HANDLE)),
         format(other.format),
         extent(other.extent),
-        layout(other.layout)
-    {
+        layout(other.layout) {
     }
 
+	// move assignment
     Image& operator=(Image&& other) noexcept {
         if (this != &other) {
             destroy();
@@ -683,7 +686,7 @@ public:
         return *this;
     }
 
-    // Delete copy
+    // delete copy & copy assignment constructors
     Image(const Image&) = delete;
     Image& operator=(const Image&) = delete;
 
@@ -739,6 +742,7 @@ protected:
 
 class ImageView {
 public:
+    // constructor
     ImageView() = delete;
     ImageView(Device& device, const Image& image, VkImageViewType view_type, VkImageAspectFlags aspect_flags, uint32_t base_mip_level = 0, uint32_t level_count = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1)
         : logical(device.get_logical()) {
@@ -767,13 +771,13 @@ public:
         Log::info("ImageView created successfully (handle: ", image_view, ")");
     }
 
-    // Move semantics
+    // move constructor
     ImageView(ImageView&& other) noexcept :
         logical(std::exchange(other.logical, nullptr)),
-        image_view(std::exchange(other.image_view, VK_NULL_HANDLE))
-    {
+        image_view(std::exchange(other.image_view, VK_NULL_HANDLE)) {
     }
 
+    // move assignment
     ImageView& operator=(ImageView&& other) noexcept {
         if (this != &other) {
             destroy();
@@ -783,18 +787,20 @@ public:
         return *this;
     }
 
-    // Delete copy
+	// delete copy & copy assignment constructors
     ImageView(const ImageView&) = delete;
     ImageView& operator=(const ImageView&) = delete;
 
-
+    // destructor
     ~ImageView() {
         destroy();
     }
 
+    // getters
     VkImageView get() const { return image_view; }
 
 protected:
+	// helper method to release resources
     void destroy() {
         if (image_view != VK_NULL_HANDLE) {
             Log::info("Destroying image view (handle: ", image_view, ")");
@@ -3251,7 +3257,7 @@ public:
         return vkWaitSemaphores(logical, &wait_info, timeout_nanosec);
     }
 
-    uint64_t counter() {
+    const uint64_t counter() const {
         uint64_t value;
         vkGetSemaphoreCounterValue(logical, semaphore, &value);
         return value;
@@ -3296,7 +3302,7 @@ public:
     }
 
     // query event status
-    bool signaled() {
+    const bool signaled() const {
         return vkGetEventStatus(logical, event) == VK_EVENT_SET;
     }
 
@@ -3499,7 +3505,7 @@ public:
 		vkCmdWaitEvents2(buffer, 1, &event.get(), &event.get_dependency_info());
     }
 
-    void bind_pipeline(GraphicsPipeline& pipeline) {
+    void bind_pipeline(GraphicsPipeline& pipeline) const {
         if (usage != QueueFamily::GRAPHICS) {
             Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support graphics");
         }
@@ -3536,7 +3542,7 @@ public:
         vkCmdBindDescriptorSets(buffer, bind_point, pipeline_layout, 0, 1, &set.get(), 0, nullptr);
     }
 
-    void push_constants(PushConstants& push_constants) {
+    void push_constants(PushConstants& push_constants) const {
         vkCmdPushConstants(
             buffer,
             pipeline_layout,
@@ -3725,7 +3731,7 @@ public:
         image.set_layout(new_layout);
     }
 
-    void draw(uint32_t& vertex_count, uint32_t instance_count=1, uint32_t first_vertex=0, uint32_t first_instance=0) {
+    void draw(uint32_t& vertex_count, uint32_t instance_count=1, uint32_t first_vertex=0, uint32_t first_instance=0) const {
         vkCmdDraw(buffer, vertex_count, instance_count, first_vertex, first_instance);
     }
 
@@ -3771,14 +3777,16 @@ public:
         vkCmdBeginRenderPass2(buffer, &renderpass_begin_info, &subpass_begin_info);
     }
 
-    void end_renderpass() {
+    void end_renderpass() const {
         vkCmdEndRenderPass(buffer);
     }
 
-    void next_subpass(VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE) {
+    void next_subpass(VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE) const {
         vkCmdNextSubpass(buffer, contents);
     }
 
+	// end recording and submit command buffer to queue
+	// (overload with fence)
     void submit(Fence& fence) {
         // stop command buffer recording state (thus triggering executable state)
         vkEndCommandBuffer(buffer);
@@ -3799,6 +3807,8 @@ public:
         }
     }
 
+    // end recording and submit command buffer to queue
+    // (overload without fence)
     void submit() {
         // stop command buffer recording state (thus triggering executable state)
         vkEndCommandBuffer(buffer);
@@ -3821,7 +3831,8 @@ public:
 
     VkCommandBuffer& get() { return buffer; }
 
-    // shorthand for bind_pipeline -> push_constants -> dispatch -> submit;
+    // shorthand for:
+    // bind compute pipeline -> bind descriptor set -> push constants -> dispatch -> end recording -> submit
     // (note: a fence will only be used if fence_timeout_nanosec != 0)
     void compute(ComputePipeline& pipeline, uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1, uint64_t fence_timeout_nanosec = 10000) {
         bind_pipeline(pipeline);
@@ -3878,7 +3889,7 @@ protected:
     uint32_t workgroup_size_z = 0; // only used for compute pipelines
 };
 
-// shared instance and device manager as singleton class
+// shared manager for instance, device and command pools as singleton class
 class VkManager {
 public:
     static VkManager* make_singleton(const std::vector<const char*>& instance_layer_names,
@@ -3906,12 +3917,13 @@ public:
         return singleton;
     }
 
-    static Device& get_device() {return *device;}
-    static Instance& get_instance() {return *instance;}
+    static const Device& get_device() {return *device;}
+    static const Instance& get_instance() {return *instance;}
     static VkManager* get_singleton() { return singleton; }
     static CommandPool& get_command_pool_graphics() { return *shared_command_pool_graphics; }
     static CommandPool& get_command_pool_compute() { return *shared_command_pool_compute; }
     static CommandPool& get_command_pool_transfer() { return *shared_command_pool_transfer; }
+	static const VkPhysicalDeviceFeatures& get_enabled_device_features() { return shared_enabled_device_features; }
 
  private:
     // shared members

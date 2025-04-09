@@ -1,10 +1,11 @@
 ﻿// author and copyright: Christian Suer (cyberchriz)
 // description: class for parallel floating point data structure computations on the GPU (using Vulkan)
 
+
 #ifndef VKVEC_H
 #define VKVEC_H
+#pragma once // not strictly necessary if the included header files also all come with include guards, but just to be on the safe side
 
-#pragma once
 #define NOMINMAX
 #include "angular.h"
 #include "log.h"
@@ -17,9 +18,13 @@
 #include <seed.h>
 #include <stdlib.h>
 #include <string>
+#include <type_traits>
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <Windows.h>
+
+// constants
+template <typename T> constexpr bool is_numeric = std::is_integral<T>::value || std::is_floating_point<T>::value;
 
 // forward declarations
 class VkVec;
@@ -43,6 +48,11 @@ public:
     // | Constructors & Destructors      |
     // +=================================+
 
+    template <typename T, typename... Args>
+    VkVec(T size_x, Args... size_n) {
+        std::vector<T> shape = {size_x, size_n...};
+    }
+    
     VkVec(const uint32_t rows = 1, const uint32_t cols = 1, const uint32_t depth = 1); // = parametric default constructor
     VkVec(VkVec&& other) noexcept; // = move constructor
     VkVec(const VkVec& other); // = copy constructor
@@ -607,7 +617,7 @@ VkVec VkVec::get_col(int32_t col_index) const {
     if (col_index >= this->cols || col_index < 0) {
         Log::log(ERROR, "invalid usage of method 'VkVec get_col(uint32_t col_index)' with invalid column index; index is ", col_index, ", the underlying array has ", this->cols, " column(s)");
     }
-
+    
     static constexpr uint32_t workgroup_size = 256;
     static ShaderModule shader(manager->get_device());
     if (!shader.get()) { shader.read_from_file("get_col.spv"); }
