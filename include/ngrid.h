@@ -56,8 +56,8 @@ public:
     // | Constructors & Destructors      |
     // +=================================+
 	NGrid(std::initializer_list<uint32_t> shape);   // parametric default constructor for multi-dimensional array
-    NGrid(NGrid&& other) noexcept;               // move constructor
-    NGrid(const NGrid& other);                   // copy constructor
+    NGrid(NGrid&& other) noexcept;                  // move constructor
+    NGrid(const NGrid& other);                      // copy constructor
     ~NGrid();                                       // destructor
 
     // +=================================+   
@@ -356,9 +356,6 @@ protected:
     CommandBuffer* command_buffer = nullptr;
     Buffer<float_t>* data_buffer = nullptr;
     
-    void destroy();
-
-    static void destroy_descriptor_pool();
 
     uint32_t flat_index(uint32_t row, uint32_t col = 0, uint32_t depth_layer = 0) const;
 
@@ -405,33 +402,46 @@ NGrid::NGrid(std::initializer_list<uint32_t> shape) :
         manager = VulkanManager::get_singleton();
     }
 
+	// create a descriptor pool for the command buffer
     if (descriptor_pool == nullptr) {
-        static constexpr uint32_t max_sets_within_pool = 1;
-		descriptor_pool = new DescriptorPool(manager->get_device(), max_sets_within_pool);
-        std::atexit(&NGrid::destroy_descriptor_pool);
+        static constexpr uint32_t max_sets = 1; // = single set because only one per operation is needed; goes out of scope afterwards
+		std::vector<VkDescriptorPoolSize> max_buffers = {
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20 }
+		};
+		descriptor_pool = new DescriptorPool(manager->get_device(), max_sets, max_buffers);
     }
 
-    // add a command buffer + data buffer
+    // create a command buffer
     command_buffer = new CommandBuffer(manager->get_device(), QueueFamily::COMPUTE, manager->get_command_pool_compute());
-    VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     
     // allocate as a 'flat' buffer -> this is required because GLSL shaders only support dynamic sizing in a single (=the last) dimension
+    VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     data_buffer = new Buffer<float_t>(manager->get_device(), BufferUsage::STORAGE, this->elements, 1, 1, memory_properties);
 }
 
 // move constructor
 NGrid::NGrid(NGrid&& other) noexcept {
-    copy_resources(other);
-    if (this->command_buffer == nullptr) {
-        this->command_buffer = new CommandBuffer(manager->get_device(), QueueFamily::COMPUTE, manager->get_command_pool_compute());
+    this->elements = other.elements;
+    this->dimensions = other.dimensions;
+    this->manager = other.manager;
+    if (this->data_buffer != nullptr) {
+        delete[] this->data_buffer;
     }
-    this->command_buffer = other.command_buffer; other.command_buffer = nullptr;
-    this->data_buffer = other.data_buffer; other.data_buffer = nullptr;
+	this->data_buffer = other.data_buffer;
+	this->command_buffer = std::move(other.command_buffer);
+	this->descriptor_pool = std::move(other.descriptor_pool);
+	this->shape = std::move(other.shape);
 }
 
 // NGrid copy constructor
 NGrid::NGrid(const NGrid& other) {
-    copy_resources(other);
+    this->elements = other.elements;
+    this->rows = other.rows;
+    this->cols = other.cols;
+    this->depth = other.depth;
+    this->dimensions = other.dimensions;
+    this->manager = other.manager;
     if (this->command_buffer == nullptr) {
         this->command_buffer = new CommandBuffer(manager->get_device(), QueueFamily::COMPUTE, manager->get_command_pool_compute());
     }
@@ -445,8 +455,9 @@ NGrid::NGrid(const NGrid& other) {
     this->data_buffer = other.data_buffer;
 }
 
-// protected helper method of object destruction
-void NGrid::destroy() {
+// destructor
+NGrid::~NGrid() {
+	// destroy in reverse order of creation
     if (this->data_buffer != nullptr) {
         delete this->data_buffer;
         this->data_buffer = nullptr;
@@ -455,21 +466,10 @@ void NGrid::destroy() {
         delete this->command_buffer;
         this->command_buffer = nullptr;
     }
-}
-
-// destructor
-NGrid::~NGrid() {
-    this->destroy();
-}
-
-// protected helper method for copying simple class member variables
-void NGrid::copy_resources(const NGrid& other) {
-    this->elements = other.elements;
-    this->rows = other.rows;
-    this->cols = other.cols;
-    this->depth = other.depth;
-    this->dimensions = other.dimensions;
-    this->manager = other.manager;
+    if (descriptor_pool != nullptr) {
+        delete descriptor_pool;
+        descriptor_pool = nullptr;
+    }
 }
 
 // +=================================+   
@@ -573,8 +573,7 @@ NGrid NGrid::get_row(int32_t row_index)  const {
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
     command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
 
-    pipeline.destroy();
-    descriptor_set.destroy();
+    this->descriptor_pool->release_sets();
     return result;
 }
 
@@ -604,8 +603,7 @@ NGrid NGrid::get_col(int32_t col_index) const {
     ComputePipeline pipeline(manager->get_device(), shader, push_constants, descriptor_set);
     command_buffer->compute(pipeline, this->elements, 1, 1, workgroup_size);
     
-    pipeline.destroy();
-    descriptor_set.destroy();
+	this->descriptor_pool->release_sets();
     return result;
 }
 
@@ -5042,14 +5040,6 @@ void NGrid::print(std::string comment, std::string delimiter, bool with_indices,
 // | Protected Class Members         |
 // +=================================+
 
-
-// protected helper method for descriptor pool destruction
-void NGrid::destroy_descriptor_pool() {
-    if (descriptor_pool != nullptr) {
-        delete descriptor_pool;
-        descriptor_pool = nullptr;
-    }
-}
 
 uint32_t NGrid::flat_index(uint32_t row, uint32_t col, uint32_t depth_layer) const {
     return  row * (this->cols * this->depth) +

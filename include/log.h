@@ -16,6 +16,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <stdexcept>
 
 enum LogLevel {
     LEVEL_ERROR,
@@ -37,6 +38,7 @@ public:
     static void to_console(bool active = true);
     static void to_file(bool active = true);
     static LogLevel get_level();
+    static void enable_exit_on_error(bool active = true);
 private:
     Log() {}
     ~Log() {}
@@ -44,6 +46,7 @@ private:
     static LogLevel log_level;
     static bool log_to_console;
     static bool log_to_file;
+	static bool exit_on_error;
     static std::string log_filepath;
     template <typename Arg> static void concatArgs(std::stringstream& stream, Arg&& arg);
     template <typename First, typename... Args> static void concatArgs(std::stringstream& stream, First&& first, Args&&... args);
@@ -61,7 +64,12 @@ static void Log::error(Args&&... args) {
     concatArgs(stream, std::forward<Args>(args)...);
     std::string log_message = "[ERROR]:   \033[31m" + stream.str() + "\033[0m"; // red
     write_log(log_message);
-    exit(EXIT_FAILURE);
+	if (exit_on_error) {
+        exit(EXIT_FAILURE);
+	}
+	else {
+		throw std::runtime_error(log_message);
+	}
 }
 
 template <typename... Args>
@@ -155,6 +163,7 @@ void Log::concatArgs(std::stringstream& stream, First&& first, Args&&... args) {
 LogLevel Log::log_level = DEFAULT_LEVEL;
 bool Log::log_to_console = true;
 bool Log::log_to_file = false;
+bool Log::exit_on_error = false;
 std::string Log::log_filepath = "../logs/";
 
 #endif

@@ -847,8 +847,8 @@ protected:
 
 class SubPass {
 public:
-	SubPass(RenderPass* renderpass)
-		: renderpass(renderpass) {}
+	SubPass(RenderPass& renderpass)
+		: renderpass(&renderpass) {}
 
     // add a reference to an attachment from the pool of attachment descriptions owned by the main RenderPass
     void add_attachment_reference(uint32_t attachment_index) {
@@ -2109,7 +2109,7 @@ public:
         for (T i : new_data) {
             current_offset = this->add_values(i);
         }
-        return current_offset
+        return current_offset;
     }
 
     // getters
@@ -2140,8 +2140,9 @@ public:
         this->memory_property_flags = memory_property_flags;
         this->elements = elements;
         this->size_bytes = this->elements * sizeof(T);
-        bool is_device_local_only = (memory_property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) && !(memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-        bool is_host_visible = memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+
+        is_device_local_only = (memory_property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) && !(memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+        is_host_visible = memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 
         // translate BufferUsage enum argument
         VkBufferUsageFlags vk_buffer_usage;
@@ -2223,7 +2224,7 @@ public:
         size_bytes(other.size_bytes),
         is_device_local_only(other.is_device_local_only),
         is_host_visible(other.is_host_visible),
-        memory_property_flags(other.memory_property_flags{
+        memory_property_flags(other.memory_property_flags) {
         // Invalidate the source object ('other') so its destructor doesn't release the resources
         other.buffer = VK_NULL_HANDLE;
         other.memory = VK_NULL_HANDLE;
@@ -2233,7 +2234,7 @@ public:
         if (buffer != VK_NULL_HANDLE) {
             Log::info("Buffer moved (new owner), handle: ", buffer);
         }
-            }
+    }
 
     // move assignment
     Buffer& operator=(Buffer<T>&& other) noexcept {
@@ -2308,7 +2309,7 @@ public:
             array_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
         }
         if (array_size_bytes <= 0) {
-            Log::debug("in Buffer<T>::write(): requested copy region has size ", array_size_byte, " bytes, i.e.nothing to copy");
+            Log::debug("in Buffer<T>::write(): requested copy region has size ", array_size_bytes, " bytes, i.e.nothing to copy");
             return;
         }
         void* data;
@@ -2358,7 +2359,7 @@ public:
             Log::error("Buffer<T>::read() called on non-host-visible buffer");
         }
         uint32_t source_elements;
-        if (read_elements = 0) {
+        if (read_elements == 0) {
             source_elements = this->elements - source_offset_elements;
             
         }
@@ -2468,8 +2469,10 @@ protected:
     uint32_t elements = 0;
     VkDevice logical = nullptr;
     VkPhysicalDevice physical = nullptr;
-    VkMemoryPropertyFlags memory_flags = 0;
+    VkMemoryPropertyFlags memory_property_flags = 0;
     uint64_t size_bytes = 0;
+	bool is_device_local_only = false;
+	bool is_host_visible = false;
 };
 
 // Sampler class for texture sampling
@@ -2522,6 +2525,7 @@ protected:
 class DescriptorPool {
     friend class DescriptorSet;
 public:
+	// constructor
     DescriptorPool() = delete;
     DescriptorPool(const Device& device, const uint32_t max_sets = 20, const std::vector<VkDescriptorPoolSize>& pool_sizes = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20}}) {
         this->logical = device.get_logical();
@@ -2546,27 +2550,56 @@ public:
         }
     }
 
+	// destructor
     ~DescriptorPool() {
         if (pool != nullptr) {
-            clear_sets();
+            release_sets();
             vkDestroyDescriptorPool(logical, pool, nullptr);
         }
     }
 
+	// move constructor
+	DescriptorPool(DescriptorPool&& other) noexcept
+		: pool(std::exchange(other.pool, nullptr)),
+		logical(std::exchange(other.logical, nullptr)),
+		sets(std::move(other.sets)),
+		max_sets(other.max_sets) {
+		if (pool != nullptr) {
+			Log::info("descriptor pool moved (handle: ", pool, ")");
+		}
+	}
+
+	// move assignment
+	DescriptorPool& operator=(DescriptorPool&& other) noexcept {
+		if (this != &other) {
+			if (pool != nullptr) {
+				Log::info("move assignment operation: destroying previous descriptor pool (handle: ", pool, ")");
+				vkDestroyDescriptorPool(logical, pool, nullptr);
+				pool = nullptr;
+			}
+			pool = std::exchange(other.pool, nullptr);
+			logical = std::exchange(other.logical, nullptr);
+			sets = std::move(other.sets);
+			max_sets = other.max_sets;
+			if (pool != nullptr) {
+				Log::info("descriptor pool moved to 'this' (handle: ", pool, ")");
+			}
+		}
+		return *this;
+	}
+
+	// deleted copy constructor and assignment
+	DescriptorPool(const DescriptorPool&) = delete;
+	DescriptorPool& operator=(const DescriptorPool&) = delete;
+
     // getters
-    VkDescriptorPool get() const {
-        return pool;
-    }
-
+    VkDescriptorPool get() const { return pool; }
     const std::vector<VkDescriptorSet>& get_sets() const { return sets; }
-
     uint32_t get_max_sets() const { return max_sets; }
+    uint32_t get_current_sets_count() const{ return uint32_t(sets.size()); }
 
-    uint32_t get_current_sets_count() const{
-        return uint32_t(sets.size());
-    }
-
-    void clear_sets() {
+	// releases all descriptor sets from the pool
+    void release_sets() {
         if (sets.empty()) { return; }
         VkResult result = vkFreeDescriptorSets(logical, pool, sets.size(), sets.data());
         if (result == VK_SUCCESS) {
@@ -2578,6 +2611,7 @@ public:
         sets.clear();
     }
 
+	// allocates a new descriptor set to the pool and returns its index
     uint32_t allocate_set(DescriptorSet& descriptor_set) {
         if (sets.size() >= max_sets) {
             Log::error("in method DescriptorPool::allocate_set(): max number of sets for this pool is ", max_sets, " (as defined by the pool constructor) and has been reached; no more descriptor sets can be added");
@@ -3298,7 +3332,7 @@ public:
     }
 
 	// query fence status
-    bool signaled() {
+    bool signaled() const {
         return vkGetFenceStatus(logical, fence) == VK_SUCCESS;
     }
 
@@ -3541,7 +3575,7 @@ public:
         uint32_t source_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
         uint32_t target_queue_family_index = VK_QUEUE_FAMILY_IGNORED
     ) {
-        image_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         image_memory_barrier.pNext = nullptr;
         image_memory_barrier.srcStageMask = source_stage_flags;
         image_memory_barrier.srcAccessMask = source_access_flags;
@@ -3567,8 +3601,8 @@ class CommandBuffer {
 public:
     // constructor
     CommandBuffer() = delete;
-    CommandBuffer(Device* device, QueueFamily usage, const CommandPool& pool) {
-        this->device = device;
+    CommandBuffer(const Device& device, QueueFamily usage, const CommandPool& pool) {
+        this->device = &device;
         this->logical = device->get_logical();
         this->graphics_queue = device->get_graphics_queue();
         this->compute_queue = device->get_compute_queue();
@@ -3785,12 +3819,12 @@ public:
         dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dependency_info.pNext = nullptr;
         
-        // setup memory barriers
-        if (memory_barriers.has_value() && !memory_barriers.value().empty()) {
-            uint32_t barriers_count = memory_barriers.size();
+        // setup device memory barriers
+        if (device_memory_barriers.has_value() && !device_memory_barriers.value().empty()) {
+            uint32_t barriers_count = device_memory_barriers.value().size();
             std::vector<VkMemoryBarrier2> barrier_handles(barriers_count);
             for (uint32_t i = 0; i < barriers_count; i++) {
-                barrier_handles[i] = memory_barriers[i].get();
+                barrier_handles[i] = device_memory_barriers.value().[i].get();
             }
             dependency_info.memoryBarrierCount = barriers_count;
             dependency_info.pMemoryBarriers = barrier_handles.data();
@@ -3802,10 +3836,10 @@ public:
 
         // setup buffer memory barriers
         if (buffer_memory_barriers.has_value() && !buffer_memory_barriers.value().empty()) {
-            uint32_t barriers_count = buffer_memory_barriers.size();
+            uint32_t barriers_count = buffer_memory_barriers.value().size();
             std::vector<VkBufferMemoryBarrier2> barrier_handles(barriers_count);
             for (uint32_t i = 0; i < barriers_count; i++) {
-                barrier_handles[i] = buffer_memory_barriers[i].get();
+                barrier_handles[i] = buffer_memory_barriers.value().[i].get();
             }
             dependency_info.bufferMemoryBarrierCount = barriers_count;
             dependency_info.pBufferMemoryBarriers = barrier_handles.data();
@@ -3817,10 +3851,10 @@ public:
 
         // setup image memory barriers
         if (image_memory_barriers.has_value() && !image_memory_barriers.value().empty()) {
-            uint32_t barriers_count = image_memory_barriers.size();
+            uint32_t barriers_count = image_memory_barriers.value().size();
             std::vector<VkImageMemoryBarrier2> barrier_handles(barriers_count);
             for (uint32_t i = 0; i < barriers_count; i++) {
-                barrier_handles[i] = memory_barriers[i].get();
+                barrier_handles[i] = image_memory_barriers.value()[i].get();
             }
             dependency_info.imageMemoryBarrierCount = barriers_count;
             dependency_info.pImageMemoryBarriers = barrier_handles.data();
@@ -3849,9 +3883,6 @@ public:
         image_memory_barrier.subresourceRange.layerCount = 1;
 
         // Determine stage and access masks based on layouts
-        VkImageAspectFlags aspect_mask;
-        VkPipelineStageFlags src_stage;
-        VkPipelineStageFlags dst_stage;
         if (image_memory_barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
             image_memory_barrier.srcAccessMask = 0;
             image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -4131,6 +4162,7 @@ public:
     }
 
     static const Device& get_device() {return *device;}
+	static const Device* get_device_ptr() { return device; }
     static const Instance& get_instance() {return *instance;}
     static VulkanManager* get_singleton() { return singleton; }
     static CommandPool& get_command_pool_graphics() { return *shared_command_pool_graphics; }
