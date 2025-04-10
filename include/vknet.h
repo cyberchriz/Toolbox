@@ -5,7 +5,7 @@
 #define VKNET_H
 
 #pragma once
-#include "vkvec.h"
+#include <ngrid.h>
 
 // forward declarations
 class VkNet;
@@ -13,7 +13,7 @@ class VkNet;
 class VkNet {
 public:
 	// constructors & destructors
-	VkNet(VkVec* inputs, VkVec* outputs, VkVec* labels, const uint32_t hidden_neurons, const uint32_t weights_per_neuron = 10, const float min_update = 0.001);
+	VkNet(NGrid<float_t>* inputs, NGrid<float>* outputs, NGrid<float>* labels, const uint32_t hidden_neurons, const uint32_t weights_per_neuron = 10, const float min_update = 0.001);
 	~VkNet();
 
 	// processing
@@ -25,16 +25,16 @@ protected:
 
 	static VkManager* manager;
 	static DescriptorPool* descriptor_pool;
-	VkVec* inputs = nullptr;
-	VkVec* outputs = nullptr;
-	VkVec* labels = nullptr;
-	VkVec* memory_states = nullptr;
-	VkVec* update_states = nullptr;
-	VkVec* activated_states = nullptr;
-	VkVec* errors = nullptr;
-	VkVec* weights = nullptr;
-	VkVec* weight_targets = nullptr;
-	VkVec* update_factors = nullptr;
+	NGrid<float>* inputs = nullptr;
+	NGrid<float>* outputs = nullptr;
+	NGrid<float>* labels = nullptr;
+	NGrid<float>* memory_states = nullptr;
+	NGrid<float>* update_states = nullptr;
+	NGrid<float>* activated_states = nullptr;
+	NGrid<float>* errors = nullptr;
+	NGrid<float>* weights = nullptr;
+	NGrid<float>* weight_targets = nullptr;
+	NGrid<float>* update_factors = nullptr;
 	CommandBuffer* command_buffer = nullptr;
 	uint32_t inputs_count = 0;
 	uint32_t outputs_count = 0;
@@ -58,10 +58,10 @@ VkManager* VkNet::manager = nullptr;
 // +=================================+
 
 // constructor
-VkNet::VkNet(VkVec* inputs, VkVec* outputs, VkVec* labels, const uint32_t hidden_neurons, const uint32_t weights_per_neuron, const float min_update) {
+VkNet::VkNet(NGrid<float>* inputs, NGrid<float_t>* outputs, NGrid<float_t>* labels, const uint32_t hidden_neurons, const uint32_t weights_per_neuron, const float min_update) {
 	
 	manager = VkManager::get_singleton();
-	descriptor_pool = VkVec::descriptor_pool;
+	descriptor_pool = NGrid<float_t>::descriptor_pool;
 	command_buffer = new CommandBuffer(manager->get_device(), QueueFamily::COMPUTE, manager->get_command_pool_compute());
 
 	this->inputs = inputs;
@@ -74,23 +74,23 @@ VkNet::VkNet(VkVec* inputs, VkVec* outputs, VkVec* labels, const uint32_t hidden
 
 	neurons_count = inputs_count + outputs_count + hidden_neurons;
 	
-	memory_states = new VkVec(neurons_count);
+	memory_states = new NGrid<float_t>(neurons_count);
 	memory_states->fill_zero();
 
-	update_states = new VkVec(neurons_count);
+	update_states = new NGrid<float_t>(neurons_count);
 
-	activated_states = new VkVec(neurons_count);
+	activated_states = new NGrid<float_t>(neurons_count);
 
-	update_factors = new VkVec(neurons_count);
+	update_factors = new NGrid<float_t>(neurons_count);
 	update_factors->fill_random_uniform(std::max(std::min(1.0f, std::abs(min_update)), 0.0f), 1.0f);
 
-	errors = new VkVec(neurons_count);
+	errors = new NGrid<float_t>(neurons_count);
 	errors->fill_zero();
 
-	weights = new VkVec(neurons_count, weights_per_neuron);
+	weights = new NGrid<float_t>(neurons_count, weights_per_neuron);
 	weights->fill_random_gaussian(0, 1);
 
-	weight_targets = new VkVec(neurons_count, weights_per_neuron);
+	weight_targets = new NGrid(neurons_count, weights_per_neuron);
 	weight_targets->fill_random_uniform_int(0, neurons_count - 1);
 }
 

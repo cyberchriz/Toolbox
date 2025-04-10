@@ -6,6 +6,7 @@
 // preprocessor directives
 #ifndef VALIDATE_H
 #define VALIDATE_H
+#ragma once
 
 #include <cmath>
 

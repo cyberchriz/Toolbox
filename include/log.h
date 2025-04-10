@@ -1,5 +1,6 @@
 #ifndef LOG_H
 #define LOG_H
+#pragma once
 
 #ifdef _RELEASE
 #define DEFAULT_LEVEL LogLevel::LEVEL_ERROR

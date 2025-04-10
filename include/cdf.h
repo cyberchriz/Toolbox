@@ -9,6 +9,7 @@ taking on values less than or equal to a given value. */
 
 #ifndef CUMULATIVE_DISTRIBUTION_FUNCTIONS_H
 #define CUMULATIVE_DISTRIBUTION_FUNCTIONS_H
+#pragma once
 
 #include <cmath>
 

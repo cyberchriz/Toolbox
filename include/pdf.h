@@ -11,6 +11,7 @@ the probability of a random variable taking on a particular value. */
 
 #ifndef PROBABILITY_DENSITY_FUNCTIONS_H
 #define PROBABILITY_DENSITY_FUNCTIONS_H
+#pragma once
 
 #include <cmath>
 

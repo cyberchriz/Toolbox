@@ -3,9 +3,9 @@
 #ifndef LAYER_H
 #define LAYER_H
 
-#include "activation_functions.h"
-#include "mlp_enums.h"
-#include "neuron.h"
+#include <activation_functions.h>
+#include <mlp_enums.h>
+#include <neuron.h>
 #include <vector>
 
 class Layer {

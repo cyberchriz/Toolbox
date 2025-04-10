@@ -1,7 +1,8 @@
 #ifndef ANGULAR_H
 #define ANGULAR_H
+#pragma once
 
-#include "log.h"
+#include <log.h>
 #include <cmath>
 
 // list of avaílable angular measures

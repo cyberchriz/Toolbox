@@ -4,8 +4,9 @@
 // preprocessor directives
 #ifndef NEURON_H
 #define NEURON_H
+#pragma once
 
-#include "mlp_enums.h"
+#include <mlp_enums.h>
 #include <vector>
 
 // declaration of the 'Neuron' class

@@ -6,10 +6,11 @@
 
 #ifndef NEURALNET_H
 #define NEURALNET_H
+#pragma once
 
-#include "datastructures.h"
-#include "distributions.h"
-#include "log.h"
+#include <datastructures.h>
+#include <distributions.h>
+#include <log.h>
 #include <initializer_list>
 #include <vector>
 

@@ -4,6 +4,7 @@
 // Gradient Boosting Machines (GBM) algorithm
 
 #ifndef GBM_H
+#pragma once
 
 #include <vector>
 #include <cmath>

@@ -1,25 +1,21 @@
-/* author: cyberchriz(Christian Suer)
+// author: cyberchriz(Christian Suer)
 
-USAGE:
-use the macro 'TIMER_START' (or simply 'TIMER') anywhere in the code to start a timer;
---> it will print its lifetime on the console once it goes out of scope,
-i.e. as soon as the function or scope it lives in ends
---> alternatively, it will output the elapsed time if the macro TIMER_STOP is used
 
-after a timer has been started, you can also use the macro TIMER_NOW at any time
-in order to query the elapsed time (µs) since timer start */
 
 #ifndef TIMELOG_H
 #define TIMELOG_H
+#pragma once
 
-#include "log.h"
+#include <log.h>
 #include <chrono>
 #include <string>
 
-#define TIMER_NEW Timer timer(__FUNCTION__);
-#define TIMER_START timer.start();
-#define ELAPSED timer.elapsed_microsec()
-#define TIMER_STOP timer.stop();
+
+// macro shortcuts
+#define TIMER_START Timer timer(__FUNCTION__);      // start timer
+#define TIMER_ELAPSED_MS timer.elapsed_microsec()   // get elapsed time in ms
+#define TIMER_STOP timer.stop();                    // stop timer and log elapsed time (since start or last stop)
+#define TIMER_RESTART timer.restart();              // restart timer
 
 
 class Timer {
@@ -40,27 +36,28 @@ public:
         }
     }
 
-    void start() {
-        begin = std::chrono::high_resolution_clock::now();
-    }
-
     void stop() {
+        double elapsed_since_start = elapsed_microsec();
         if (caller_function == "") {
-            Log::log(FORCE, "timer stopped after ", elapsed_microsec(), " microsec");
+            Log::info("timer stopped after ", elapsed_since_start(), " microsec");
         }
         else {
-            Log::log(FORCE, "timer in scope ", caller_function, " stopped after ", elapsed_microsec(), " microsec");
+            Log::info("timer in scope ", caller_function, " stopped after ", elapsed_microsec(), " microsec");
         }
         stopped = true;
         begin = std::chrono::high_resolution_clock::now();
     }
 
+    void restart() {
+        begin = std::chrono::high_resolution_clock::now();
+        stopped = false;
+    }
+
     // destructor
     ~Timer() {
+        double elapsed_since_start = elapsed_microsec();
         if (!stopped) {
-            Log::log(FORCE, "end of timer in scope ", caller_function, ": ", elapsed_microsec(), " microsec");
-            stopped = true;
-            begin = std::chrono::high_resolution_clock::now();
+            Log::info("end of timer by reaching end of scope " caller_function, ": ", elapsed_since_start, " microsec");
         }
     }
 private:

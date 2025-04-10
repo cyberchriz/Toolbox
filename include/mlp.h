@@ -5,12 +5,14 @@
 // preprocessor directives
 #ifndef MLP_H
 #define MLP_H
-#include "activation_functions.h"
-#include "layer.h"
-#include "mlp_enums.h"
-#include "neuron.h"
-#include "rnd.h"
-#include "weight_init.h"
+#pragma once
+
+#include <activation_functions.h>
+#include <layer.h>
+#include <mlp_enums.h>
+#include <neuron.h>
+#include <rnd.h>
+#include <weight_init.h>
 #include <cmath>
 #include <cstdlib>
 #include <ctime>

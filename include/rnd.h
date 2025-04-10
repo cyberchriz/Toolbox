@@ -6,7 +6,6 @@
 
 #ifndef RANDOM_DISTRIBUTIONS_H
 #define RANDOM_DISTRIBUTIONS_H
-
 #pragma once
 
 #include <chrono>
@@ -15,38 +14,45 @@
 #include <math.h>
 
 // singleton class(!)
-template<typename T>
+template<typename T = float>
 class Random {
-    private:
-        // private constructor
-        Random(){
-            auto t = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-            std::srand(t);
-        };
-    public:   
-        static T gaussian(T mu=0, T sigma=1);
-        static T cauchy(T x_peak=0, T gamma=1);
-        static T uniform(T min=0, T max=1);
-        static T laplace(T mu=0, T sigma=1);
-        static T pareto(T alpha=1, T tail_index=1);
-        static T lomax(T alpha=1, T tail_index=1);
-        static T binary();     
-        static T sign();
-        static Random& getInstance(){
-            static Random instance;
-            return instance;
-        }
-        // delete copy constructor
-        Random(const Random&) = delete;
-        // delete implementation of assignment operator
-        Random& operator=(const Random&) = delete;
+public:   
+    static T gaussian(T mu=0, T sigma=1);
+    static T cauchy(T x_peak=0, T gamma=1);
+    static T uniform(T min=0, T max=1);
+    static T laplace(T mu=0, T sigma=1);
+    static T pareto(T alpha=1, T tail_index=1);
+    static T lomax(T alpha=1, T tail_index=1);
+    static T binary();     
+    static T sign();
+    static uint32_t seed32();
+
+    static Random& make_singleton(){
+        instance = new Random();
+        return instance;
+    }
+private:
+    // delete copy constructor
+    Random(const Random&) = delete;
+    
+    // delete implementation of assignment operator
+    Random& operator=(const Random&) = delete;
+
+    // private constructor
+    Random() {
+        auto t = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+        std::srand(t);
+    };
+
+	// singleton instance
+    static Random* instance = nullptr;
 };
 
-// ALIAS CLASS
+// alias class
 template<typename T> class rnd: public Random<T>{};
 
 // example of instantiation:
-// Random<double>& random = Random<double>::getInstance();
+// Random<double>& random = Random<double>::make_singleton();
 
 
 
@@ -119,6 +125,14 @@ T Random<T>::binary() {
 template<typename T>
 T Random<T>::sign() {
     return T(rand() > (0.5 * RAND_MAX) ? 1 : -1);                   // get random algebraic sign
+}
+
+// Function to extract a 32-bit seed from std::chrono::time_point
+template<typename T>
+uint32_t Random<T>::seed32() {
+    std::chrono::time_point<std::chrono::high_resolution_clock> now = std::chrono::high_resolution_clock::now();
+    std::chrono::milliseconds ms_since_epoch = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    return static_cast<uint32_t>(ms_since_epoch.count());
 }
 
 #endif

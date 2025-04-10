@@ -3,6 +3,7 @@
 
 #ifndef K_NEAREST_H
 #define K_NEAREST_H
+#pragma once
 
 #include <iostream>
 #include <vector>

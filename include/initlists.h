@@ -1,5 +1,6 @@
 #ifndef INITLISTS_H
 #define INITLISTS_H
+#pragma once
 
 #include <vector>
 

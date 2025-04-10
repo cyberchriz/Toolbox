@@ -2,6 +2,7 @@
 
 #ifndef SVM_H
 #define SVM_H
+#pragma once
 
 #include <vector>
 #include <algorithm>

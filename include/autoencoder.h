@@ -1,7 +1,8 @@
 #ifndef AUTOENCODER_H
 #define AUTOENCODER_H
+#pragma once    
 
-#include "mlp.h"
+#include <mlp.h>
 
 class Autoencoder:public MLP {
     private:

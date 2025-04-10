@@ -1,23 +1,24 @@
 #ifndef DATA_STRUCTURES_H
 #define DATA_STRUCTURES_H
+#pragma once
 
 #ifndef MEMLOG
 //#define MEMLOG
 #endif
 
-#include "cumulative_distribution_functions.h"
-#include "initlists.h"
-#include "log.h"
-#include "random_distributions.h"
 #include <algorithm>
+#include <cdf.h>
 #include <cmath> 
 #include <core/demangle.hpp>
 #include <cstdint>
 #include <initializer_list>
+#include <initlists.h>
 #include <iostream>
 #include <limits>
+#include <log.h>
 #include <math.h>
 #include <memory>
+#include <rnd.h>
 #include <stdexcept>
 #include <string>
 #include <type_traits>

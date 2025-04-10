@@ -6,6 +6,7 @@
 
 #ifndef DECISION_TREE_H
 #define DECISION_TREE_H
+#pragma once
 
 #include <vector>
 #include <cmath>

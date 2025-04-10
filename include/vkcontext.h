@@ -30,7 +30,7 @@ Summary of a typical Vulkan workflow
 
 helper classes for signaling: Event, Fence, Semaphore
 
-This library also comes with the option to handle Instance, Device and CommandPool on a high level via a 'VkManager' singleton class 
+This library also comes with the option to handle Instance, Device and CommandPool on a high level via a 'VulkanManager' singleton class 
 */
 
 // include headers
@@ -139,7 +139,8 @@ public:
     // default constructor
     Instance() {
         application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-		// set defaults for application name, engine name and API version
+		// set defaults for application name, engine name and API version,
+		// i.e. in case the user doesn't set them explicitly
         application_info.pApplicationName = "Vulkan Application";
         application_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
         application_info.pEngineName = "Generic";
@@ -222,7 +223,7 @@ public:
     }
 
     // add Vulkan layers
-    void enable_layers(std::vector<const char*>& layer_names) {
+    void enable_layers(const std::vector<const char*>& layer_names) {
         for (const char* name: layer_names) {
             layers.push_back(name);
         }
@@ -232,7 +233,7 @@ public:
     }
 
     // log names of available ínstance extensions
-    void log_available_extensions() {
+    void log_available_extensions() const {
         // log available extensions
         if (Log::get_level() >= LogLevel::LEVEL_INFO) {
             uint32_t count;
@@ -284,7 +285,7 @@ public:
         }
     }
     
-    // return a reference to the Vulkan instance
+	// get handle to the Vulkan instance
     VkInstance get() const {
         return instance;
     }
@@ -303,7 +304,7 @@ public:
     Device() = delete;
 
     // parametric constructor
-    Device(Instance& instance, VkPhysicalDeviceFeatures enabled_features = {}, const std::vector<const char*>& enabled_extension_names = {}, uint32_t id = 0) {
+    Device(const Instance& instance, const VkPhysicalDeviceFeatures& enabled_features = {}, const std::vector<const char*>& enabled_extension_names = {}, uint32_t id = 0) {
         // confirm valid instance
         if (instance.get() == nullptr) {
             Log::error("Device constructor called with invalid instance parameter: create a valid object of the Instance() class first!");
@@ -351,24 +352,46 @@ public:
         properties2.pNext = nullptr;
         vkGetPhysicalDeviceProperties2(physical, &properties2);
 
+        // get available extensions for the selected device
+        uint32_t available_extension_count;
+        vkEnumerateDeviceExtensionProperties(physical, nullptr, &available_extension_count, nullptr);
+        std::vector<VkExtensionProperties> available_extensions(available_extension_count);
+        vkEnumerateDeviceExtensionProperties(physical, nullptr, &available_extension_count, available_extensions.data());
+
         // log available extensions
         if (Log::get_level() >= LogLevel::LEVEL_INFO) {
-            uint32_t count;
-            vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, nullptr);
-            std::vector<VkExtensionProperties> extensions(count);
-            vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, extensions.data());
-            Log::debug(count, " device extensions available");
-            for (uint32_t i = 0; i < count; i++) {
-                Log::debug("(", i + 1, ") ", extensions[i].extensionName);
+            Log::debug(available_extension_count, " device extensions available");
+            for (uint32_t i = 0; i < available_extension_count; i++) {
+                Log::debug("(", i + 1, ") ", available_extensions[i].extensionName);
             }
         }
+
+        // Filter requested extensions against available extensions
+        std::vector<const char*> supported_extensions;
+        this->extensions = enabled_extension_names; // Store the original requested extensions
+        for (const auto& requested_extension : enabled_extension_names) {
+            bool found = false;
+            for (const auto& available_extension : available_extensions) {
+                if (strcmp(requested_extension, available_extension.extensionName) == 0) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                supported_extensions.push_back(requested_extension);
+            }
+            else {
+                Log::warning("Device extension '", requested_extension, "' is not supported on this device and will be removed from the request.");
+            }
+        }
+        device_extension_names = supported_extensions; // Update the member with only supported extensions
 
         // add requested device extensions to device create info
         VkDeviceCreateInfo device_create_info = {};
         device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        this->extensions = std::move(enabled_extension_names);
-        device_create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-        device_create_info.ppEnabledExtensionNames = extensions.data();
+        device_create_info.enabledExtensionCount = static_cast<uint32_t>(device_extension_names.size());
+        device_create_info.ppEnabledExtensionNames = device_extension_names.data();
+
 
         // Queue creation
         uint32_t num_queue_families;
@@ -523,20 +546,20 @@ public:
     // (note: member variables can be returned by reference,
     // because the instance is usually a high-level object,
     // expected to stay alive as long as needed)
-    VkDevice& get_logical() { return logical; }
-    VkPhysicalDevice& get_physical() { return physical; }
-    VkQueue& get_graphics_queue() { return graphics_queue; }
-    VkQueue& get_compute_queue() { return compute_queue; }
-    VkQueue& get_transfer_queue() { return transfer_queue; }
+    VkDevice get_logical() const { return logical; }
+    VkPhysicalDevice get_physical() { return physical; }
+    VkQueue get_graphics_queue() { return graphics_queue; }
+    VkQueue get_compute_queue() { return compute_queue; }
+    VkQueue get_transfer_queue() { return transfer_queue; }
     uint32_t get_graphics_queue_family_index() const { return graphics_queue_family_index; }
     uint32_t get_compute_queue_family_index() const { return compute_queue_family_index; }
     uint32_t get_transfer_queue_family_index() const { return transfer_queue_family_index; }
-    VkPhysicalDeviceProperties& get_properties() { return properties; }
-    VkPhysicalDeviceProperties2& get_properties2() { return properties2; }
-    std::vector<const char*>& get_extensions() { return extensions; }
-	std::vector<const char*>& get_device_extension_names() { return device_extension_names; }
+    const VkPhysicalDeviceProperties& get_properties() const { return properties; }
+    const VkPhysicalDeviceProperties2& get_properties2() const { return properties2; }
+    const std::vector<const char*>& get_extensions() const { return extensions; }
+	const std::vector<const char*>& get_device_extension_names() const { return device_extension_names; }
 	
-    VkPhysicalDeviceMemoryProperties& get_memory_properties() {
+    const VkPhysicalDeviceMemoryProperties& get_memory_properties() {
         static bool properties_queried = false;
 		if (!properties_queried) {
 			vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties);
@@ -730,7 +753,7 @@ protected:
         }
     }
 
-    // Helper (can reuse from Buffer or Device)
+	// helper method to find a suitable memory type
     uint32_t find_memory_type(Device& device, VkMemoryPropertyFlags properties, uint32_t type_filter) {
         const auto& mem_properties = device.get_memory_properties();
         for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
@@ -753,7 +776,7 @@ class ImageView {
 public:
     // constructor
     ImageView() = delete;
-    ImageView(Device& device, const Image& image, VkImageViewType view_type, VkImageAspectFlags aspect_flags, uint32_t base_mip_level = 0, uint32_t level_count = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1)
+    ImageView(const Device& device, const Image& image, VkImageViewType view_type, VkImageAspectFlags aspect_flags, uint32_t base_mip_level = 0, uint32_t level_count = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1)
         : logical(device.get_logical()) {
 
         VkImageViewCreateInfo view_info{};
@@ -822,90 +845,45 @@ protected:
     VkImageView image_view = VK_NULL_HANDLE;
 };
 
-class RenderAttachment {
-public:
-    // Constructor
-    RenderAttachment(AttachmentType type, VkAttachmentDescription* attachment_description, uint32_t index)
-        : type(type), description(attachment_description), index(index) {
-    }
-
-    // Move constructor
-    RenderAttachment(RenderAttachment&& other) noexcept : type(other.type), description(std::move(other.description)), index(other.index) {}
-
-    // Move assignment
-    RenderAttachment& operator=(RenderAttachment&& other) noexcept {
-        if (this != &other) {
-            type = other.type;
-            description = std::move(other.description);
-            index = other.index;
-        }
-        return *this;
-    }
-
-    // Deleted copy and copy assignment constructors
-    RenderAttachment(const RenderAttachment&) = delete;
-    RenderAttachment& operator=(const RenderAttachment&) = delete;
-
-    // getters
-	AttachmentType get_type() const { return type; }
-	uint32_t get_index() const { return index; }
-
-protected:
-    // Deleted default constructor
-    RenderAttachment() = delete;
-
-    AttachmentType type;
-    VkAttachmentDescription* description;
-    uint32_t index;
-};
-
 class SubPass {
-    friend class RenderPass;
 public:
-    SubPass() {}
+	SubPass(RenderPass* renderpass)
+		: renderpass(renderpass) {}
 
-    // add a reference to an attachment from the pool of attachment descriptions in the main RenderPass
-    void add_attachment(RenderAttachment& attachment, VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED) {
+    // add a reference to an attachment from the pool of attachment descriptions owned by the main RenderPass
+    void add_attachment_reference(uint32_t attachment_index) {
         if (finalized) {
             Log::warning("in method SubPass::add_attachment(): this subpass has already been finalized, as it's already been added to a parent RenderPass; hence no more attachments can be added at this point");
             return;
         }
         else {
-            switch (attachment.get_type()) {
+            switch (renderpass->get_attachment_type(attachment_index)) {
                 case AttachmentType::COLOR: {
-                    uint32_t id = color_attachment_reference.value().size();
-                    color_attachment_reference.value().resize(id + 1);
-                    color_attachment_reference.value()[id].attachment = attachment.get_index();
-                    color_attachment_reference.value()[id].layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : layout;
+                    uint32_t id = color_attachment_reference.size();
+                    color_attachment_reference.resize(id + 1);
+                    color_attachment_reference[id].attachment = attachment_index;
+                    color_attachment_reference[id].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                     break;
                 }
                 case AttachmentType::DEPTH: {
-                    depth_attachment_reference.value().attachment = attachment.get_index();
-                    depth_attachment_reference.value().layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : layout;
+                    depth_attachment_reference.attachment = attachment_index;
+                    depth_attachment_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                     break;
                 }
                 case AttachmentType::INPUT: {
-                    uint32_t id = input_attachment_reference.value().size();
-                    input_attachment_reference.value().resize(id + 1);
-                    input_attachment_reference.value()[id].attachment = attachment.get_index();
-                    input_attachment_reference.value()[id].layout = layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : layout;
+                    uint32_t id = input_attachment_reference.size();
+                    input_attachment_reference.resize(id + 1);
+                    input_attachment_reference[id].attachment = attachment_index;
+                    input_attachment_reference[id].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                     break;
                 }
                 case AttachmentType::PRESERVE: {
-                    if (layout == VK_IMAGE_LAYOUT_UNDEFINED) {
-                        Log::warning("in method SubPass::add_attachment: please make sure to use a valid layout parameter (VkImageLayout) for the preserve attachment");
-                    }
-                    uint32_t id = preserve_attachment_reference.value().size();
-                    preserve_attachment_reference.value().resize(id + 1);
-                    preserve_attachment_reference.value()[id] = attachment.get_index();
+					preserve_attachment_reference.push_back(attachment_index);
                     break;
                 }
                 case AttachmentType::RESOLVE: {
-                    if (layout == VK_IMAGE_LAYOUT_UNDEFINED) {
-                        Log::warning("in method SubPass::add_attachment: please make sure to use a valid layout parameter (VkImageLayout) for the resolve attachment");
-                    }
-                    resolve_attachment_reference.value().attachment = attachment.get_index();
-                    resolve_attachment_reference.value().layout = layout;
+                    resolve_attachment_reference.attachment = attachment_index;
+                    resolve_attachment_reference.layout = VK_IMAGE_LAYOUT_GENERAL; // 'general' supports all types of device access, unless specified otherwise
                     break;
                 }
                 default: {
@@ -914,38 +892,64 @@ public:
             }
         }
     }
+
+	// finalize the subpass and add it to the parent RenderPass;
+	// returns the index of the subpass within the parent RenderPass
+    uint32_t finalize(VkSubpassDescriptionFlags flags, VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS) {
+        if (finalized) {
+            Log::warning("in method Subpass::finalize() this subpass has already been finalized and added to a parent RenderPass");
+            return UINT32_MAX;
+        }
+        uint32_t id = renderpass->subpass_description.size();
+        renderpass->subpass_description.resize(id + 1);
+        renderpass->subpass_description[id].flags = flags;
+        renderpass->subpass_description[id].pipelineBindPoint = bind_point;
+
+        renderpass->subpass_description[id].inputAttachmentCount = static_cast<uint32_t>(input_attachment_reference.size());
+        renderpass->subpass_description[id].pInputAttachments = input_attachment_reference.empty() ? nullptr : input_attachment_reference.data();
+
+        renderpass->subpass_description[id].colorAttachmentCount = static_cast<uint32_t>(color_attachment_reference.size());
+        renderpass->subpass_description[id].pColorAttachments = color_attachment_reference.empty() ? nullptr : color_attachment_reference.data();
+
+        renderpass->subpass_description[id].pResolveAttachments = &resolve_attachment_reference;
+        
+        renderpass->subpass_description[id].pDepthStencilAttachment = &depth_attachment_reference;
+        renderpass->depth_stencil_flag = depth_attachment_reference.layout != VK_IMAGE_LAYOUT_UNDEFINED;
+
+        renderpass->subpass_description[id].preserveAttachmentCount = static_cast<uint32_t>(preserve_attachment_reference.size());
+        renderpass->subpass_description[id].pPreserveAttachments = preserve_attachment_reference.empty() ? nullptr : preserve_attachment_reference.data();
+
+        finalized = true;
+        return id;
+    }
+
 protected:
-    std::optional<std::vector<VkAttachmentReference>> color_attachment_reference;
-    std::optional<std::vector<VkAttachmentReference>> input_attachment_reference;
-    std::optional<std::vector<uint32_t>> preserve_attachment_reference;
-    std::optional<VkAttachmentReference> depth_attachment_reference;
-    std::optional<VkAttachmentReference> resolve_attachment_reference;
+	RenderPass* renderpass = nullptr; // pointer to the parent RenderPass
+    std::vector<VkAttachmentReference> color_attachment_reference = {};
+    std::vector<VkAttachmentReference> input_attachment_reference = {};
+    std::vector<uint32_t> preserve_attachment_reference = {};
+    VkAttachmentReference depth_attachment_reference = {0, VK_IMAGE_LAYOUT_UNDEFINED };
+    VkAttachmentReference resolve_attachment_reference = {0, VK_IMAGE_LAYOUT_UNDEFINED };
     bool finalized = false; // this flag is updated by the parent RenderPass class (as a friend class) after the subpass has been added
 };
 
 // a render pass defines the structure and dependencies of graphics rendering operations
 class RenderPass {
+	friend class SubPass;
 public:
     // delete default constructor
     RenderPass() = delete;
 
     // parametric constructor
-    RenderPass(Device& device, uint32_t multisample_count = 1) {
+    RenderPass(const Device& device, uint32_t multisample_count = 1) {
         this->logical = device.get_logical();
         this->multisample_count = multisample_count;
     }
 
-    // add an attachment description
-    RenderAttachment add_attachment(
-        AttachmentType type,
-            VkFormat format = VK_FORMAT_R32G32_SFLOAT,
-            VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED,
-            VkImageLayout final_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            VkAttachmentStoreOp store_op = VK_ATTACHMENT_STORE_OP_STORE
-        ) {
+	// adds an attachment description (=owned by this main RenderPass) and returns its index
+    uint32_t add_attachment(AttachmentType type, VkFormat format, VkImageLayout initial_layout, VkImageLayout final_layout, VkAttachmentLoadOp load_op, VkAttachmentStoreOp store_op) {
         uint32_t id = attachment_description.size();
-
+		attachment_type.push_back(type);
         attachment_description.resize(id + 1);
         attachment_description[id] = {};
         attachment_description[id].flags = 0; // or: VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT
@@ -954,96 +958,40 @@ public:
         attachment_description[id].finalLayout = final_layout;
 
         switch (type) {
-        case AttachmentType::COLOR: {
-            attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
-            attachment_description[id].loadOp = load_op;
-            attachment_description[id].storeOp = store_op;
-            break;
-        }
-        case AttachmentType::DEPTH: {
-            attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
-            attachment_description[id].stencilLoadOp = load_op;
-            attachment_description[id].stencilStoreOp = store_op;
-            depth_stencil_flag = true;
-            break;
-        }
-        case AttachmentType::INPUT: {
-            attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // Input attachments are usually single-sampled
-            break;
-        }
-        case AttachmentType::PRESERVE: {
-            attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // preserve attachments are usually single-sampled
-            attachment_description[id].stencilLoadOp = load_op;
-            attachment_description[id].stencilStoreOp = store_op;
-            break;
-        }
-        case AttachmentType::RESOLVE: {
-            attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // resolve attachments are usually single-sampled
-            attachment_description[id].loadOp = load_op;
-            attachment_description[id].storeOp = store_op;
-            break;
-        }
-        default: {
-            Log::error("method RenderPass::add_attachment() has been called with invalid RenderAttachment::Type type argument (", type, ")");
-        }
-        }
-
-        return RenderAttachment(type, &attachment_description[id], id);
-    }
-
-    // adds a subpass to the RenderPass and returns the index of this new subpass
-    uint32_t add_subpass(SubPass& subpass, VkSubpassDescriptionFlags flags, VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS) {
-        if (subpass.finalized) {
-            Log::warning("in method RenderPass::add_subpass(): this subpass has already been added to a parent RenderPass");
-            return UINT32_MAX;
-        }
-        uint32_t id = subpass_description.size();
-        subpass_description.resize(id + 1);
-        subpass_description[id].flags = flags;
-        subpass_description[id].pipelineBindPoint = bind_point;
-        
-        if (subpass.input_attachment_reference.has_value()) {
-            subpass_description[id].inputAttachmentCount = static_cast<uint32_t>(subpass.input_attachment_reference.value().size());
-            subpass_description[id].pInputAttachments = subpass.input_attachment_reference.value().empty() ? nullptr : subpass.input_attachment_reference.value().data();
-        }
-        else {
-            subpass_description[id].inputAttachmentCount = 0;
-            subpass_description[id].pInputAttachments = nullptr;
+            case AttachmentType::COLOR: {
+                attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
+                attachment_description[id].loadOp = load_op;
+                attachment_description[id].storeOp = store_op;
+                break;
+            }
+            case AttachmentType::DEPTH: {
+                attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
+                attachment_description[id].stencilLoadOp = load_op;
+                attachment_description[id].stencilStoreOp = store_op;
+                depth_stencil_flag = true;
+                break;
+            }
+            case AttachmentType::INPUT: {
+                attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // Input attachments are usually single-sampled
+                break;
+            }
+            case AttachmentType::PRESERVE: {
+                attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // preserve attachments are usually single-sampled
+                attachment_description[id].stencilLoadOp = load_op;
+                attachment_description[id].stencilStoreOp = store_op;
+                break;
+            }
+            case AttachmentType::RESOLVE: {
+                attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // resolve attachments are usually single-sampled
+                attachment_description[id].loadOp = load_op;
+                attachment_description[id].storeOp = store_op;
+                break;
+            }
+            default: {
+                Log::error("method RenderPass::add_attachment() has been called with invalid RenderAttachment::Type type argument (", type, ")");
+            }
         }
 
-        if (subpass.color_attachment_reference.has_value()) {
-            subpass_description[id].colorAttachmentCount = static_cast<uint32_t>(subpass.color_attachment_reference.value().size());
-            subpass_description[id].pColorAttachments = subpass.color_attachment_reference.value().empty() ? nullptr : subpass.color_attachment_reference.value().data();
-        }
-        else {
-            subpass_description[id].colorAttachmentCount = 0;
-            subpass_description[id].pColorAttachments = nullptr;
-        }
-
-        if (subpass.resolve_attachment_reference.has_value()) {
-            subpass_description[id].pResolveAttachments = &subpass.resolve_attachment_reference.value();
-        }
-        else {
-            subpass_description[id].pResolveAttachments = nullptr;
-        }
-
-        if (subpass.depth_attachment_reference.has_value()) {
-            subpass_description[id].pDepthStencilAttachment = &subpass.depth_attachment_reference.value();
-            depth_stencil_flag = true;
-        }
-        else {
-            subpass_description[id].pDepthStencilAttachment = nullptr;
-        }
-
-        if (subpass.preserve_attachment_reference.has_value()) {
-            subpass_description[id].preserveAttachmentCount = static_cast<uint32_t>(subpass.preserve_attachment_reference.value().size());
-            subpass_description[id].pPreserveAttachments = subpass.preserve_attachment_reference.value().empty() ? nullptr : subpass.preserve_attachment_reference.value().data();
-        }
-        else {
-            subpass_description[id].preserveAttachmentCount = 0;
-            subpass_description[id].pPreserveAttachments = nullptr;
-        }
-        subpass.finalized = true;
         return id;
     }
 
@@ -1068,7 +1016,6 @@ public:
     }
 
     void finalize() {
-
         VkRenderPassCreateInfo renderpass_create_info = {};
         renderpass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
         renderpass_create_info.attachmentCount = static_cast<uint32_t>(attachment_description.size());
@@ -1077,7 +1024,6 @@ public:
         renderpass_create_info.pSubpasses = subpass_description.data();
         renderpass_create_info.dependencyCount = static_cast<uint32_t>(subpass_dependency.size());
         renderpass_create_info.pDependencies = subpass_dependency.data();
-
         if (vkCreateRenderPass(logical, &renderpass_create_info, nullptr, &renderpass) != VK_SUCCESS) {
             Log::error("failed to create render pass!");
         }
@@ -1105,12 +1051,13 @@ public:
     RenderPass& operator=(const RenderPass&) = delete;
 
     // getter functions
-    VkRenderPass& get() { return renderpass; }
+    VkRenderPass get() const { return renderpass; }
     uint32_t get_multisample_count() const { return multisample_count; }
     uint32_t get_attachment_count() const { return static_cast<uint32_t>(attachment_description.size()); }
     uint32_t get_subpass_count() const { return subpass_description.size(); }
     bool has_depth_stencil() const { return depth_stencil_flag; }
-    std::vector<VkAttachmentDescription>& get_attachment_descriptions() { return attachment_description; }
+    const std::vector<VkAttachmentDescription>& get_attachment_descriptions() { return attachment_description; }
+	const AttachmentType get_attachment_type(uint32_t index) const { return attachment_type[index]; }
 
     void destroy() {
         if (renderpass != nullptr) {
@@ -1139,6 +1086,7 @@ protected:
     uint32_t multisample_count = 1;
     bool depth_stencil_flag = false;
     std::vector<VkAttachmentDescription> attachment_description;
+	std::vector<AttachmentType> attachment_type;
     std::vector<VkSubpassDescription> subpass_description;
     std::vector<VkSubpassDependency> subpass_dependency;
 };
@@ -1152,7 +1100,7 @@ public:
     // Platform-Specific Constructors
 
     #ifdef VK_USE_PLATFORM_WIN32_KHR
-        Surface(Instance& instance, HINSTANCE hinstance, HWND hwnd) {
+        Surface(const Instance& instance, HINSTANCE hinstance, HWND hwnd) {
             instance_handle = instance.get();
             if (instance_handle == nullptr) {
                 Log::error("Surface creation failed: Provided VkInstance is NULL.");
@@ -1301,12 +1249,12 @@ public:
     }
 
     // Check if the surface handle is valid
-    bool is_valid() const {
+    const bool is_valid() const {
         return surface != VK_NULL_HANDLE;
     }
 
     // Check if a specific queue family on a physical device supports presentation to this surface
-    bool get_physical_device_support(Device& device, QueueFamily queue_family) const {
+    const bool get_physical_device_support(Device& device, QueueFamily queue_family) const {
         if (surface == VK_NULL_HANDLE || device.get_physical() == VK_NULL_HANDLE) {
             Log::warning("Attempted to check surface support with null surface or physical device.");
             return VK_FALSE;
@@ -1614,7 +1562,7 @@ public:
         Log::info("Swapchain framebuffers created successfully.");
     }
 
-    void acquire_next_image(Semaphore image_available_semaphore, const std::optional<Fence>& fence = std::nullopt, uint64_t timeout = UINT64_MAX) {
+    void acquire_next_image(const Semaphore& image_available_semaphore, const std::optional<Fence>& fence = std::nullopt, uint64_t timeout = UINT64_MAX) {
         VkResult result;
         if (fence.has_value()) {
 			result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), fence.value().get(), &current_image_index);
@@ -1670,7 +1618,7 @@ public:
         VkPresentInfoKHR present_info{};
         present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         present_info.waitSemaphoreCount = 1;
-        present_info.pWaitSemaphores = &wait_semaphore.get(); // Semaphore to wait on (e.g., rendering finished)
+        present_info.pWaitSemaphores = wait_semaphore.get_ptr();
 
         present_info.swapchainCount = 1;
         present_info.pSwapchains = &swapchain;
@@ -1700,10 +1648,10 @@ public:
         present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         present_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
 		std::vector<VkSemaphore> wait_semaphore_handles(wait_semaphores.size());
-		for (Semaphore semaphore : wait_semaphores) {
-			wait_semaphore_handles.push_back(semaphore.get());
+        for (uint32_t i = 0; i < wait_semaphores.size(); i++) {
+			wait_semaphore_handles[i] = wait_semaphores[i].get();
 		}
-        present_info.pWaitSemaphores = wait_semaphore_handles.data(); // Semaphore to wait on (e.g., rendering finished)
+        present_info.pWaitSemaphores = wait_semaphore_handles.data();
         present_info.swapchainCount = 1;
         present_info.pSwapchains = &swapchain;
         present_info.pImageIndices = &current_image_index;
@@ -1849,7 +1797,7 @@ class CommandPool {
 public:
     // constructor
     CommandPool() = delete;
-    CommandPool(Device& device, QueueFamily usage) {
+    CommandPool(const Device& device, QueueFamily usage) {
         this->logical = device.get_logical();
 
         // setup command pool
@@ -1898,7 +1846,7 @@ public:
         return vkResetCommandPool(logical, pool, flags);
     }
 
-    VkCommandPool& get() { return pool; }
+    VkCommandPool get() const { return pool; }
 private:
     VkCommandPool pool = nullptr;
     VkDevice logical = nullptr;
@@ -1944,7 +1892,7 @@ public:
     ShaderModule() = delete;
 
 	// constructor with binary data
-    ShaderModule(Device& device, const unsigned char* binary, const size_t& size_bytes) {
+    ShaderModule(const Device& device, const unsigned char* binary, size_t size_bytes) {
         this->logical = device.get_logical();
         VkShaderModuleCreateInfo shader_module_create_info = {};
         shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -2021,6 +1969,35 @@ public:
         }
     }
 
+	// move constructor
+	ShaderModule(ShaderModule&& other) noexcept : module(std::exchange(other.module, nullptr)), logical(std::exchange(other.logical, nullptr)) {
+		if (module != nullptr) {
+			Log::info("shader module moved (handle: ", module, ")");
+		}
+	}
+
+	// move assignment
+	ShaderModule& operator=(ShaderModule&& other) noexcept {
+		if (this != &other) {
+			if (module != nullptr) {
+				Log::info("move assignment operation: destroying previous shader module (handle: ", module, ")");
+				vkDestroyShaderModule(logical, module, nullptr);
+				module = nullptr;
+			}
+			module = std::exchange(other.module, nullptr);
+			logical = std::exchange(other.logical, nullptr);
+			if (module != nullptr) {
+				Log::info("shader module moved to 'this' (handle: ", module, ")");
+			}
+		}
+		return *this;
+	}
+
+	// Deleted copy constructor and assignment
+	ShaderModule(const ShaderModule&) = delete;
+	ShaderModule& operator=(const ShaderModule&) = delete;
+
+	// getters
     const VkShaderModule& get() const { return module; }
 
     // destructor
@@ -2055,9 +2032,9 @@ public:
         }
     }
 
-    // add a new value to the push constants range;
-    // the size of the data type MUST be a multiple of 4;
-    // returns the total size of the push constants range
+    // add a new value to the end of the push constants range;
+    // the size of data type T must(!) be a multiple of 4;
+    // returns the memory location offset of the new value within the push constants range
     template<typename T>
     uint32_t add_values(T value) {
 
@@ -2079,43 +2056,85 @@ public:
 
         // copy value to the end of the data array
         memcpy(data + old_size / 4, &value, sizeof(T));
-        return range.size;
+        return old_size;
     }
 
+    // add a new value at the specified offset position of the push constants range;
+	// overwrites the existing value at that position;
+    // the size of data type T must(!) be a multiple of 4;
+	// use this method with caution, as it may lead to undefined behavior if the offset is not aligned correctly
+	// or if data type T is different from the previously added data type (which may lead to data corruption)
+    template<typename T>
+    void add_values(T value, size_t offset) {
+		// validate offset
+		if (offset > range.size) {
+			Log::error("in method PushConstants::add_value(T value, size_t offset): offset exceeds current push constant range size");
+			return;
+		}
+		else if (offset % 4) {
+			Log::warning("in method PushConstants::add_value(T value, size_t offset): offset must be a multiple of 4. Data will likely be corrupted!");
+		}
+        else if (offset == range.size) {
+			add_values(value);
+            return;
+        }
+		
+		// validate size of data type T
+        if (sizeof(T) % 4) {
+            Log::warning("in method PushConstants::add_value(T value): sizeof(T) must be a multiple of 4");
+        }
+
+		// copy value at the specified offset position
+        memcpy(data + offset / 4, &value, sizeof(T));
+    }
+
+    // add multiple new values to the push constants range as a std::initializer_list;
+    // the size of data type T must(!) be a multiple of 4;
+    // returns the memory location byte offset of the new values within the push constants range
     template<typename T>
     uint32_t add_values(std::initializer_list<T> values) {
+        size_t current_offset = range.size;
         for (T i : values) {
-            this->add_values(i);
+            current_offset = this->add_values(i);
         }
-        return range.size;
+        return current_offset;
     }
 
+    // add multiple new values to the push constants range as a std::vector<T>;
+    // the size of data type T must(!) be a multiple of 4;
+    // returns the memory location byte offset of the new values within the push constants range
     template<typename T>
-    uint32_t add_values(std::vector<T>& new_data) {
+    uint32_t add_values(const std::vector<T>& new_data) {
+		size_t current_offset = range.size;
         for (T i : new_data) {
-            this->add_values(i);
+            current_offset = this->add_values(i);
         }
-        return range.size;
+        return current_offset
     }
 
+    // getters
     const uint32_t* get_data() const { return data; }
-
     const VkPushConstantRange& get_range() const { return range; }
+	size_t get_size() const { return range.size; }
+	size_t get_total_capacity() const { return capacity; } // = total size of the occupied push constants range in bytes
+	size_t get_free_capacity() const { return capacity - range.size; } // = free space in bytes without reallocation
 
 protected:
-    static constexpr float_t reserve = 0.5;
-    static constexpr size_t min_capacity = 16; // min capacity in bytes (should be a multiple of 4)
+	static constexpr float_t reserve = 0.5;    // reserve space for future growth (>=50% of current size)
+    static constexpr size_t min_capacity = 32; // min capacity in bytes (should be a multiple of 4)
     uint32_t* data = nullptr;
     size_t capacity = min_capacity;
     VkPushConstantRange range;
 };
 
+// buffer class for vertex data, index data, storage data, uniform data, etc.
 template<typename T>
 class Buffer {
 public:
-    Buffer() = delete; // non-parametric buffer construction not allowed
+	Buffer() = delete;  // non-parametric buffer construction not allowed;
+                        // all buffers must be created with a specific size and usage
 
-    Buffer(Device& device, BufferUsage usage, uint32_t elements, VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
+    Buffer(const Device& device, BufferUsage usage, uint32_t elements, VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
         this->logical = device.get_logical();
         this->physical = device.get_physical();
         this->memory_property_flags = memory_property_flags;
@@ -2216,8 +2235,8 @@ public:
         }
             }
 
-            // move assignment
-            Buffer& operator=(Buffer<T>&& other) noexcept {
+    // move assignment
+    Buffer& operator=(Buffer<T>&& other) noexcept {
         if (this != &other) { // Prevent self-assignment
             // 1. Release existing resources owned by 'this' object
             cleanup(); // Call a helper or duplicate destructor logic
@@ -2277,7 +2296,7 @@ public:
     }
 
     // copy data elements from a std::array to a host visible buffer
-    void write(const T& source_array, uint32_t copied_elements, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0) {
+    void write(const T* source_array, uint32_t copied_elements, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0) {
         if (!is_host_visible) {
             Log::error("Buffer::write() called on non-host-visible buffer");
         }
@@ -2294,12 +2313,14 @@ public:
         }
         void* data;
         vkMapMemory(logical, memory, target_offset_bytes, array_size_bytes, VkMemoryMapFlags(0), &data);
-        memcpy(data, &source_array + source_offset_bytes, array_size_bytes);
+        memcpy(data, source_array + source_offset_bytes, array_size_bytes);
         vkUnmapMemory(logical, memory);
     }
 
     // copy data elements from one host visible buffer to another
-    // (set copied elements to 0 to copy all)
+    // (set copied elements to 0 to copy all);
+	// the source buffer must be host visible;
+	// both buffers must be of the same type
     void write(const Buffer<T>& sourcebuffer, uint32_t copied_elements=0, uint32_t source_offset_elements=0, uint32_t target_offset_elements=0) {
         if (!is_host_visible) {
             Log::error("Buffer::write() called on non-host-visible buffer");
@@ -2451,47 +2472,58 @@ protected:
     uint64_t size_bytes = 0;
 };
 
-// TODO: make constructor more configurable
+// Sampler class for texture sampling
 class Sampler {
 public:
-	Sampler() = delete;
-	Sampler(Device& device) {
-		this->logical = device.get_logical();
-		sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-		sampler_create_info.pNext = NULL;
-		sampler_create_info.magFilter = VK_FILTER_LINEAR;
-		sampler_create_info.minFilter = VK_FILTER_LINEAR;
-		sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		sampler_create_info.anisotropyEnable = VK_TRUE;
-		sampler_create_info.maxAnisotropy = 16.0f;
-		sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-		sampler_create_info.unnormalizedCoordinates = VK_FALSE;
-		sampler_create_info.compareEnable = VK_FALSE;
-		sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
-		sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		vkCreateSampler(logical, &sampler_create_info, nullptr, &sampler);
-	}
-	~Sampler() {
-		if (sampler != nullptr) {
-			vkDestroySampler(logical, sampler, nullptr);
-			Log::info("destroyed image sampler (handle: ", sampler, ")");
-			sampler = nullptr;
-		}
-	}
-	const VkSampler& get() const { return sampler; }
+    Sampler() = delete;
+    Sampler(
+        Device& device,
+        VkFilter magFilter = VK_FILTER_LINEAR,
+        VkFilter minFilter = VK_FILTER_LINEAR,
+        VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        VkBool32 anisotropyEnable = VK_TRUE,
+        float maxAnisotropy = 16.0f
+    ) : logical(device.get_logical()) {
+        sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampler_create_info.pNext = nullptr;
+        sampler_create_info.magFilter = magFilter;
+        sampler_create_info.minFilter = minFilter;
+        sampler_create_info.addressModeU = addressMode;
+        sampler_create_info.addressModeV = addressMode;
+        sampler_create_info.addressModeW = addressMode;
+        sampler_create_info.anisotropyEnable = anisotropyEnable;
+        sampler_create_info.maxAnisotropy = maxAnisotropy;
+        sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+        sampler_create_info.compareEnable = VK_FALSE;
+        sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
+        sampler_create_info.mipmapMode = mipmapMode;
+
+        if (vkCreateSampler(logical, &sampler_create_info, nullptr, &sampler) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create texture sampler!");
+        }
+    }
+    ~Sampler() {
+        if (sampler != nullptr) {
+            vkDestroySampler(logical, sampler, nullptr);
+            Log::info("destroyed image sampler (handle: ", sampler, ")");
+            sampler = nullptr;
+        }
+    }
+    const VkSampler& get() const { return sampler; }
 protected:
-	VkSampler sampler = nullptr;
-	VkDevice logical = nullptr;
-	VkSamplerCreateInfo sampler_create_info = {};
+    VkSampler sampler = nullptr;
+    VkDevice logical = nullptr;
+    VkSamplerCreateInfo sampler_create_info = {};
 };
 
+// DescriptorPool manages descriptor sets and their memory allocation
 class DescriptorPool {
     friend class DescriptorSet;
 public:
     DescriptorPool() = delete;
-    DescriptorPool(Device& device, uint32_t max_sets = 20, std::vector<VkDescriptorPoolSize> pool_sizes = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20}}) {
+    DescriptorPool(const Device& device, const uint32_t max_sets = 20, const std::vector<VkDescriptorPoolSize>& pool_sizes = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20}}) {
         this->logical = device.get_logical();
         this->max_sets = max_sets;
 
@@ -2501,7 +2533,7 @@ public:
         create_info.maxSets = max_sets;
         create_info.pPoolSizes = pool_sizes.data();
         create_info.poolSizeCount = pool_sizes.size();
-        create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; //  VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+        create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         create_info.pNext = NULL;
 
         // Create the descriptor pool
@@ -2516,16 +2548,17 @@ public:
 
     ~DescriptorPool() {
         if (pool != nullptr) {
-            remove_all_sets();
+            clear_sets();
             vkDestroyDescriptorPool(logical, pool, nullptr);
         }
     }
 
-    VkDescriptorPool& get() {
+    // getters
+    VkDescriptorPool get() const {
         return pool;
     }
 
-    std::vector<VkDescriptorSet>& get_sets() { return sets; }
+    const std::vector<VkDescriptorSet>& get_sets() const { return sets; }
 
     uint32_t get_max_sets() const { return max_sets; }
 
@@ -2533,23 +2566,7 @@ public:
         return uint32_t(sets.size());
     }
 
-    // removes a single descriptor set from the pool;
-    // returns the number of remaining descriptor sets allocated to the pool
-    uint32_t remove_set(uint32_t set_index) {
-        if (sets[set_index] != nullptr) {
-            VkResult result = vkFreeDescriptorSets(logical, pool, 1, &sets[set_index]);
-            if (result == VK_SUCCESS) {
-                Log::debug("memory allocation freed for descriptor set at index ", set_index);
-            }
-            else {
-                Log::warning("failed to free descriptor set at index ", set_index, " (VkResult = ", result, ")");
-            }
-        }
-        sets.erase(sets.begin() + set_index);
-        return uint32_t(sets.size());
-    }
-
-    void remove_all_sets() {
+    void clear_sets() {
         if (sets.empty()) { return; }
         VkResult result = vkFreeDescriptorSets(logical, pool, sets.size(), sets.data());
         if (result == VK_SUCCESS) {
@@ -2592,11 +2609,38 @@ private:
 class DescriptorSet {
     friend class DescriptorPool;
 public:
+    // constructor
     DescriptorSet() = delete;
-
     DescriptorSet(Device& device) {
         this->logical = device.get_logical();
     }
+
+	// move constructor
+	DescriptorSet(DescriptorSet&& other) noexcept
+		: logical(std::exchange(other.logical, nullptr)),
+		layout(std::exchange(other.layout, nullptr)),
+		set(std::exchange(other.set, nullptr)),
+		layout_finalized(other.layout_finalized),
+		layout_bindings(std::move(other.layout_bindings)),
+		image_bindings(std::move(other.image_bindings)) {
+	}
+
+    // move assignment
+	DescriptorSet& operator=(DescriptorSet&& other) noexcept {
+		if (this != &other) {
+			logical = std::exchange(other.logical, nullptr);
+			layout = std::exchange(other.layout, nullptr);
+			set = std::exchange(other.set, nullptr);
+			layout_finalized = other.layout_finalized;
+			layout_bindings = std::move(other.layout_bindings);
+			image_bindings = std::move(other.image_bindings);
+		}
+		return *this;
+	}
+
+	// deleted copy constructor and assignment
+	DescriptorSet(const DescriptorSet&) = delete;
+	DescriptorSet& operator=(const DescriptorSet&) = delete;
 
 	// finalizes the descriptor set layout and creates the descriptor set
     void finalize_layout() {
@@ -2617,10 +2661,7 @@ public:
 
     // binds a buffer to the next available binding index and returns this index
     template<typename T>
-    uint32_t bind_buffer(Buffer<T>& buffer, DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL) {
-        if (layout_finalized) {
-            Log::error("in method DescriptorSet::bind_buffer(): the descriptor set layout has already been finalized, i.e. no new buffers can be added");
-        }
+    uint32_t bind_buffer(const Buffer<T>& buffer, DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL) {
         uint32_t binding_index = layout_bindings.size();
         layout_bindings.resize(binding_index + 1);
         layout_create_info.bindingCount = binding_index + 1;
@@ -2633,20 +2674,30 @@ public:
         layout_bindings[binding_index].pImmutableSamplers = nullptr;
 
         Log::debug("binding buffer ", buffer.get(), " to descriptor set (handle: ", set, ") at binding index ", binding_index);
+
+		// recreate the descriptor set layout if it has previously been finalized
+        if (layout_finalized) {
+            if (layout != nullptr) {
+                vkDestroyDescriptorSetLayout(logical, layout, nullptr);
+                layout = nullptr;
+            }
+            Log::info("in method DescriptorSet::bind_buffer(): the descriptor set layout has already been finalized and needs to be recreated");
+			finalize_layout();
+        }
         return binding_index;
     }
 
 	// replaces the buffer at the specified binding index with a new one
     template<typename T>
-    void replace_buffer(uint32_t target_binding_index, Buffer<T>& buffer, DescriptorType type) {
+    void replace_buffer(const Buffer<T>& new_buffer, uint32_t target_binding_index, DescriptorType type) {
         if (target_binding_index >= layout_bindings.size()) {
             Log::warning("in method DescriptorSet::replace_buffer(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
         }
         VkDescriptorBufferInfo buffer_info = {};
-        buffer_info.buffer = buffer.get();
+        buffer_info.buffer = new_buffer.get();
         buffer_info.offset = 0;
         buffer_info.range = VK_WHOLE_SIZE;
-
+        
         VkWriteDescriptorSet descriptor_write = {};
         descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptor_write.pNext = NULL;
@@ -2662,11 +2713,10 @@ public:
         vkUpdateDescriptorSets(logical, 1, &descriptor_write, 0, nullptr);
     }
 
-	// binds an image view to the next available binding index and returns this index
+	// binds an image view to the next available binding index and returns this index;
+	// make sure to apply method DescriptorSet::update() after binding all images
     uint32_t bind_image(const ImageView& image_view, DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL, const Sampler& sampler) {
-        if (layout_finalized) {
-            Log::error("in method DescriptorSet::bind_image(): the descriptor set layout has already been finalized, i.e. no new images can be added");
-        }
+
         uint32_t binding_index = static_cast<uint32_t>(layout_bindings.size());
         layout_bindings.resize(binding_index + 1);
         layout_create_info.bindingCount = binding_index + 1;
@@ -2688,26 +2738,53 @@ public:
         image_binding.descriptor_type = get_descriptor_type(type);
         image_bindings.push_back(image_binding);
 
+        // recreate the descriptor set layout if it has previously been finalized
+        if (layout_finalized) {
+            if (layout != nullptr) {
+                vkDestroyDescriptorSetLayout(logical, layout, nullptr);
+                layout = nullptr;
+            }
+            Log::info("in method DescriptorSet::bind_buffer(): the descriptor set layout has already been finalized and needs to be recreated");
+            finalize_layout();
+            update();
+        }
         return binding_index;
     }
 
 	// replaces the image view at the specified binding index with a new one
-    void replace_image(uint32_t target_binding_index, const ImageView& image_view, DescriptorType type, const std::optional<Sampler>& sampler = std::nullopt) {
+    void replace_image(const ImageView& new_image_view, VkImageLayout image_layout, uint32_t target_binding_index, DescriptorType type, const std::optional<Sampler>& sampler = std::nullopt) {
         if (target_binding_index >= layout_bindings.size()) {
             Log::warning("in method DescriptorSet::replace_image(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
             return;
         }
 
         VkDescriptorImageInfo image_info = {};
+
+        // validate descriptor type
         if (type == DescriptorType::SAMPLED_IMAGE || type == DescriptorType::COMBINED_IMAGE_SAMPLER) {
             if (!sampler.has_value()) {
                 Log::error("in method DescriptorSet::replace_image(): sampler is required for SAMPLED_IMAGE or COMBINED_IMAGE_SAMPLER");
                 return;
             }
-            image_info.sampler = sampler->get();
+            image_info.sampler = sampler.value().get();
         }
-        image_info.imageView = image_view.get();
-        image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // Assuming this is the desired layout
+		else if (type == DescriptorType::STORAGE_BUFFER || type == DescriptorType::UNIFORM_BUFFER) {
+			Log::error("in method DescriptorSet::replace_image(): invalid descriptor type for image view binding: ", type ,
+                "; must be SAMPLED_IMAGE(", DescriptorType::SAMPLED_IMAGE, ") or STORAGE_IMAGE(", DescriptorType::STORAGE_IMAGE,
+				") or COMBINED_IMAGE_SAMPLER(", DescriptorType::COMBINED_IMAGE_SAMPLER, ")");
+		}
+        else {
+			// note: for STORAGE_IMAGE, the sampler is not used
+			image_info.sampler = VK_NULL_HANDLE;
+        }
+		// validate target binding index
+		if (target_binding_index >= layout_bindings.size()) {
+			Log::warning("in method DescriptorSet::replace_image(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
+			return;
+		}
+
+        image_info.imageView = new_image_view.get();
+        image_info.imageLayout = image_layout; // e.g. VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 
         VkWriteDescriptorSet descriptor_write = {};
         descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2726,7 +2803,7 @@ public:
         // Update the stored image binding info if it exists
         for (auto& binding_info : image_bindings) {
             if (binding_info.binding_index == target_binding_index) {
-                binding_info.image_view = image_view.get();
+                binding_info.image_view = new_image_view.get();
                 binding_info.sampler = sampler ? sampler->get() : VK_NULL_HANDLE;
                 binding_info.descriptor_type = get_descriptor_type(type);
                 break;
@@ -2765,7 +2842,8 @@ public:
     }
 
 	// getters
-    const VkDescriptorSet& get() const { return set; }
+    VkDescriptorSet get() const { return set; }
+	const VkDescriptorSet* get_ptr() const { return &set; }
     const VkDescriptorSetLayout& get_layout() const { return layout; }
 
     // destructor
@@ -2784,7 +2862,7 @@ protected:
         VkDescriptorType descriptor_type;
     };
 
-    VkDescriptorType get_descriptor_type(DescriptorType type) {
+    VkDescriptorType get_descriptor_type(DescriptorType type) const {
         switch (type) {
         case DescriptorType::STORAGE_BUFFER: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         case DescriptorType::UNIFORM_BUFFER: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -2809,11 +2887,11 @@ public:
     // constructor
     GraphicsPipeline() = delete;
     GraphicsPipeline(
-        Device& device,
-        RenderPass& renderpass,
+        const Device& device,
+        const RenderPass& renderpass,
         uint32_t subpass_index,
-        Swapchain& swapchain,
-        ShaderModule& vertex_shader_module,
+        const Swapchain& swapchain,
+        const ShaderModule& vertex_shader_module,
         const std::optional<ShaderModule>& fragment_shader_module = std::nullopt,
         const std::optional<ShaderModule>& hull_shader_module = std::nullopt,
         const std::optional<ShaderModule>& domain_shader_module = std::nullopt,
@@ -2950,23 +3028,11 @@ public:
         VkPipelineLayoutCreateInfo layout_create_info = {};
         layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         
-        if (descriptor_set.has_value()) {
-            layout_create_info.setLayoutCount = 1;
-            layout_create_info.pSetLayouts = &descriptor_set.value().get_layout();
-        }
-        else {
-            layout_create_info.setLayoutCount = 0;
-            layout_create_info.pSetLayouts = nullptr;
-        }
+        layout_create_info.setLayoutCount = descriptor_set.has_value() ? 1 : 0;
+        layout_create_info.pSetLayouts = descriptor_set.has_value() ? &descriptor_set.value().get_layout() : nullptr;
 
-        if (push_constants.has_value() && push_constants.value().get_data() == nullptr) { // check for empty PushConstants object
-            layout_create_info.pushConstantRangeCount = 0;
-            layout_create_info.pPushConstantRanges = nullptr;
-        }
-        else {
-            layout_create_info.pushConstantRangeCount = 1;
-            layout_create_info.pPushConstantRanges = &push_constants.value().get_range();
-        }
+        layout_create_info.pushConstantRangeCount = push_constants.has_value() ? 1 : 0;
+        layout_create_info.pPushConstantRanges = push_constants.has_value() ? &push_constants.value().get_range() : nullptr;
 
         VkResult result = vkCreatePipelineLayout(logical, &layout_create_info, nullptr, &layout);
         if (result == VK_SUCCESS) {
@@ -3050,10 +3116,12 @@ public:
         }
     }
 
-    VkPipeline& get() { return pipeline; }
+    // getters
+    VkPipeline get() const { return pipeline; }
+    VkPipelineLayout get_layout() const { return layout; }
+	const VkViewport& get_viewport() const { return viewport; }
 
-    VkPipelineLayout& get_layout() { return layout; }
-
+    // destructor
     ~GraphicsPipeline() {
         Log::info("destroying graphics pipeline");
         vkDestroyPipeline(logical, pipeline, nullptr);
@@ -3069,10 +3137,9 @@ protected:
 
 class ComputePipeline {
 public:
-
     // constructor
     ComputePipeline() = delete;
-    ComputePipeline(Device& device, ShaderModule& compute_shader_module, PushConstants& push_constants, DescriptorSet& descriptor_set, uint32_t workgroup_size_x, uint32_t workgroup_size_y = 1, uint32_t workgroup_size_z = 1) {
+    ComputePipeline(const Device& device, const ShaderModule& compute_shader_module, PushConstants& push_constants, DescriptorSet& descriptor_set, uint32_t workgroup_size_x, uint32_t workgroup_size_y = 1, uint32_t workgroup_size_z = 1) {
         this->logical = device.get_logical();
         this->set = &descriptor_set;
         this->constants = &push_constants;
@@ -3170,11 +3237,11 @@ public:
         }
     }
 
-    VkPipeline& get() { return pipeline; }
+    VkPipeline get() const { return pipeline; }
 
-    VkPipelineLayout& get_layout() { return layout; }
+    VkPipelineLayout get_layout() const { return layout; }
 
-    DescriptorSet* get_set() { return set; }
+    DescriptorSet* get_set() const { return set; }
 
     PushConstants* get_constants() { return constants; }
 
@@ -3197,7 +3264,9 @@ private:
 // for synchronization between GPU and CPU
 class Fence {
 public:
-    Fence(Device& device, bool signaled = false) {
+    // constructor
+	Fence() = delete;
+    Fence(const Device& device, bool signaled = false) {
         this->logical = device.get_logical();
         VkFenceCreateInfo create_info = {};
         create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -3206,23 +3275,44 @@ public:
         vkCreateFence(logical, &create_info, nullptr, &fence);
     }
 
+	// move constructor
+	Fence(Fence&& other) noexcept : fence(std::exchange(other.fence, nullptr)), logical(std::exchange(other.logical, nullptr)) {
+	}
+
+	// move assignment
+	Fence& operator=(Fence&& other) noexcept {
+		if (this != &other) {
+			logical = std::exchange(other.logical, nullptr);
+			fence = std::exchange(other.fence, nullptr);
+		}
+		return *this;
+	}
+
+	// deleted copy constructor and assignment
+	Fence(const Fence&) = delete;
+	Fence& operator=(const Fence&) = delete;
+
+    // destructor
     ~Fence() {
         vkDestroyFence(logical, fence, nullptr);
     }
 
+	// query fence status
     bool signaled() {
         return vkGetFenceStatus(logical, fence) == VK_SUCCESS;
     }
 
-    VkResult reset() {
+	// reset the fence to unsignaled state
+    VkResult reset() const {
         return vkResetFences(logical, 1, &fence);
     }
 
-    VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) {
+	// wait for the fence to be signaled
+    VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) const {
         return vkWaitForFences(logical, 1, &fence, VK_TRUE, timeout_nanosec);
     }
 
-    const VkFence& get() const { return fence; }
+    VkFence get() const { return fence; }
 private:
     VkFence fence = nullptr;
     VkDevice logical = nullptr;
@@ -3231,7 +3321,9 @@ private:
 // for synchronization on the GPU
 class Semaphore {
 public:
-    Semaphore(Device& device, VkSemaphoreType type = VK_SEMAPHORE_TYPE_BINARY, uint64_t initial_value = 0) {
+	// constructor
+	Semaphore() = delete;
+    Semaphore(const Device& device, VkSemaphoreType type = VK_SEMAPHORE_TYPE_BINARY, uint64_t initial_value = 0) {
         this->logical = device.get_logical();
         this->type = type;
 
@@ -3248,11 +3340,31 @@ public:
         vkCreateSemaphore(logical, &create_info, nullptr, &semaphore);
     }
 
+    // destructor
     ~Semaphore() {
         vkDestroySemaphore(logical, semaphore, nullptr);
         delete semaphore; semaphore = nullptr;
     }
 
+	// move constructor
+	Semaphore(Semaphore&& other) noexcept : semaphore(std::exchange(other.semaphore, nullptr)), logical(std::exchange(other.logical, nullptr)), type(other.type) {
+	}
+
+	// move assignment
+	Semaphore& operator=(Semaphore&& other) noexcept {
+		if (this != &other) {
+			logical = std::exchange(other.logical, nullptr);
+			semaphore = std::exchange(other.semaphore, nullptr);
+			type = other.type;
+		}
+		return *this;
+	}
+
+	// deleted copy constructor and assignment
+	Semaphore(const Semaphore&) = delete;
+	Semaphore& operator=(const Semaphore&) = delete;
+    
+	// wait for the semaphore to be signaled
     VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) {
         wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
         wait_info.pNext = NULL;
@@ -3262,12 +3374,14 @@ public:
         return vkWaitSemaphores(logical, &wait_info, timeout_nanosec);
     }
 
-    const uint64_t counter() const {
+	// query semaphore counter value
+    uint64_t counter() const {
         uint64_t value;
         vkGetSemaphoreCounterValue(logical, semaphore, &value);
         return value;
     }
 
+	// signal the semaphore with a specified value
     void signal(uint64_t value) {
         signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
         signal_info.pNext = NULL;
@@ -3276,7 +3390,9 @@ public:
         vkSignalSemaphore(logical, &signal_info);
     }
 
-    const VkSemaphore& get() const { return semaphore; }
+	// returns the semaphore handle
+    VkSemaphore get() const { return semaphore; }
+	const VkSemaphore* get_ptr() const { return &semaphore; }
 
 private:
     VkSemaphore semaphore = nullptr;
@@ -3286,11 +3402,12 @@ private:
     VkSemaphoreSignalInfo signal_info = {};
 };
 
+// events are used for synchronization between the CPU and GPU
 class Event {
 public:
     // constructor
     Event() = delete;
-    Event(Device& device) {
+    Event(const Device& device) {
         // If the VK_KHR_portability_subset extension is enabled, and VkPhysicalDevicePortabilitySubsetFeaturesKHR::events is VK_FALSE,
         // then the implementation does not support events, and vkCreateEvent must not be used !!!
         this->logical = device.get_logical();
@@ -3306,8 +3423,33 @@ public:
         vkDestroyEvent(logical, event, nullptr);
     }
 
+	// move constructor
+	Event(Event&& other) noexcept : event(std::exchange(other.event, nullptr)), logical(std::exchange(other.logical, nullptr)) {}
+
+	// move assignment
+	Event& operator=(Event&& other) noexcept {
+		if (this != &other) {
+			logical = std::exchange(other.logical, nullptr);
+			event = std::exchange(other.event, nullptr);
+		}
+		return *this;
+	}
+
+	// deleted copy constructor and assignment
+	Event(const Event&) = delete;
+	Event& operator=(const Event&) = delete;
+
+	void reset() const {
+		vkResetEvent(logical, event);
+	}
+
+	// set the event to signaled state
+	void set() const {
+		vkSetEvent(logical, event);
+	}
+
     // query event status
-    const bool signaled() const {
+    bool signaled() const {
         return vkGetEventStatus(logical, event) == VK_EVENT_SET;
     }
 
@@ -3316,7 +3458,6 @@ public:
     const VkDependencyInfo& get_dependency_info() const { return dependency_info; }
 	VkDependencyInfo* get_dependency_info_ptr() { return &dependency_info; }
 
-
 protected:
     VkDependencyInfo dependency_info = {};
     VkEvent event = nullptr;
@@ -3324,6 +3465,7 @@ protected:
     
 };
 
+// generic memory barrier for synchronization between different stages of the pipeline
 class DeviceMemoryBarrier {
 public:
     // constructor
@@ -3348,6 +3490,7 @@ protected:
     VkMemoryBarrier2 memory_barrier = {};
 };
 
+// buffer memory barrier for synchronization between different stages of the pipeline
 template<typename T>
 class BufferMemoryBarrier {
 public:
@@ -3376,11 +3519,12 @@ public:
     }
     // destructor
     ~BufferMemoryBarrier() {}
-    VkBufferMemoryBarrier2& get() const { return buffer_memory_barrier; }
+    const VkBufferMemoryBarrier2& get() const { return buffer_memory_barrier; }
 protected:
     VkBufferMemoryBarrier2 buffer_memory_barrier = {};
 };
 
+// image memory barrier for synchronization between different stages of the pipeline
 class ImageMemoryBarrier {
 public:
     // constructor
@@ -3417,16 +3561,18 @@ protected:
     VkImageMemoryBarrier2 image_memory_barrier = {};
 };
 
+// command buffer for recording commands;
+// used for graphics, compute and transfer operations
 class CommandBuffer {
 public:
     // constructor
     CommandBuffer() = delete;
-    CommandBuffer(Device& device, QueueFamily usage, CommandPool& pool) {
-        this->device = &device;
-        this->logical = device.get_logical();
-        this->graphics_queue = device.get_graphics_queue();
-        this->compute_queue = device.get_compute_queue();
-        this->transfer_queue = device.get_transfer_queue();
+    CommandBuffer(Device* device, QueueFamily usage, const CommandPool& pool) {
+        this->device = device;
+        this->logical = device->get_logical();
+        this->graphics_queue = device->get_graphics_queue();
+        this->compute_queue = device->get_compute_queue();
+        this->transfer_queue = device->get_transfer_queue();
         this->usage = usage;
         this->pool = pool.get();
 
@@ -3487,22 +3633,26 @@ public:
     }
 
 	// set event on command buffer
-    Event& set_event(CommandBuffer& command_buffer, std::vector<VkMemoryBarrier2> memory_barriers, std::vector<VkBufferMemoryBarrier2> buffer_memory_barriers, std::vector<VkImageMemoryBarrier2> image_memory_barriers, VkDependencyFlags flags) {
+    Event set_event(
+            const std::optional<std::vector<VkMemoryBarrier2>>& device_memory_barriers,
+            const std::optional<std::vector<VkBufferMemoryBarrier2>>& buffer_memory_barriers,
+            const std::optional<std::vector<VkImageMemoryBarrier2>>& image_memory_barriers,
+        VkDependencyFlags flags) const {
         Event event = Event(*device);
         event.get_dependency_info_ptr()->sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         event.get_dependency_info_ptr()->pNext = NULL;
         event.get_dependency_info_ptr()->dependencyFlags = flags;
-        event.get_dependency_info_ptr()->memoryBarrierCount = static_cast<uint32_t>(memory_barriers.size());
-        event.get_dependency_info_ptr()->pMemoryBarriers = memory_barriers.data();
-        event.get_dependency_info_ptr()->bufferMemoryBarrierCount = static_cast<uint32_t>(buffer_memory_barriers.size());
-        event.get_dependency_info_ptr()->pBufferMemoryBarriers = buffer_memory_barriers.data();
-        event.get_dependency_info_ptr()->imageMemoryBarrierCount = static_cast<uint32_t>(image_memory_barriers.size());
-        event.get_dependency_info_ptr()->pImageMemoryBarriers = image_memory_barriers.data();
+        event.get_dependency_info_ptr()->memoryBarrierCount = device_memory_barriers.has_value() ? static_cast<uint32_t>(device_memory_barriers.value().size()) : 0;
+        event.get_dependency_info_ptr()->pMemoryBarriers = device_memory_barriers.has_value() ? device_memory_barriers.value().data() : nullptr;
+        event.get_dependency_info_ptr()->bufferMemoryBarrierCount = buffer_memory_barriers.has_value() ? static_cast<uint32_t>(buffer_memory_barriers.value().size()) : 0;
+        event.get_dependency_info_ptr()->pBufferMemoryBarriers = buffer_memory_barriers.has_value() ? buffer_memory_barriers.value().data() : nullptr;
+        event.get_dependency_info_ptr()->imageMemoryBarrierCount = image_memory_barriers.has_value() ? static_cast<uint32_t>(image_memory_barriers.value().size()) : 0;
+        event.get_dependency_info_ptr()->pImageMemoryBarriers = image_memory_barriers.has_value() ? image_memory_barriers.value().data() : nullptr;
         vkCmdSetEvent2(this->buffer, event.get(), &event.get_dependency_info());
         return event;
     }
 
-    void reset_event(Event& event, VkPipelineStageFlags& stage_mask) const {
+    void reset_event(const Event& event, VkPipelineStageFlags stage_mask) const {
         vkCmdResetEvent(buffer, event.get(), stage_mask);
     }
 
@@ -3510,7 +3660,7 @@ public:
 		vkCmdWaitEvents2(buffer, 1, &event.get(), &event.get_dependency_info());
     }
 
-    void bind_pipeline(GraphicsPipeline& pipeline) const {
+    void bind_pipeline(const GraphicsPipeline& pipeline) const {
         if (usage != QueueFamily::GRAPHICS) {
             Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support graphics");
         }
@@ -3522,7 +3672,7 @@ public:
         }
     }
 
-    void bind_pipeline(ComputePipeline& pipeline) {
+    void bind_pipeline(const ComputePipeline& pipeline) {
         if (usage != QueueFamily::COMPUTE) {
             Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support compute");
         }
@@ -3539,12 +3689,12 @@ public:
         pipeline_layout = pipeline.get_layout();
     }
 
-    void bind_descriptor_set(DescriptorSet& set) {
+    void bind_descriptor_set(const DescriptorSet& set) {
         if (pipeline_layout == nullptr) {
             Log::error("invalid usage of CommandBuffer::bind_descriptor_set(): please use CommandBuffer::bind_pipeline() first!");
         }
         Log::debug("binding descriptor sets to command buffer, bindpoint ", bind_point);
-        vkCmdBindDescriptorSets(buffer, bind_point, pipeline_layout, 0, 1, &set.get(), 0, nullptr);
+        vkCmdBindDescriptorSets(buffer, bind_point, pipeline_layout, 0, 1, set.get_ptr(), 0, nullptr);
     }
 
     void push_constants(PushConstants& push_constants) const {
@@ -3895,9 +4045,9 @@ protected:
 };
 
 // shared manager for instance, device and command pools as singleton class
-class VkManager {
+class VulkanManager {
 public:
-    static VkManager* make_singleton(const std::vector<const char*>& instance_layer_names,
+    static VulkanManager* make_singleton(const std::vector<const char*>& instance_layer_names,
                                      const std::vector<const char*>& instance_extension_names,
                                      const std::vector<const char*>& device_extension_names,
                                      const VkPhysicalDeviceFeatures& enabled_device_features,    
@@ -3914,17 +4064,75 @@ public:
             shared_api_major_version = api_major_version;
             shared_api_minor_version = api_minor_version;
             shared_api_patch_version = api_patch_version;
+
             // calling the private constructor
-            singleton = new VkManager;
+            singleton = new VulkanManager;
+            
             // register static destructor
-            std::atexit(&VkManager::destroy_singleton);
+            std::atexit(&VulkanManager::destroy_singleton);
+        }
+        return singleton;
+    }
+
+	// create a singleton with default device features for compute
+    static VulkanManager* make_singleton_for_compute(
+        uint32_t api_major_version = 1,
+        uint32_t api_minor_version = 3,
+        uint32_t api_patch_version = 0,
+        uint32_t default_device_id = 0) {
+        if (singleton == nullptr) {
+            // enable instance layers
+            shared_instance_layer_names = {};
+            #ifdef _DEBUG
+            shared_instance_layer_names.push_back("VK_LAYER_KHRONOS_validation");
+            #endif		
+
+            // enable instance extensions
+            shared_instance_extension_names = {
+                "VK_KHR_get_physical_device_properties2"
+            };
+
+            // enable device extensions (if available)
+            shared_device_extension_names = {
+                "VK_KHR_synchronization2",
+                "VK_EXT_descriptor_indexing",
+                "VK_EXT_shader_atomic_float",
+                "VK_KHR_storage_buffer_storage_class",
+                "VK_KHR_uniform_buffer_standard_layout",
+                "VK_KHR_shader_non_semantic_info",
+                "VK_KHR_push_descriptor",
+                "VK_KHR_shader_float16_int8",
+                "VK_KHR_shader_int64",
+                "VK_KHR_shader_float64",
+                "VK_EXT_shader_atomic_float16_add"
+            };
+
+            // enable device features
+            shared_enabled_device_features = {};
+            shared_enabled_device_features.robustBufferAccess = VK_TRUE;
+            shared_enabled_device_features.sparseBinding = VK_TRUE;
+            shared_enabled_device_features.sparseResidencyBuffer = VK_TRUE;
+            shared_enabled_device_features.shaderInt16 = VK_TRUE;
+            shared_enabled_device_features.shaderInt64 = VK_TRUE;
+            shared_enabled_device_features.shaderFloat64 = VK_TRUE;
+            
+            shared_default_device_id = default_device_id;
+            shared_api_major_version = api_major_version;
+            shared_api_minor_version = api_minor_version;
+            shared_api_patch_version = api_patch_version;
+            
+            // calling the private constructor
+            singleton = new VulkanManager();
+            
+            // register static destructor
+            std::atexit(&VulkanManager::destroy_singleton);
         }
         return singleton;
     }
 
     static const Device& get_device() {return *device;}
     static const Instance& get_instance() {return *instance;}
-    static VkManager* get_singleton() { return singleton; }
+    static VulkanManager* get_singleton() { return singleton; }
     static CommandPool& get_command_pool_graphics() { return *shared_command_pool_graphics; }
     static CommandPool& get_command_pool_compute() { return *shared_command_pool_compute; }
     static CommandPool& get_command_pool_transfer() { return *shared_command_pool_transfer; }
@@ -3934,7 +4142,7 @@ public:
     // shared members
     static Instance* instance;
     static Device* device;
-    static VkManager* singleton;
+    static VulkanManager* singleton;
     static std::vector<const char*> shared_instance_layer_names;
     static std::vector<const char*> shared_instance_extension_names;
     static std::vector<const char*> shared_device_extension_names;
@@ -3948,9 +4156,9 @@ public:
     static CommandPool* shared_command_pool_transfer;
 
     // private constructor: one-time initialization on first call of get_singleton()
-    VkManager() {
+    VulkanManager() {
         instance = new Instance();
-
+        
         // finalize instance creation
 		instance->set_api_version(shared_api_major_version, shared_api_minor_version, shared_api_patch_version);
 		instance->set_application("Shared Vulkan Manager", 1, 0, 0);
@@ -3984,21 +4192,21 @@ public:
     }
 };
 
-// initialization of VkManager static members from outside the class
-Instance* VkManager::instance = nullptr;
-Device* VkManager::device = nullptr;
-VkManager* VkManager::singleton = nullptr;
-CommandPool* VkManager::shared_command_pool_compute = nullptr;
-CommandPool* VkManager::shared_command_pool_graphics = nullptr;
-CommandPool* VkManager::shared_command_pool_transfer = nullptr;
-std::vector<const char*> VkManager::shared_instance_layer_names = {};
-std::vector<const char*> VkManager::shared_instance_extension_names = {};
-std::vector<const char*> VkManager::shared_device_extension_names = {};
-VkPhysicalDeviceFeatures VkManager::shared_enabled_device_features = {};
-uint32_t VkManager::shared_default_device_id = 0;
-uint32_t VkManager::shared_api_major_version = 1;
-uint32_t VkManager::shared_api_minor_version = 3;
-uint32_t VkManager::shared_api_patch_version = 0;
+// initialization of VulkanManager static members from outside the class
+Instance* VulkanManager::instance = nullptr;
+Device* VulkanManager::device = nullptr;
+VulkanManager* VulkanManager::singleton = nullptr;
+CommandPool* VulkanManager::shared_command_pool_compute = nullptr;
+CommandPool* VulkanManager::shared_command_pool_graphics = nullptr;
+CommandPool* VulkanManager::shared_command_pool_transfer = nullptr;
+std::vector<const char*> VulkanManager::shared_instance_layer_names = {};
+std::vector<const char*> VulkanManager::shared_instance_extension_names = {};
+std::vector<const char*> VulkanManager::shared_device_extension_names = {};
+VkPhysicalDeviceFeatures VulkanManager::shared_enabled_device_features = {};
+uint32_t VulkanManager::shared_default_device_id = 0;
+uint32_t VulkanManager::shared_api_major_version = 1;
+uint32_t VulkanManager::shared_api_minor_version = 3;
+uint32_t VulkanManager::shared_api_patch_version = 0;
 
 
 #endif // include guard close
