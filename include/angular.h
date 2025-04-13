@@ -2,8 +2,8 @@
 #define ANGULAR_H
 #pragma once
 
-#include <log.h>
 #include <cmath>
+#include <log.h>
 
 // list of avaílable angular measures
 enum AngularMeasure {
@@ -44,7 +44,7 @@ double angle(double value, AngularMeasure source_unit, AngularMeasure target_uni
             full_circles = value;
             break;
         default:
-            Log::log(ERROR, "invalid source unit argument in function angle(double_t value, AngularMeasure source_unit, AngularMeasure target_unit)");
+            Log::error("invalid source unit argument in function angle(double_t value, AngularMeasure source_unit, AngularMeasure target_unit)");
             break;
     }
 
@@ -68,7 +68,7 @@ double angle(double value, AngularMeasure source_unit, AngularMeasure target_uni
         case AngularMeasure::NORMAL:
             return full_circles;
         default:
-            Log::log(ERROR, "invalid target unit argument in function angle(double_t value, AngularMeasure source_unit, AngularMeasure target_unit)");
+            Log::error("invalid target unit argument in function angle(double_t value, AngularMeasure source_unit, AngularMeasure target_unit)");
     }
 
     return NAN;

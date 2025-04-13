@@ -1,0 +1,47 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint seed;
+    float mu;
+    float sigma;
+};
+
+// Simple random float function based on seed
+float random(uint seed) {
+    uint state = seed;
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return float(state & 0xFFFFFFFF) / 4294967295.0;
+}
+
+// Marsaglia polar method
+float randomGaussian(uint seed, float mu, float sigma) {
+    float v1, v2, s;
+    do {
+        v1 = 2.0f * random(seed) - 1.0f;
+        v2 = 2.0f * random(seed+12345)  - 1.0f;
+        s = v1 * v1 + v2 * v2;
+    } while (s >= 1.0f || s == 0);
+
+    s = sqrt((-2.0f * log(s)) / s);
+ 
+    return v1 * s * sigma + mu;
+}
+
+// main function
+void main() {
+    // adding the seed to the global invocation ID to ensure different random numbers for each invocation
+    data[gl_GlobalInvocationID.x] = randomGaussian(seed + gl_GlobalInvocationID.x, mu, sigma);
+}

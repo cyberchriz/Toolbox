@@ -347,7 +347,7 @@ if(USE_BOOST)
     message(STATUS "Attempting to find pre-installed Boost via find_package")
     # set(Boost_USE_STATIC_LIBS ON)
     # List required components explicitly
-    find_package(Boost 1.70 COMPONENTS system filesystem REQUIRED)
+    find_package(Boost 1.88.0 COMPONENTS system filesystem REQUIRED)
     if(Boost_FOUND)
         message(STATUS "Found Boost ${Boost_VERSION_STRING}: ${Boost_LIBRARIES}")
         target_include_directories(${PROJECT_NAME} PUBLIC ${Boost_INCLUDE_DIRS})
