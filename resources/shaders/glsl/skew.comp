@@ -1,0 +1,95 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer local_results1_buffer {float local_result1[];};
+layout(set = 0, binding = 2) buffer local_results2_buffer {float local_result2[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N;
+};
+
+// shared variables
+shared float local_mean1[gl_WorkGroupSize.x];
+shared float local_mean2[gl_WorkGroupSize.x];
+shared float global_mean;
+
+// main function
+void main() {
+
+    if (gl_GlobalInvocationID.x < N) {
+        
+        // calculate local mean via Local Reduction
+        local_mean1[gl_LocalInvocationID.x] = data[gl_GlobalInvocationID.x] / gl_WorkGroupSize.x;
+        groupMemoryBarrier();
+        for (uint stride = gl_WorkGroupSize.x / 2; stride > 0; stride /= 2) {
+            if (gl_LocalInvocationID.x < stride) {
+                if (gl_GlobalInvocationID.x + stride < N) {
+                    local_mean1[gl_LocalInvocationID.x] = local_mean1[gl_LocalInvocationID.x] + local_mean1[gl_LocalInvocationID.x + stride];
+                }
+            }
+            groupMemoryBarrier();
+        }
+        
+        // store local mean divided by number of workgroups into local_results_buffer
+        if (gl_LocalInvocationID.x == 0) {
+            local_result1[gl_WorkGroupID.x] = local_mean1[0] / gl_NumWorkGroups.x;
+        }
+        groupMemoryBarrier();
+
+        // calculate global mean via Global Reduction
+        for (uint stride = gl_NumWorkGroups.x / 2; stride > 0 ; stride /= 2) {
+            if (gl_GlobalInvocationID.x < stride) {
+                local_result1[gl_GlobalInvocationID.x] = local_result1[gl_GlobalInvocationID.x] + local_result1[gl_GlobalInvocationID.x + stride];
+            }
+            barrier();
+        }
+
+        // store global mean in a shared variable
+        if (gl_LocalInvocationID.x == 0) {
+            global_mean = local_result1[0];
+        }
+        groupMemoryBarrier();
+        barrier();
+
+        // calculate local mean mdev2 and local mean mdev3 via Local Reduction (the local_result1 buffer and local_mean1 array will be reused for this purpose)
+        float mdev = data[gl_GlobalInvocationID.x] - global_mean;
+        local_mean1[gl_LocalInvocationID.x] = (mdev * mdev) / N;
+        local_mean2[gl_LocalInvocationID.x] = (mdev * mdev * mdev) / N;
+        
+        groupMemoryBarrier();
+        for (uint stride = gl_WorkGroupSize.x / 2; stride > 0; stride /= 2) {
+            if (gl_LocalInvocationID.x < stride) {
+                if (gl_GlobalInvocationID.x + stride < N) {
+                    local_mean1[gl_LocalInvocationID.x] = local_mean1[gl_LocalInvocationID.x] + local_mean1[gl_LocalInvocationID.x + stride];
+                    local_mean2[gl_LocalInvocationID.x] = local_mean2[gl_LocalInvocationID.x] + local_mean2[gl_LocalInvocationID.x + stride];
+                }
+            }
+            groupMemoryBarrier();
+        }
+        
+        // store local mean mdev2 && local mean mdev3 into local_results_buffer
+        if (gl_LocalInvocationID.x == 0) {
+            local_result1[gl_WorkGroupID.x] = local_mean1[0];
+            local_result2[gl_WorkGroupID.x] = local_mean2[0];
+        }
+        groupMemoryBarrier();
+
+        // calculate global mean mdev2 && global mean mdev3 via Global Reduction
+        for (uint stride = gl_NumWorkGroups.x / 2; stride > 0 ; stride /= 2) {
+            if (gl_GlobalInvocationID.x < stride) {
+                local_result1[gl_GlobalInvocationID.x] = local_result1[gl_GlobalInvocationID.x] + local_result1[gl_GlobalInvocationID.x + stride];
+                local_result2[gl_GlobalInvocationID.x] = local_result2[gl_GlobalInvocationID.x] + local_result2[gl_GlobalInvocationID.x + stride];
+            }
+            barrier();
+        }
+    }
+}

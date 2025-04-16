@@ -1,0 +1,51 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer local_results_buffer {float local_result[];};
+
+// push constants
+layout(push_constant) uniform push_constants {
+    uint N;
+};
+
+// shared variables
+shared float local_sum[gl_WorkGroupSize.x];
+
+// main function
+void main() {
+
+    if (gl_GlobalInvocationID.x < N) {
+        
+        // Local Reduction
+        local_sum[gl_LocalInvocationID.x] = data[gl_GlobalInvocationID.x];
+        groupMemoryBarrier();
+        for (uint stride = gl_WorkGroupSize.x / 2; stride > 0; stride /= 2) {
+            if (gl_LocalInvocationID.x < stride) {
+                if (gl_GlobalInvocationID.x + stride < N) {
+                    local_sum[gl_LocalInvocationID.x] = local_sum[gl_LocalInvocationID.x] * local_sum[gl_LocalInvocationID.x + stride];
+                }
+            }
+            groupMemoryBarrier();
+        }
+        // store local sum into local_results_buffer
+        if (gl_LocalInvocationID.x == 0) {
+            local_result[gl_WorkGroupID.x] = local_sum[0];
+        }
+
+        // Global Reduction
+        for (uint stride = gl_NumWorkGroups.x / 2; stride > 0 ; stride /= 2) {
+            if (gl_GlobalInvocationID.x < stride) {
+                local_result[gl_GlobalInvocationID.x] = local_result[gl_GlobalInvocationID.x] * local_result[gl_GlobalInvocationID.x + stride];
+            }
+            barrier();
+        }
+    }
+}

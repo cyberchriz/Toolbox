@@ -1,0 +1,80 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// default constants
+#define MAX_UNIFORM_SIZE 10
+#define MAX_DIMENSIONS 10
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) uniform shape_buffer {uint shape[MAX_UNIFORM_SIZE];};
+layout(set = 0, binding = 2) uniform subspace_buffer {uint subspace[MAX_UNIFORM_SIZE];};
+
+layout(set = 0, binding = 3) buffer other_buffer {float other_data[];};
+layout(set = 0, binding = 4) uniform other_shape_buffer {uint other_shape[MAX_UNIFORM_SIZE];};
+layout(set = 0, binding = 5) uniform other_subspace_buffer {uint other_subspace[MAX_UNIFORM_SIZE];};
+
+layout(set = 0, binding = 6) buffer result_buffer {float result[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint dimensions;
+    uint other_dimensions;
+    uint N;
+    uint other_N;
+};
+
+// setup global variables
+uint array_index[MAX_DIMENSIONS];
+uint other_array_index[MAX_DIMENSIONS];
+
+// Helper function to convert a multidimensional index of the 'other' buffer to the corresponding flat index
+uint other_flat_index(uint array_index[MAX_DIMENSIONS]) {
+    uint flat_index = 0;
+    for (uint i = 0; i < other_dimensions; ++i) {
+        flat_index += other_array_index[i] * other_subspace[i];
+    }
+    return flat_index;
+}
+
+// Helper function to convert a flat index back to a multidimensional index
+// note: as a simple scalar GLSL will pass the flat_index by value, so the passed variable remains unchanged;
+// however, the result_array_index is passed by reference, so it will be modified (as intended)
+void multi_index(uint flat_index, uint result_array_index[MAX_DIMENSIONS]) {
+    for (uint i = 0; i < dimensions; ++i) {
+        result_array_index[i] = flat_index / subspace[i];
+        flat_index = flat_index % subspace[i];
+    }
+}
+
+// main function
+void main() {
+    if (gl_GlobalInvocationID.x < N) {
+        if (gl_GlobalInvocationID.x < other_N) {
+            // get the multidimensional index of the source array
+            multi_index(gl_GlobalInvocationID.x, array_index);
+
+            // get corresponding flat index of the 'other' array
+            // based on the subspace sizes of 'other'
+            uint target_index = other_flat_index(array_index);
+            
+            if (target_index < other_N) {
+                // assign difference of element value of data minus corresponding value of 'other' to the result
+                result[gl_GlobalInvocationID.x] = data[gl_GlobalInvocationID.x] - other_data[target_index];
+            }
+            else {
+                // assign original data value to result in case 'other' is out of bounds
+                result[gl_GlobalInvocationID.x] = data[gl_GlobalInvocationID.x];
+            }
+        }
+        else {
+            result[gl_GlobalInvocationID.x] = data[gl_GlobalInvocationID.x];
+        }
+    }
+}

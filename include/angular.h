@@ -17,7 +17,7 @@ enum AngularMeasure {
 };
 
 // helper method for converting an angular value to a different unit
-double angle(double value, AngularMeasure source_unit, AngularMeasure target_unit, bool exceed_full_circle = false) {
+double convert_angle(double value, AngularMeasure source_unit, AngularMeasure target_unit, bool exceed_full_circle = true) {
     static constexpr double_t PI = 3.1415926535897932384626433;
     static double_t full_circles = 0;
 
@@ -51,7 +51,7 @@ double angle(double value, AngularMeasure source_unit, AngularMeasure target_uni
     if (!exceed_full_circle) {
         full_circles = std::remainder(full_circles, 1);
     }
-    
+
     switch (target_unit) {
         case AngularMeasure::RAD:
             return full_circles * (2 * PI);

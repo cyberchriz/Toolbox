@@ -12,6 +12,7 @@ layout(set = 0, binding = 0) buffer data_buffer {float data[];};
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
+    uint N;
     uint fan_in;
     uint fan_out;
     uint seed;
@@ -28,6 +29,8 @@ float random(uint seed) {
 
 // main function
 void main() {
-    // adding the workgroup id to the seed in order to get a different seed for each workgroup
-    random(seed + gl_GlobalInvocationID.x) * 4.0 * sqrt(6.0 / sqrt(fan_in + fan_out));;
+    if (gl_GlobalInvocationID.x < N) {
+        // adding the workgroup id to the seed in order to get a different seed for each workgroup
+        random(seed + gl_GlobalInvocationID.x) * 4.0 * sqrt(6.0 / sqrt(fan_in + fan_out));
+    }
 }

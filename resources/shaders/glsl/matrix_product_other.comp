@@ -1,0 +1,57 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer first_buffer {float first_data[];};
+layout(set = 0, binding = 1) buffer second_buffer {float second_data[];};
+layout(set = 0, binding = 2) buffer result_buffer {float result[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint first_N;
+    uint first_rows;
+    uint first_cols;
+    uint second_N;
+    uint second_rows;
+    uint second_cols;
+    uint result_N;
+    uint result_rows;
+    uint result_cols;
+};
+
+// main function
+void main() {
+    uint row = gl_GlobalInvocationID.x;
+    uint col = gl_GlobalInvocationID.y;
+
+    // Ensure we don't go out of bounds for the result matrix
+    if (row >= result_rows || col >= result_cols) {
+        return;
+    }
+
+    float sum = 0.0;
+    for (uint k = 0; k < first_cols; ++k) {
+        // Calculate flat indices for the input arrays
+        uint first_index = row * first_cols + k;
+        uint second_index = k * second_cols + col;
+
+        // Perform bounds checking for the input arrays
+        if (first_index < first_N && second_index < second_N) {
+            sum += first_data[first_index] * second_data[second_index];
+        }
+    }
+
+    // Calculate the flat index for the result matrix
+    uint result_index = row * result_cols + col;
+
+    // Perform bounds checking for the result array
+    if (result_index < result_N) {
+        result[result_index] = sum;
+    }
+}

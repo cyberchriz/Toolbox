@@ -17,6 +17,7 @@ layout(set = 0, binding = 2) uniform subspace_buffer {uint subspace[MAX_UNIFORM_
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
+    uint N;
     uint dimensions;
 };
 
@@ -37,31 +38,33 @@ void multi_index(uint flat_index, uint result_array_index[MAX_DIMENSIONS]) {
 void main() {
     uint flat_index = gl_GlobalInvocationID.x;
 
-    // for 1d arrays return a vector of all ones
-    if (dimensions == 1) {
-        data[flat_index] = 1.0;
-    }
-    // for mutidimensional arrays: check if the indices of the other dimensions are equal
-    else {
-        // get the multidimensional index of the data buffer
-        multi_index(flat_index, array_index);
-
-        // check if indices of the other dimensions are equal
-        uint row_index = array_index[0];
-        bool indices_equal = true;
-        for (uint i = 1; i < dimensions; ++i) {
-            if (array_index[i] != row_index) {
-                indices_equal = false;
-                break;
-            }
-        }
-        if (indices_equal) {
-            // set the data to 1.0
+    if (flat_index < N) {
+        // for 1d arrays return a vector of all ones
+        if (dimensions == 1) {
             data[flat_index] = 1.0;
         }
+        // for mutidimensional arrays: check if the indices of the other dimensions are equal
         else {
-            // set the data to 0.0
-            data[flat_index] = 0.0;
+            // get the multidimensional index of the data buffer
+            multi_index(flat_index, array_index);
+
+            // check if indices of the other dimensions are equal
+            uint row_index = array_index[0];
+            bool indices_equal = true;
+            for (uint i = 1; i < dimensions; ++i) {
+                if (array_index[i] != row_index) {
+                    indices_equal = false;
+                    break;
+                }
+            }
+            if (indices_equal) {
+                // set the data to 1.0
+                data[flat_index] = 1.0;
+            }
+            else {
+                // set the data to 0.0
+                data[flat_index] = 0.0;
+            }
         }
     }
 }

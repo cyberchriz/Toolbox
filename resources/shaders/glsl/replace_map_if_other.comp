@@ -1,0 +1,27 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer result_buffer {float result[];};
+layout(set = 0, binding = 2) buffer condition_buffer {float condition[];};
+layout(set = 0, binding = 3) buffer replacing_buffer {float replacement[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N;
+    float factor;
+};
+
+// main function
+void main() {
+    if (gl_GlobalInvocationID.x < N) {
+        result[gl_GlobalInvocationID.x] = bool(condition[gl_GlobalInvocationID.x]) ? replacement[gl_GlobalInvocationID.x] : data[gl_GlobalInvocationID.x];
+    }
+}

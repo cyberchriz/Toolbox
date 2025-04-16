@@ -12,6 +12,7 @@ layout(set = 0, binding = 0) buffer data_buffer {float data[];};
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
+    uint N;
     uint seed;
     float ratio;
 };
@@ -27,6 +28,8 @@ float random(uint seed) {
 
 // main function
 void main() {
-    // adding the seed to the global invocation ID to ensure different random numbers for each invocation
-    data[gl_GlobalInvocationID.x] = random(seed + gl_GlobalInvocationID.x) > ratio ? 1.0 : 0.0;
+    if (gl_GlobalInvocationID.x < N) {
+        // adding the seed to the global invocation ID to ensure different random numbers for each invocation
+        data[gl_GlobalInvocationID.x] = random(seed + gl_GlobalInvocationID.x) > ratio ? 1.0 : 0.0;
+    }
 }

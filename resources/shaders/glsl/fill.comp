@@ -12,10 +12,13 @@ layout(set = 0, binding = 0) buffer data_buffer {float data[];};
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
+    uint N;
     float value;
 };
 
 // main function
 void main() {
-    data[gl_GlobalInvocationID.x] = value;
+    if (gl_GlobalInvocationID.x < N) {
+        data[gl_GlobalInvocationID.x] = value;
+    }
 }

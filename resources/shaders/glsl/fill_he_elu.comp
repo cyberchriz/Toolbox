@@ -12,8 +12,8 @@ layout(set = 0, binding = 0) buffer data_buffer {float data[];};
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
+    uint N;
     uint fan_in;
-    uint fan_out;
     uint seed;
 };
 
@@ -42,7 +42,8 @@ float randomGaussian(uint seed, float mu, float sigma) {
 
 // main function
 void main() {
-    // adding the workgroup id to the seed in order to get a different seed for each workgroup
-    data[gl_GlobalInvocationID.x] = randomGaussian(seed + gl_GlobalInvocationID.x, 0, 1) * sqrt(1.55 / fan_in);
-
+    if (gl_GlobalInvocationID.x < N) {
+        // adding the workgroup id to the seed in order to get a different seed for each workgroup
+        data[gl_GlobalInvocationID.x] = randomGaussian(seed + gl_GlobalInvocationID.x, 0, 1) * sqrt(1.55 / fan_in);
+    }
 }

@@ -13,28 +13,8 @@
             "variables": [
                 {
                     "name": "COMPILE_GLSL_SHADERS",
-                    "value": "False",
-                    "type": "BOOL"
-                },
-                {
-                    "name": "OVERWRITE_SPIRV_HEADER",
                     "value": "True",
                     "type": "BOOL"
-                },
-                {
-                    "name": "CMAKE_VERBOSE_MAKEFILE",
-                    "value": "True",
-                    "type": "BOOL"
-                },
-                {
-                    "name": "USE_BOOST",
-                    "value": "False",
-                    "type": "BOOL"
-                },
-                {
-                    "name": "Boost_INCLUDE_DIR",
-                    "value": "C:/Program Files/boost/boost_1_88_0",
-                    "type": "PATH"
                 }
             ]
         }

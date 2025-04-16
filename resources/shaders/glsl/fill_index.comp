@@ -10,7 +10,14 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 // setup buffers
 layout(set = 0, binding = 0) buffer data_buffer {float data[];};
 
+// setup push constants
+layout(push_constant) uniform push_constants {
+    uint N;
+};
+
 // main function
 void main() {
-    data[gl_GlobalInvocationID.x] = gl_GlobalInvocationID.x;
+    if (gl_GlobalInvocationID.x < N) {
+        data[gl_GlobalInvocationID.x] = gl_GlobalInvocationID.x;
+    }
 }

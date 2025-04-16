@@ -20,26 +20,26 @@
 
 class Timer {
 public:
-    double elapsed_microsec(){
+    double elapsed_microsec() {
         end = std::chrono::high_resolution_clock::now();
         return (std::chrono::duration_cast<std::chrono::duration<double>>(end - begin)).count() / 1000;
-    }           
+    }
 
     // constructor
-    Timer(std::string caller_function="") : caller_function(caller_function) {
+    Timer(std::string caller_function = "") : caller_function(caller_function) {
         begin = std::chrono::high_resolution_clock::now();
         if (caller_function == "") {
-            Log::log(FORCE, "timer started");
+            Log::info("timer started");
         }
         else {
-            Log::log(FORCE, "timer started in scope ", caller_function);
+            Log::info("timer started in scope ", caller_function);
         }
     }
 
     void stop() {
         double elapsed_since_start = elapsed_microsec();
         if (caller_function == "") {
-            Log::info("timer stopped after ", elapsed_since_start(), " microsec");
+            Log::info("timer stopped after ", elapsed_since_start, " microsec");
         }
         else {
             Log::info("timer in scope ", caller_function, " stopped after ", elapsed_microsec(), " microsec");
@@ -57,7 +57,7 @@ public:
     ~Timer() {
         double elapsed_since_start = elapsed_microsec();
         if (!stopped) {
-            Log::info("end of timer by reaching end of scope " caller_function, ": ", elapsed_since_start, " microsec");
+            Log::info("end of timer by reaching end of scope ", caller_function, ": ", elapsed_since_start, " microsec");
         }
     }
 private:

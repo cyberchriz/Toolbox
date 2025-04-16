@@ -13,21 +13,20 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // setup buffers
 layout(set = 0, binding = 0) buffer data_buffer {float data[];};
-layout(set = 0, binding = 1) uniform shape_buffer {uint shape[MAX_UNIFORM_SIZE];};
-layout(set = 0, binding = 2) uniform subspace_buffer {uint subspace[MAX_UNIFORM_SIZE];};
+layout(set = 0, binding = 1) uniform data_shape_buffer {uint data_shape[MAX_UNIFORM_SIZE];};
+layout(set = 0, binding = 2) uniform data_subspace_buffer {uint data_subspace[MAX_UNIFORM_SIZE];};
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
-    uint dimensions;
+    uint data_N;            // total number of elements in the source array
+    uint data_dim;          // number of dimensions of the source array
 };
 
 // setup global variables
-uint array_index[MAX_DIMENSIONS];
+uint data_array_index[MAX_DIMENSIONS];
 
 // Helper function to convert a multidimensional index of the data buffer to the corresponding flat index
-// (note: this is specific to the data array subspace, so it is not a general function;
-// any potential other arrays need their own version !!
-uint data_flat_index(uint array_index[MAX_DIMENSIONS]) {
+uint flat_index(uint array_index[MAX_DIMENSIONS], const uint subspace[MAX_DIMENSIONS], const uint dimensions) {
     uint flat_index = 0;
     for (uint i = 0; i < dimensions; ++i) {
         flat_index += array_index[i] * subspace[i];
@@ -38,7 +37,7 @@ uint data_flat_index(uint array_index[MAX_DIMENSIONS]) {
 // Helper function to convert a flat index back to a multidimensional index
 // note: as a simple scalar GLSL will pass the flat_index by value, so the passed variable remains unchanged;
 // however, the result_array_index is passed by reference, so it will be modified (as intended)
-void multi_index(uint flat_index, uint result_array_index[MAX_DIMENSIONS]) {
+void multi_index(uint flat_index, uint result_array_index[MAX_DIMENSIONS], const uint subspace[MAX_DIMENSIONS], const uint dimensions) {
     for (uint i = 0; i < dimensions; ++i) {
         result_array_index[i] = flat_index / subspace[i];
         flat_index = flat_index % subspace[i];

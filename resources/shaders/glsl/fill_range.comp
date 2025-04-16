@@ -18,6 +18,7 @@ layout(set = 0, binding = 2) uniform subspace_buffer {uint subspace[MAX_UNIFORM_
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
+    uint N;
     uint dimensions;
     float start;
     float step;
@@ -38,17 +39,20 @@ void multi_index(uint flat_index, uint result_array_index[MAX_DIMENSIONS]) {
 
 // main function
 void main() {
-    // get multidimensional index
-    multi_index(gl_GlobalInvocationID.x, array_index);
+    if (gl_GlobalInvocationID.x < N) {
+
+        // get multidimensional index
+        multi_index(gl_GlobalInvocationID.x, array_index);
     
-    // find the highest index accross all dimensions
-    uint max_index = array_index[0];
-    for (uint i = 1; i < dimensions; ++i) {
-        if (array_index[i] > max_index) {
-            max_index = array_index[i];
+        // find the highest index accross all dimensions
+        uint max_index = array_index[0];
+        for (uint i = 1; i < dimensions; ++i) {
+            if (array_index[i] > max_index) {
+                max_index = array_index[i];
+            }
         }
-    }
     
-    // assign highest index to the data array
-    data[gl_GlobalInvocationID.x] = start + float(max_index) * step;
+        // assign highest index to the data array
+        data[gl_GlobalInvocationID.x] = start + float(max_index) * step;
+    }
 }

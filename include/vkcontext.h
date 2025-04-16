@@ -548,10 +548,10 @@ public:
     // because the instance is usually a high-level object,
     // expected to stay alive as long as needed)
     VkDevice get_logical() const { return logical; }
-    VkPhysicalDevice get_physical() { return physical; }
-    VkQueue get_graphics_queue() { return graphics_queue; }
-    VkQueue get_compute_queue() { return compute_queue; }
-    VkQueue get_transfer_queue() { return transfer_queue; }
+    VkPhysicalDevice get_physical() const { return physical; }
+    VkQueue get_graphics_queue() const { return graphics_queue; }
+    VkQueue get_compute_queue() const { return compute_queue; }
+    VkQueue get_transfer_queue() const { return transfer_queue; }
     uint32_t get_graphics_queue_family_index() const { return graphics_queue_family_index; }
     uint32_t get_compute_queue_family_index() const { return compute_queue_family_index; }
     uint32_t get_transfer_queue_family_index() const { return transfer_queue_family_index; }
@@ -1474,7 +1474,7 @@ public:
     // destructor
     ~Semaphore() {
         vkDestroySemaphore(logical, semaphore, nullptr);
-        delete semaphore; semaphore = nullptr;
+        semaphore = nullptr;
     }
 
     // move constructor
@@ -1725,10 +1725,10 @@ public:
 
     }
 
-    void create_framebuffers(RenderPass& renderpass, const std::vector<ImageView>& attachments_imageviews) {
+    void create_framebuffers(const std::vector<ImageView>& attachments_imageviews) {
 
         framebuffer.resize(num_images);
-        uint32_t expected_attachments = renderpass.get_attachment_count();
+        uint32_t expected_attachments = renderpass->get_attachment_count();
 
         for (uint32_t i = 0; i < num_images; i++) {
             std::vector<VkImageView> attachments;
@@ -1746,7 +1746,7 @@ public:
             }
             VkFramebufferCreateInfo framebuffer_create_info = {};
             framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-            framebuffer_create_info.renderPass = renderpass.get();
+            framebuffer_create_info.renderPass = this->renderpass->get();
             framebuffer_create_info.attachmentCount = expected_attachments;
             framebuffer_create_info.pAttachments = attachments.data();
             framebuffer_create_info.width = extent.width;
@@ -2059,7 +2059,7 @@ public:
     ~VertexDescriptions() {}
 
     void add_attribute(uint32_t location, uint32_t binding, VkFormat format, uint32_t offset = 0) {
-        uint32_t id = attribute_descriptions.size();
+        uint32_t id = static_cast<uint32_t>(attribute_descriptions.size());
         attribute_descriptions.resize(id + 1);
         attribute_descriptions[id].binding = binding;
         attribute_descriptions[id].location = location;
@@ -2069,7 +2069,7 @@ public:
 
     // adds a binding to the vertex descriptions and returns the index of the new binding
     uint32_t add_binding(uint32_t stride, VkVertexInputRate input_rate = VK_VERTEX_INPUT_RATE_VERTEX) {
-        uint32_t id = binding_descriptions.size();
+        uint32_t id = static_cast<uint32_t>(binding_descriptions.size());
         binding_descriptions.resize(id + 1);
         binding_descriptions[id].binding = id;
         binding_descriptions[id].inputRate = input_rate;
@@ -2133,9 +2133,11 @@ public:
         }
         std::string file_path = foldername + filename;
         long file_size = 0;
-        FILE* file = fopen(file_path.c_str(), "rb");
-        if (!file) {
-            Log::error("shader file not found: ", filename);
+        FILE* file = nullptr;
+        errno_t err = fopen_s(&file, file_path.c_str(), "rb");
+        if (err != 0) {
+            // Handle the error (e.g., log it or throw an exception)
+            Log::error("Failed to open shader file: ", file_path);
         }
         else {
             Log::debug("reading shader file: ", file_path.c_str());
@@ -2563,6 +2565,27 @@ public:
         vkUnmapMemory(logical, memory);
     }
 
+    // copy data elements from a std::initializer_list to a host visible buffer
+    void write(const std::initializer_list<T> list, uint32_t target_offset_elements = 0) {
+        if (!is_host_visible) {
+            Log::error("Buffer::write() called on non-host-visible buffer");
+        }
+        size_t list_size_bytes = list.size() * sizeof(T);
+        VkDeviceSize target_offset_bytes = target_offset_elements * sizeof(T);
+        if (target_offset_bytes + list_size_bytes > this->size_bytes) {
+            Log::warning("Buffer::write attempting to write past buffer bounds. Clipping copy region size to fit.");
+            list_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
+        }
+        if (list_size_bytes <= 0) {
+            Log::debug("in Buffer<T>::write(): requested copy region has size ", array_size_bytes, " bytes, i.e.nothing to copy");
+            return;
+        }
+        void* data;
+        vkMapMemory(logical, memory, target_offset_bytes, list_size_bytes, VkMemoryMapFlags(0), &data);
+        memcpy(data, list.begin(), list_size_bytes);
+        vkUnmapMemory(logical, memory);
+    }
+
     // copy data elements from one host visible buffer to another
     // (set copied elements to 0 to copy all);
     // the source buffer must be host visible;
@@ -2638,7 +2661,7 @@ public:
             Log::error("in method Buffer::get(): element index ", element_index, " is out of bounds (allowed indices: 0-", this->elements - 1, ")");
         }
         void* data = nullptr;
-        T element;
+        T element = static_cast<T>(0);
         VkResult result = vkMapMemory(logical, memory, element_index * sizeof(T), sizeof(T), VkMemoryMapFlags(0), &data);
         if (result != VK_SUCCESS) {
             Log::error("in method Buffer<T>::get(uint32_t element_index): failed to map buffer memory (VkResult = ", result, ")");
@@ -2766,128 +2789,6 @@ protected:
     VkSamplerCreateInfo sampler_create_info = {};
 };
 
-// DescriptorPool manages descriptor sets and their memory allocation
-class DescriptorPool {
-    friend class DescriptorSet;
-public:
-    // constructor
-    DescriptorPool() = delete;
-    DescriptorPool(const Device& device, const uint32_t max_sets = 20, const std::vector<VkDescriptorPoolSize>& pool_sizes = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20}}) {
-        this->logical = device.get_logical();
-        this->max_sets = max_sets;
-
-        // setup create info
-        VkDescriptorPoolCreateInfo create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        create_info.maxSets = max_sets;
-        create_info.pPoolSizes = pool_sizes.data();
-        create_info.poolSizeCount = pool_sizes.size();
-        create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        create_info.pNext = NULL;
-
-        // Create the descriptor pool
-        VkResult result = vkCreateDescriptorPool(logical, &create_info, nullptr, &pool);
-        if (result == VK_SUCCESS) {
-            Log::debug("successfully created descriptor pool (handle: ", pool, ")");
-        }
-        else {
-            Log::error("failed to create descriptor pool (VkResult =  ", result, ")");
-        }
-    }
-
-    // destructor
-    ~DescriptorPool() {
-        if (pool != nullptr) {
-            release_sets();
-            vkDestroyDescriptorPool(logical, pool, nullptr);
-            pool = nullptr;
-        }
-    }
-
-    // move constructor
-    DescriptorPool(DescriptorPool&& other) noexcept
-        : pool(std::exchange(other.pool, nullptr)),
-        logical(std::exchange(other.logical, nullptr)),
-        sets(std::move(other.sets)),
-        max_sets(other.max_sets) {
-        if (pool != nullptr) {
-            Log::info("descriptor pool moved (handle: ", pool, ")");
-        }
-    }
-
-    // move assignment
-    DescriptorPool& operator=(DescriptorPool&& other) noexcept {
-        if (this != &other) {
-            if (pool != nullptr) {
-                Log::info("move assignment operation: destroying previous descriptor pool (handle: ", pool, ")");
-                vkDestroyDescriptorPool(logical, pool, nullptr);
-                pool = nullptr;
-            }
-            pool = std::exchange(other.pool, nullptr);
-            logical = std::exchange(other.logical, nullptr);
-            sets = std::move(other.sets);
-            max_sets = other.max_sets;
-            if (pool != nullptr) {
-                Log::info("descriptor pool moved to 'this' (handle: ", pool, ")");
-            }
-        }
-        return *this;
-    }
-
-    // deleted copy constructor and assignment
-    DescriptorPool(const DescriptorPool&) = delete;
-    DescriptorPool& operator=(const DescriptorPool&) = delete;
-
-    // getters
-    VkDescriptorPool get() const { return pool; }
-    const std::vector<VkDescriptorSet>& get_sets() const { return sets; }
-    uint32_t get_max_sets() const { return max_sets; }
-    uint32_t get_current_sets_count() const { return uint32_t(sets.size()); }
-
-    // releases all descriptor sets from the pool
-    void release_sets() {
-        if (sets.empty()) { return; }
-        VkResult result = vkFreeDescriptorSets(logical, pool, sets.size(), sets.data());
-        if (result == VK_SUCCESS) {
-            Log::debug("all descriptor sets removed from pool, memory allocation freed");
-        }
-        else {
-            Log::warning("failed to remove descriptor sets from pool (VkResult = ", result, ")");
-        }
-        sets.clear();
-    }
-
-    // allocates a new descriptor set to the pool and returns its index
-    uint32_t allocate_set(DescriptorSet& descriptor_set) {
-        if (sets.size() >= max_sets) {
-            Log::error("in method DescriptorPool::allocate_set(): max number of sets for this pool is ", max_sets, " (as defined by the pool constructor) and has been reached; no more descriptor sets can be added");
-        }
-        if (!descriptor_set.layout_finalized) {
-            Log::info("in method DescriptorPool::allocate_set(): descriptor set layout has not been finalized yet; finalizing now");
-            descriptor_set.finalize_layout();
-        }
-        VkDescriptorSetAllocateInfo allocate_info = {};
-        allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocate_info.descriptorPool = pool;
-        allocate_info.descriptorSetCount = 1;
-        allocate_info.pSetLayouts = &descriptor_set.layout;
-        VkResult result = vkAllocateDescriptorSets(logical, &allocate_info, &descriptor_set.set);
-        if (result != VK_SUCCESS) {
-            Log::error("failed to allocate descriptor set (VkResult ", result, ")");
-        }
-        uint32_t index = sets.size();
-        Log::debug("adding new descriptor set (set index = ", index, ") to descriptor pool (pool handle: ", pool, ")");
-        sets.push_back(descriptor_set.set);
-        return index;
-    }
-
-private:
-    VkDescriptorPool pool = nullptr;
-    VkDevice logical = nullptr;
-    std::vector<VkDescriptorSet> sets;
-    uint32_t max_sets = 0;
-};
-
 // DescriptorSets hold binding information for shader resources
 class DescriptorSet {
     friend class DescriptorPool;
@@ -2930,7 +2831,7 @@ public:
         layout_create_info.pNext = NULL;
         layout_create_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
         layout_create_info.pBindings = layout_bindings.data();
-        layout_create_info.bindingCount = layout_bindings.size();
+        layout_create_info.bindingCount = static_cast<uint32_t>(layout_bindings.size());
         VkResult result = vkCreateDescriptorSetLayout(logical, &layout_create_info, nullptr, &layout);
         if (result == VK_SUCCESS) {
             Log::info("descriptor set layout created (", layout_bindings.size(), " bindings, layout handle : ", layout, ")");
@@ -3013,7 +2914,7 @@ public:
         Log::debug("binding image view ", image_view.get(), " to descriptor set (handle: ", set, ") at binding index ", binding_index);
 
         // Store the image view and sampler for updating the descriptor set later
-        ImageBindingInfo image_binding; // = custom struct, not part of the Vulkan API
+        ImageBindingInfo image_binding = {}; // = custom struct, not part of the Vulkan API
         image_binding.binding_index = binding_index;
         image_binding.image_view = image_view.get();
         image_binding.sampler = sampler.get();
@@ -3164,6 +3065,130 @@ protected:
     bool layout_finalized = false;
 };
 
+// DescriptorPool manages descriptor sets and their memory allocation
+class DescriptorPool {
+    friend class DescriptorSet;
+public:
+    // constructor
+    DescriptorPool() = delete;
+    DescriptorPool(const Device& device, const uint32_t max_sets = 20, const std::vector<VkDescriptorPoolSize>& pool_sizes = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20}}) {
+        this->logical = device.get_logical();
+        this->max_sets = max_sets;
+
+        // setup create info
+        VkDescriptorPoolCreateInfo create_info = {};
+        create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        create_info.maxSets = max_sets;
+        create_info.pPoolSizes = pool_sizes.data();
+        create_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
+        create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        create_info.pNext = NULL;
+
+        // Create the descriptor pool
+        VkResult result = vkCreateDescriptorPool(logical, &create_info, nullptr, &pool);
+        if (result == VK_SUCCESS) {
+            Log::debug("successfully created descriptor pool (handle: ", pool, ")");
+        }
+        else {
+            Log::error("failed to create descriptor pool (VkResult =  ", result, ")");
+        }
+    }
+
+    // destructor
+    ~DescriptorPool() {
+        if (pool != nullptr) {
+            release_sets();
+            vkDestroyDescriptorPool(logical, pool, nullptr);
+            pool = nullptr;
+        }
+    }
+
+    // move constructor
+    DescriptorPool(DescriptorPool&& other) noexcept
+        : pool(std::exchange(other.pool, nullptr)),
+        logical(std::exchange(other.logical, nullptr)),
+        sets(std::move(other.sets)),
+        max_sets(other.max_sets) {
+        if (pool != nullptr) {
+            Log::info("descriptor pool moved (handle: ", pool, ")");
+        }
+    }
+
+    // move assignment
+    DescriptorPool& operator=(DescriptorPool&& other) noexcept {
+        if (this != &other) {
+            if (pool != nullptr) {
+                Log::info("move assignment operation: destroying previous descriptor pool (handle: ", pool, ")");
+                vkDestroyDescriptorPool(logical, pool, nullptr);
+                pool = nullptr;
+            }
+            pool = std::exchange(other.pool, nullptr);
+            logical = std::exchange(other.logical, nullptr);
+            sets = std::move(other.sets);
+            max_sets = other.max_sets;
+            if (pool != nullptr) {
+                Log::info("descriptor pool moved to 'this' (handle: ", pool, ")");
+            }
+        }
+        return *this;
+    }
+
+    // deleted copy constructor and assignment
+    DescriptorPool(const DescriptorPool&) = delete;
+    DescriptorPool& operator=(const DescriptorPool&) = delete;
+
+    // getters
+    VkDescriptorPool get() const { return pool; }
+    const std::vector<VkDescriptorSet>& get_sets() const { return sets; }
+    uint32_t get_max_sets() const { return max_sets; }
+    uint32_t get_current_sets_count() const { return uint32_t(sets.size()); }
+
+    // releases all descriptor sets from the pool
+    void release_sets() {
+        if (sets.empty()) { return; }
+        VkResult result = vkFreeDescriptorSets(logical, pool, sets.size(), sets.data());
+        if (result == VK_SUCCESS) {
+            Log::debug("all descriptor sets removed from pool, memory allocation freed");
+        }
+        else {
+            Log::warning("failed to remove descriptor sets from pool (VkResult = ", result, ")");
+        }
+        sets.clear();
+    }
+
+    // allocates a new descriptor set to the pool and returns its index
+    uint32_t allocate_set(DescriptorSet& descriptor_set) {
+        if (sets.size() >= max_sets) {
+            Log::error("in method DescriptorPool::allocate_set(): max number of sets for this pool is ", max_sets, " (as defined by the pool constructor) and has been reached; no more descriptor sets can be added");
+        }
+        if (!descriptor_set.layout_finalized) {
+            Log::info("in method DescriptorPool::allocate_set(): descriptor set layout has not been finalized yet; finalizing now");
+            descriptor_set.finalize_layout();
+        }
+        VkDescriptorSetAllocateInfo allocate_info = {};
+        allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocate_info.descriptorPool = pool;
+        allocate_info.descriptorSetCount = 1;
+        allocate_info.pSetLayouts = &descriptor_set.layout;
+        VkResult result = vkAllocateDescriptorSets(logical, &allocate_info, &descriptor_set.set);
+        if (result != VK_SUCCESS) {
+            Log::error("failed to allocate descriptor set (VkResult ", result, ")");
+        }
+        uint32_t index = static_cast<uint32_t>(sets.size());
+        Log::debug("adding new descriptor set (set index = ", index, ") to descriptor pool (pool handle: ", pool, ")");
+        sets.push_back(descriptor_set.set);
+        return index;
+    }
+
+private:
+    VkDescriptorPool pool = nullptr;
+    VkDevice logical = nullptr;
+    std::vector<VkDescriptorSet> sets;
+    uint32_t max_sets = 0;
+};
+
+
+
 class GraphicsPipeline {
 public:
     // constructor
@@ -3193,7 +3218,7 @@ public:
         // setup vertex shader stage
         std::vector<VkPipelineShaderStageCreateInfo> shader_stage_create_info;
         if (vertex_shader_module.get() != nullptr) {
-            uint32_t i = shader_stage_create_info.size();
+            uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
             shader_stage_create_info.push_back({});
             shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
             shader_stage_create_info[i].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -3203,7 +3228,7 @@ public:
 
         // setup fragement shader stage
         if (fragment_shader_module.has_value() && fragment_shader_module.value().get() != nullptr) {
-            uint32_t i = shader_stage_create_info.size();
+            uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
             shader_stage_create_info.push_back({});
             shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
             shader_stage_create_info[i].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -3212,14 +3237,14 @@ public:
         }
 
         // add shader stage infos to pipeline create info
-        pipeline_create_info.stageCount = shader_stage_create_info.size();
+        pipeline_create_info.stageCount = static_cast<uint32_t>(shader_stage_create_info.size());
         pipeline_create_info.pStages = shader_stage_create_info.data();
 
         // setup tesselation stage
         VkPipelineTessellationStateCreateInfo tessellation_state_create_info = {};
         if (hull_shader_module.has_value() && domain_shader_module.has_value()) {
             if (hull_shader_module.value().get() != nullptr) {
-                uint32_t i = shader_stage_create_info.size();
+                uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
                 shader_stage_create_info.push_back({});
                 shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
                 shader_stage_create_info[i].stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
@@ -3228,7 +3253,7 @@ public:
             }
 
             if (fragment_shader_module.has_value() && fragment_shader_module.value().get() != nullptr) {
-                uint32_t i = shader_stage_create_info.size();
+                uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
                 shader_stage_create_info.push_back({});
                 shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
                 shader_stage_create_info[i].stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
@@ -3389,7 +3414,7 @@ public:
         // finalize graphics pipeline
         pipeline_create_info.renderPass = renderpass.get();
         pipeline_create_info.subpass = renderpass.get_subpass_count() > 0 ? subpass_index : 0;
-        VkResult result = vkCreateGraphicsPipelines(logical, 0, 1, &pipeline_create_info, nullptr, &pipeline);
+        result = vkCreateGraphicsPipelines(logical, 0, 1, &pipeline_create_info, nullptr, &pipeline);
         if (result == VK_SUCCESS) {
             Log::info("graphics pipeline successfully created");
         }
@@ -3895,7 +3920,7 @@ public:
         std::optional<std::vector<BufferMemoryBarrier<T>>>& buffer_memory_barriers,
         std::optional<std::vector<ImageMemoryBarrier>>& image_memory_barriers
     ) {
-        VkDependendyInfo dependency_info = {};
+        VkDependencyInfo dependency_info = {};
         dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dependency_info.pNext = nullptr;
 
@@ -3904,7 +3929,7 @@ public:
             uint32_t barriers_count = device_memory_barriers.value().size();
             std::vector<VkMemoryBarrier2> barrier_handles(barriers_count);
             for (uint32_t i = 0; i < barriers_count; i++) {
-                barrier_handles[i] = device_memory_barriers.value().[i].get();
+                barrier_handles[i] = device_memory_barriers.value()[i].get();
             }
             dependency_info.memoryBarrierCount = barriers_count;
             dependency_info.pMemoryBarriers = barrier_handles.data();
@@ -3919,7 +3944,7 @@ public:
             uint32_t barriers_count = buffer_memory_barriers.value().size();
             std::vector<VkBufferMemoryBarrier2> barrier_handles(barriers_count);
             for (uint32_t i = 0; i < barriers_count; i++) {
-                barrier_handles[i] = buffer_memory_barriers.value().[i].get();
+                barrier_handles[i] = buffer_memory_barriers.value()[i].get();
             }
             dependency_info.bufferMemoryBarrierCount = barriers_count;
             dependency_info.pBufferMemoryBarriers = barrier_handles.data();
@@ -4021,7 +4046,7 @@ public:
         rendering_info.renderArea = {offset, extent}; // VkRect2D
         rendering_info.layerCount = 1;
         rendering_info.viewMask = 0; // =multiview disabled by default
-        rendering_info.colorAttachmentCount = color_attachments.size();
+        rendering_info.colorAttachmentCount = static_cast<uint32_t>(color_attachments.size());
         rendering_info.pColorAttachments = color_attachments.data();
         rendering_info.pDepthAttachment = &depth_attachment;
         rendering_info.pStencilAttachment = &stencil_attachment;
@@ -4033,7 +4058,7 @@ public:
         renderpass_begin_info.pNext = NULL;
         renderpass_begin_info.renderPass = renderpass.get();
         renderpass_begin_info.renderArea = {offset, extent}; // VkRect2D
-        renderpass_begin_info.clearValueCount = clear_value.size();
+        renderpass_begin_info.clearValueCount = static_cast<uint32_t>(clear_value.size());
         renderpass_begin_info.pClearValues = clear_value.data();
 
         subpass_begin_info.sType = VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO;
