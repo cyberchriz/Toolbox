@@ -1,0 +1,107 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer result_buffer {float result[];};
+layout(set = 0, binding = 2) buffer global_result_buffer {float global_result[];};
+
+// setup push constants
+layout(push_constant) uniform push_constants {
+    uint N;
+    float z_score;
+    float default_value;
+};
+
+// shared variables
+shared float local_result[gl_WorkGroupSize.x];
+shared float total_mean;
+shared float sigma;
+
+// main function
+void main() {
+
+    if (gl_GlobalInvocationID.x < N) {
+        
+        // Local Reduction for mean calculation
+        local_result[gl_LocalInvocationID.x] = data[gl_GlobalInvocationID.x] / N;
+        groupMemoryBarrier();
+        for (uint stride = gl_WorkGroupSize.x / 2; stride > 0; stride /= 2) {
+            if (gl_LocalInvocationID.x < stride) {
+                if (gl_GlobalInvocationID.x + stride < N) {
+                    local_result[gl_LocalInvocationID.x] = local_result[gl_LocalInvocationID.x] + local_result[gl_LocalInvocationID.x + stride];
+                }
+            }
+            groupMemoryBarrier();
+        }
+
+        // store local mean
+        if (gl_LocalInvocationID.x == 0) {
+            global_result[gl_WorkGroupID.x] = local_result[0];
+        }
+        barrier();
+
+        // Global Reduction for mean calculation
+        for (uint stride = gl_NumWorkGroups.x / 2; stride > 0 ; stride /= 2) {
+            if (gl_GlobalInvocationID.x < stride) {
+                global_result[gl_GlobalInvocationID.x] = global_result[gl_GlobalInvocationID.x] + global_result[gl_GlobalInvocationID.x + stride];
+            }
+            barrier();
+        }
+
+        // store final result for mean
+        if (gl_LocalInvocationID.x == 0) {
+            total_mean = global_result[0];
+        }
+        groupMemoryBarrier();
+
+        
+        // Local Reduction for sum of squared mean deviations
+        float mdev = data[gl_GlobalInvocationID.x] - total_mean;
+        local_result[gl_LocalInvocationID.x] = (mdev * mdev) / N;
+        groupMemoryBarrier();
+        for (uint stride = gl_WorkGroupSize.x / 2; stride > 0; stride /= 2) {
+            if (gl_LocalInvocationID.x < stride) {
+                if (gl_GlobalInvocationID.x + stride < N) {
+                    local_result[gl_LocalInvocationID.x] = local_result[gl_LocalInvocationID.x] + local_result[gl_LocalInvocationID.x + stride];
+                }
+            }
+            groupMemoryBarrier();
+        }
+
+        // store local sum of squared mean deviations
+        if (gl_LocalInvocationID.x == 0) {
+            global_result[gl_WorkGroupID.x] = local_result[0];
+        }
+        barrier();
+
+        // Global Reduction for mean calculation
+        for (uint stride = gl_NumWorkGroups.x / 2; stride > 0 ; stride /= 2) {
+            if (gl_GlobalInvocationID.x < stride) {
+                global_result[gl_GlobalInvocationID.x] = global_result[gl_GlobalInvocationID.x] + global_result[gl_GlobalInvocationID.x + stride];
+            }
+            barrier();
+        }
+
+        // store final result for sigma
+        if (gl_LocalInvocationID.x == 0) {
+            sigma = sqrt(global_result[0]);
+        }
+        groupMemoryBarrier();
+
+        // get final result for outlier treatment
+        float val = data[gl_GlobalInvocationID.x];
+        if (val > z_score * sigma || val < -(z_score * sigma)) {
+            result[gl_GlobalInvocationID.x] = default_value;
+        }
+        else {
+            result[gl_GlobalInvocationID.x] = val;
+        }
+    }
+}

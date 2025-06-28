@@ -18,34 +18,18 @@ layout(push_constant) uniform push_constants {
     uint seed;
 };
 
-// Simple random float function based on seed
+// pseudo-random number generator as a "Permuted Congruential Generator" (PCG);
+// results are in range [0,1]
 float random(uint seed) {
-    uint state = seed;
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return float(state & 0xFFFFFFFF) / 4294967295.0;
-}
-
-// Marsaglia polar method
-float randomGaussian(uint seed, float mu, float sigma) {
-    float v1, v2, s;
-    do {
-        v1 = 2.0f * random(seed) - 1.0f;
-        v2 = 2.0f * random(seed+12345)  - 1.0f;
-        s = v1 * v1 + v2 * v2;
-    } while (s >= 1.0f || s == 0);
-
-    s = sqrt((-2.0f * log(s)) / s);
- 
-    return v1 * s * sigma + mu;
+    uint state = seed * 747795U + 2891234U;
+    uint word = ((state >> ((state >> 28U) + 4U)) ^ state) * 2778037U;
+    return float(((word >> 22U) ^ word) & 0xFFFFFFFF) / 4294967295.0;
 }
 
 // main function
 void main() {
     if (gl_GlobalInvocationID.x < N) {
         // adding the workgroup id to the seed in order to get a different seed for each workgroup
-        data[gl_GlobalInvocationID.x] = randomGaussian(seed + gl_GlobalInvocationID.x, 0, 1) * sqrt(6.0 / sqrt(fan_in + fan_out));
+        data[gl_GlobalInvocationID.x] = (random(seed + gl_GlobalInvocationID.x) - 0.5) * 8.0 * sqrt(6.0 / sqrt(fan_in + fan_out));
     }
-
 }

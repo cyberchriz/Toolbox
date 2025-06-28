@@ -9,7 +9,6 @@
 
 #ifndef CUMULATIVE_DISTRIBUTION_FUNCTIONS_H
 #define CUMULATIVE_DISTRIBUTION_FUNCTIONS_H
-#pragma once
 
 #include <cmath>
 
@@ -21,11 +20,11 @@ namespace cdf {
     constexpr double SQRT_2 = 1.41421356237309504880;
 
     // functions
-    template<typename T> static T gaussian(T x_val, T mu=0, T sigma=1);
-    template<typename T> static T cauchy(T x_val, T x_peak=0, T gamma=1);
-    template<typename T> static T laplace(T x_val,T mu=0, T sigma=1);
-    template<typename T> static T pareto(T x_val, T alpha=1, T tail_index=1);
-    template<typename T> static T lomax(T x_val,T alpha=1, T tail_index=1);
+    template<typename T> static T gaussian(T x_val, T mu = 0, T sigma = 1);
+    template<typename T> static T cauchy(T x_val, T x_peak = 0, T gamma = 1);
+    template<typename T> static T laplace(T x_val, T mu = 0, T sigma = 1);
+    template<typename T> static T pareto(T x_val, T alpha = 1, T tail_index = 1);
+    template<typename T> static T lomax(T x_val, T alpha = 1, T tail_index = 1);
     template<typename T> static T F_distribution(T x_val, T d1, T d2);
 
 
@@ -56,14 +55,12 @@ namespace cdf {
     // the scale_factor is sigma/sqrt(2)=0.707106781 by default
     template<typename T>
     T laplace(T x_val, T mu, T sigma) {
-        static double scale_factor= 0.707106781;
+        static double scale_factor = 0.707106781;
         scale_factor = sigma / SQRT_2;
-        if (x_val < mu)
-        {
+        if (x_val < mu) {
             return 0.5 * exp((x_val - mu) / scale_factor);
         }
-        else
-        {
+        else {
             return 1 - 0.5 * exp(-(x_val - mu) / scale_factor);
         }
     }
@@ -76,12 +73,10 @@ namespace cdf {
     // note: not defined for x<=0!!
     template<typename T>
     T pareto(T x_val, T alpha, T tail_index) {
-        if (x_val >= tail_index)
-        {
+        if (x_val >= tail_index) {
             return 1 - pow(tail_index / x_val, alpha);
         }
-        else
-        {
+        else {
             return 0;
         }
     }

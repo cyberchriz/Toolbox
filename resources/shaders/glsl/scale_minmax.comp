@@ -1,0 +1,75 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer result_buffer {float result[];};
+layout(set = 0, binding = 2) buffer global_minima_buffer {float global_minima[];};
+layout(set = 0, binding = 3) buffer global_maxima_buffer {float global_maxima[];};
+
+// setup push constants
+layout(push_constant) uniform push_constants {
+    uint N;
+    float range_from;
+    float range_to;
+};
+
+// shared variables
+shared float local_minima[gl_WorkGroupSize.x];
+shared float local_maxima[gl_WorkGroupSize.x];
+shared float total_min;
+shared float total_max;
+
+// main function
+void main() {
+
+    if (gl_GlobalInvocationID.x < N) {
+        
+        // Local Reduction
+        local_minima[gl_LocalInvocationID.x] = data[gl_GlobalInvocationID.x];
+        local_maxima[gl_LocalInvocationID.x] = data[gl_GlobalInvocationID.x];
+        groupMemoryBarrier();
+        for (uint stride = gl_WorkGroupSize.x / 2; stride > 0; stride /= 2) {
+            if (gl_LocalInvocationID.x < stride) {
+                if (gl_GlobalInvocationID.x + stride < N) {
+                    local_minima[gl_LocalInvocationID.x] = min(local_minima[gl_LocalInvocationID.x], local_minima[gl_LocalInvocationID.x + stride]);
+                    local_maxima[gl_LocalInvocationID.x] = max(local_minima[gl_LocalInvocationID.x], local_minima[gl_LocalInvocationID.x + stride]);
+                }
+            }
+            groupMemoryBarrier();
+        }
+
+        // store local minimum into local_results_buffer
+        if (gl_LocalInvocationID.x == 0) {
+            global_minima[gl_WorkGroupID.x] = local_minima[0];
+            global_maxima[gl_WorkGroupID.x] = local_minima[0];
+        }
+        barrier();
+
+        // Global Reduction
+        for (uint stride = gl_NumWorkGroups.x / 2; stride > 0 ; stride /= 2) {
+            if (gl_GlobalInvocationID.x < stride) {
+                global_minima[gl_GlobalInvocationID.x] = min(global_minima[gl_GlobalInvocationID.x], global_minima[gl_GlobalInvocationID.x + stride]);
+                global_maxima[gl_GlobalInvocationID.x] = max(global_minima[gl_GlobalInvocationID.x], global_maxima[gl_GlobalInvocationID.x + stride]);
+            }
+            barrier();
+        }
+
+        // store final results for min and max
+        if (gl_LocalInvocationID.x == 0) {
+            total_min = global_minima[0];
+            total_max = global_maxima[0];
+        }
+        groupMemoryBarrier();
+
+        float data_range = total_max - total_min;
+        float result_range = range_to - range_from;
+        result[gl_GlobalInvocationID.x] = ((data[gl_GlobalInvocationID.x] - total_min) / data_range) * result_range + range_from;
+    }
+}

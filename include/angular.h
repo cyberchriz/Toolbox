@@ -1,6 +1,5 @@
 #ifndef ANGULAR_H
 #define ANGULAR_H
-#pragma once
 
 #include <cmath>
 #include <log.h>

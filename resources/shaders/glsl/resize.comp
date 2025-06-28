@@ -1,0 +1,62 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// default constants
+#define MAX_DIMENSIONS 10
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer data_shape_buffer {uint data_shape[];};
+layout(set = 0, binding = 2) buffer result_buffer {float result[];};
+layout(set = 0, binding = 3) buffer result_shape_buffer {uint result_shape[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint data_dim;      // number of dimensions of the data array
+    uint result_dim;    // number of dimensions of the result array
+    uint data_N;        // total number of elements in the source array
+    uint result_N;      // total number of elements in the result array
+    float default_value;
+};
+
+// setup global variables
+uint data_array_index[MAX_DIMENSIONS];
+
+
+// main function
+void main() {
+    if (gl_GlobalInvocationID.x < result_N) {
+        // get multidimensional index of 'result' for the current invocation
+        uint result_flat_index = gl_GlobalInvocationID.x;
+        uint result_array_index[MAX_DIMENSIONS];
+        for (int i = int(result_dim) - 1; i >= 0; --i) {
+            result_array_index[i] = result_flat_index % result_shape[i];
+            result_flat_index = result_flat_index / result_shape[i];
+        }
+
+        // get corresponding flat index of the 'data' array
+        uint data_flat_index = 0;
+        for (uint i = 0; i < data_dim; i++) {
+            if (i < result_dim) {
+                data_flat_index = data_flat_index * data_shape[i] + result_array_index[i];
+            }
+            else {
+                data_flat_index = 4294967295; // UINT_MAX
+                break;
+            }
+        }
+        if (data_flat_index < data_N) {
+            result[gl_GlobalInvocationID.x] = data[data_flat_index];
+        }
+        else {
+            result[gl_GlobalInvocationID.x] = default_value;
+        }
+    }
+}
+

@@ -1,0 +1,48 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+#define PI 3.141592653589793
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N;
+    uint fan_in;
+    uint fan_out;
+    uint seed;
+};
+
+// Combined PCG Gaussian random float function
+float random_gaussian(uint seed, float mean, float stdDev) {
+    // PCG Hash for the first uniform number
+    uint state1 = seed * 747795U + 2891234U;
+    uint word1 = ((state1 >> ((state1 >> 28U) + 4U)) ^ state1) * 2778037U;
+    float u1 = float(((word1 >> 22U) ^ word1) & 0xFFFFFFFF) / 4294967295.0;
+
+    // PCG Hash for the second uniform number (using a slightly different seed)
+    uint state2 = (seed + 1U) * 747795U + 2891234U;
+    uint word2 = ((state2 >> ((state2 >> 28U) + 4U)) ^ state2) * 2778037U;
+    float u2 = float(((word2 >> 22U) ^ word2) & 0xFFFFFFFF) / 4294967295.0;
+
+    // Box-Muller transform
+    float z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * PI * u2);
+
+    // Scale and shift to the desired mean and standard deviation
+    return mean + stdDev * z0;
+}
+
+// main function
+void main() {
+    if (gl_GlobalInvocationID.x < N) {
+        // adding the workgroup id to the seed in order to get a different seed for each workgroup
+        data[gl_GlobalInvocationID.x] = random_gaussian(seed + gl_GlobalInvocationID.x, 0, 1) * sqrt(6.0 / sqrt(fan_in + fan_out));
+    }
+
+}

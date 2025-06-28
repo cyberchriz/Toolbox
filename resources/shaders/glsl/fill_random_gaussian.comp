@@ -2,6 +2,7 @@
 // author: Christian Suer (github: 'cyberchriz')
 
 #version 450 core
+#define PI 3.141592653589793
 
 // setup specialization constants
 // in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
@@ -18,33 +19,29 @@ layout(push_constant) uniform push_constants {
     float sigma;
 };
 
-// Simple random float function based on seed
-float random(uint seed) {
-    uint state = seed;
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return float(state & 0xFFFFFFFF) / 4294967295.0;
-}
+// Combined PCG Gaussian random float function
+float random_gaussian(uint seed, float mean, float stdDev) {
+    // PCG Hash for the first uniform number
+    uint state1 = seed * 747795U + 2891234U;
+    uint word1 = ((state1 >> ((state1 >> 28U) + 4U)) ^ state1) * 2778037U;
+    float u1 = float(((word1 >> 22U) ^ word1) & 0xFFFFFFFF) / 4294967295.0;
 
-// Marsaglia polar method
-float randomGaussian(uint seed, float mu, float sigma) {
-    float v1, v2, s;
-    do {
-        v1 = 2.0f * random(seed) - 1.0f;
-        v2 = 2.0f * random(seed+12345)  - 1.0f;
-        s = v1 * v1 + v2 * v2;
-    } while (s >= 1.0f || s == 0);
+    // PCG Hash for the second uniform number (using a slightly different seed)
+    uint state2 = (seed + 1U) * 747795U + 2891234U;
+    uint word2 = ((state2 >> ((state2 >> 28U) + 4U)) ^ state2) * 2778037U;
+    float u2 = float(((word2 >> 22U) ^ word2) & 0xFFFFFFFF) / 4294967295.0;
 
-    s = sqrt((-2.0f * log(s)) / s);
- 
-    return v1 * s * sigma + mu;
+    // Box-Muller transform
+    float z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * PI * u2);
+
+    // Scale and shift to the desired mean and standard deviation
+    return mean + stdDev * z0;
 }
 
 // main function
 void main() {
     if (gl_GlobalInvocationID.x < N) {
         // adding the seed to the global invocation ID to ensure different random numbers for each invocation
-        data[gl_GlobalInvocationID.x] = randomGaussian(seed + gl_GlobalInvocationID.x, mu, sigma);
+        data[gl_GlobalInvocationID.x] = random_gaussian(seed + gl_GlobalInvocationID.x, mu, sigma);
     }
 }

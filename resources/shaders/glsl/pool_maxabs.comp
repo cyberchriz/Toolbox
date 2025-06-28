@@ -1,0 +1,75 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// default constants
+#define MAX_DIMENSIONS 10
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer data_shape_buffer {uint data_shape[];};
+layout(set = 0, binding = 2) buffer window_shape_buffer {uint window_shape[];};
+layout(set = 0, binding = 3) buffer result_shape_buffer {uint result_shape[];};
+layout(set = 0, binding = 4) buffer result_buffer {float result[];};
+layout(set = 0, binding = 5) buffer stride_buffer {uint stride[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint dimensions;
+    uint data_N;
+    uint result_N;
+    uint window_N;
+};
+
+// main function
+void main() {
+    if (gl_GlobalInvocationID.x < result_N) {
+
+        // define local arrays
+        uint result_array_index[MAX_DIMENSIONS];
+        uint window_array_index[MAX_DIMENSIONS];
+        uint data_array_index[MAX_DIMENSIONS];
+
+        // get multidimensional index of current item of 'result'
+        uint result_flat_index = gl_GlobalInvocationID.x;
+        for (int i = int(dimensions) - 1; i >= 0; --i) {
+            result_array_index[i] = result_flat_index % result_shape[i];
+            result_flat_index = result_flat_index / result_shape[i];
+        }
+
+        // cycle over all window elements and retrieve the maximum absolute value within this current window of interest
+        float max_value;
+        for (uint i = 0; i < window_N; i++) {
+
+            // calculate the multidimensional index of the current window element
+            uint window_flat_index = i;
+            for (int j = int(dimensions) - 1; j >= 0; --j) {
+                window_array_index[j] = window_flat_index % window_shape[j];
+                window_flat_index = window_flat_index / window_shape[j];
+            }
+
+            // calculate the corresponding data index for the current window element
+            // (whilst making sure to not exceed the data shape boundaries)
+            for (uint j = 0; j < dimensions; j++) {
+                data_array_index[j] = min(result_array_index[j] * stride[j] + window_array_index[j], data_shape[j] - 1);
+            }
+
+            // calculate the flat index of the data element
+            uint data_flat_index = 0;
+            for (uint j = 0; j < dimensions; j++) {
+                data_flat_index = data_flat_index * data_shape[j] + data_array_index[j];
+            }
+
+            // get the max absolute value within the current window of interest
+            max_value = i == 0 ? abs(data[data_flat_index]) : max(max_value, abs(data[data_flat_index]));
+        }
+
+        // write the max absolute value to the result buffer
+        result[gl_GlobalInvocationID.x] = max_value;
+    }
+}

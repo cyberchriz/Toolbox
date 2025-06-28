@@ -1,22 +1,43 @@
 ﻿{
-    "configurations": [
+  "configurations": [
+    {
+      "name": "x64-Debug",
+      "generator": "Ninja",
+      "configurationType": "Debug",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "variables": [
         {
-            "name": "x64-Debug",
-            "generator": "Ninja",
-            "configurationType": "Debug",
-            "inheritEnvironments": [ "msvc_x64_x64" ],
-            "buildRoot": "${projectDir}\\out\\build\\${name}",
-            "installRoot": "${projectDir}\\out\\install\\${name}",
-            "cmakeCommandArgs": "",
-            "buildCommandArgs": "",
-            "ctestCommandArgs": "",
-            "variables": [
-                {
-                    "name": "COMPILE_GLSL_SHADERS",
-                    "value": "True",
-                    "type": "BOOL"
-                }
-            ]
+          "name": "COMPILE_GLSL_SHADERS",
+          "value": "True",
+          "type": "BOOL"
+        },
+        {
+          "name": "PROJECT_CPP_STANDARD",
+          "value": "20",
+          "type": "STRING"
+        },
+        {
+          "name": "CMAKE_VERBOSE_MAKEFILE",
+          "value": "True",
+          "type": "BOOL"
         }
-    ]
+      ]
+    },
+    {
+      "name": "x64-Release",
+      "generator": "Ninja",
+      "configurationType": "Release",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "msvc_x64_x64" ]
+    }
+  ]
 }

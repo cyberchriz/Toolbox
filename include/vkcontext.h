@@ -8,24 +8,24 @@ Summary of a typical Vulkan workflow
 2. Physical Device selection and creation of an associated logical device               class Device
 3. Surface creation                                                                     class Surface
 4. Swapchain creation (to manage image presentation)                                    class Swapchain
-        ImageView creation
-        FrameBuffer creation
+		ImageView creation
+		FrameBuffer creation
 5. RenderPass creation (defines rendering operations and attachments)                   class RenderPass
 6. Pipeline creation                                                                    class GraphicsPipeline, ComputePipeline, TransferPipeline
-        DescritorPool creation                                                          class DescriptorPool
-        DescriptorSets creation                                                         class DescriptorSet
-        bind buffers (index / vertex / storage) to DescriptorSets                       method DescriptorSet::bind_buffer()
-        load Shaders                                                                    class ShaderModule
-        VertexDescriptions                                                              class VertexDescriptions
+		DescritorPool creation                                                          class DescriptorPool
+		DescriptorSets creation                                                         class DescriptorSet
+		bind buffers (index / vertex / storage) to DescriptorSets                       method DescriptorSet::bind_buffer()
+		load Shaders                                                                    class ShaderModule
+		VertexDescriptions                                                              class VertexDescriptions
 7. CommandPool allocation                                                               class CommandPool
 8. CommandBuffer allocations (to record rendering commands)                             class CommandBuffer
 9. main loop (repeat)
-        Data Buffer allocations (vertex / index / storage buffers)                      class Buffer
-        CommandBuffer recording
-            begin render pass                                                           method CommandBuffer::begin_renderpass()
-            bind pipeline                                                               method CommandBuffer::bind_pipeline()
-            draw commands                                                               method CommandBuffer::draw()
-        Submit CommandBuffer to Queue                                                   method CommandBuffer::submit()
+		Data Buffer allocations (vertex / index / storage buffers)                      class Buffer
+		CommandBuffer recording
+			begin render pass                                                           method CommandBuffer::begin_renderpass()
+			bind pipeline                                                               method CommandBuffer::bind_pipeline()
+			draw commands                                                               method CommandBuffer::draw()
+		Submit CommandBuffer to Queue                                                   method CommandBuffer::submit()
 10. Clean-Up (release resources)
 
 helper classes for signaling: Event, Fence, Semaphore
@@ -34,7 +34,6 @@ This library also comes with the option to handle Instance, Device and CommandPo
 */
 
 // include headers
-#pragma once // not strictly necessary if the included header files also all come with include guards, but just to be on the safe side
 #define NOMINMAX
 #include "log.h"
 #include <cmath>
@@ -102,34 +101,34 @@ class ImageMemoryBarrier;
 
 // global enums
 enum BufferUsage {
-    VERTEX_BUFFER,
-    STORAGE_BUFFER,
-    UNIFORM_BUFFER,
-    INDEX_BUFFER,
-    TRANSFER_BUFFER
+	VERTEX_BUFFER,
+	STORAGE_BUFFER,
+	UNIFORM_BUFFER,
+	INDEX_BUFFER,
+	TRANSFER_BUFFER
 };
 
 enum DescriptorType {
-    UNIFORM_BUFFER_DESCRIPTOR,
-    STORAGE_BUFFER_DESCRIPTOR,
-    STORAGE_IMAGE_DESCRIPTOR,
-    SAMPLED_IMAGE_DESCRIPTOR,
-    COMBINED_IMAGE_SAMPLER_DESCRIPTOR
+	UNIFORM_BUFFER_DESCRIPTOR,
+	STORAGE_BUFFER_DESCRIPTOR,
+	STORAGE_IMAGE_DESCRIPTOR,
+	SAMPLED_IMAGE_DESCRIPTOR,
+	COMBINED_IMAGE_SAMPLER_DESCRIPTOR
 };
 
 enum QueueFamily {
-    GRAPHICS_QUEUE,
-    COMPUTE_QUEUE,
-    TRANSFER_QUEUE,
-    UNKNOWN_QUEUE
+	GRAPHICS_QUEUE,
+	COMPUTE_QUEUE,
+	TRANSFER_QUEUE,
+	UNKNOWN_QUEUE
 };
 
 enum AttachmentType {
-    INPUT_TYPE,
-    COLOR_TYPE,
-    DEPTH_TYPE,
-    RESOLVE_TYPE,
-    PRESERVE_TYPE
+	INPUT_TYPE,
+	COLOR_TYPE,
+	DEPTH_TYPE,
+	RESOLVE_TYPE,
+	PRESERVE_TYPE
 };
 
 /// class for managing a Vulkan Instance,
@@ -137,4196 +136,4296 @@ enum AttachmentType {
 class Instance {
 public:
 
-    // default constructor
-    Instance() {
-        application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        // set defaults for application name, engine name and API version,
-        // i.e. in case the user doesn't set them explicitly
-        application_info.pApplicationName = "Vulkan Application";
-        application_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-        application_info.pEngineName = "Generic";
-        application_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        application_info.apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 0);
-    }
+	// default constructor
+	Instance() {
+		application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		// set defaults for application name, engine name and API version,
+		// i.e. in case the user doesn't set them explicitly
+		application_info.pApplicationName = "Vulkan Application";
+		application_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+		application_info.pEngineName = "Generic";
+		application_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+		application_info.apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 0);
+	}
 
-    // move constructor
-    Instance(Instance&& other) noexcept {
-        this->instance = std::exchange(other.instance, nullptr);
-        this->application_info = std::move(other.application_info);
-        this->extensions = std::move(other.extensions);
-        this->layers = std::move(other.layers);
-        // Reset 'other' instance
-        other.instance = nullptr;
-    }
+	// move constructor
+	Instance(Instance&& other) noexcept {
+		this->instance = std::exchange(other.instance, nullptr);
+		this->application_info = std::move(other.application_info);
+		this->extensions = std::move(other.extensions);
+		this->layers = std::move(other.layers);
+		// Reset 'other' instance
+		other.instance = nullptr;
+	}
 
-    // move assignment
-    Instance& operator=(Instance&& other) noexcept {
-        if (this != &other) {
-            // Release resources held by the current object
-            if (instance != nullptr) {
-                vkDestroyInstance(instance, nullptr);
-                instance = nullptr;
-                Log::info("[OLD INSTANCE DESTROYED]");
-            }
-            // Move resources from the 'other' object
-            instance = std::exchange(other.instance, nullptr);
-            application_info = std::move(other.application_info);
-            extensions = std::move(other.extensions);
-            layers = std::move(other.layers);
-            // Reset the 'other' object's managed resource
-            other.instance = nullptr;
-        }
-        return *this;
-    }
+	// move assignment
+	Instance& operator=(Instance&& other) noexcept {
+		if (this != &other) {
+			// Release resources held by the current object
+			if (instance != nullptr) {
+				vkDestroyInstance(instance, nullptr);
+				instance = nullptr;
+				Log::info("[OLD INSTANCE DESTROYED]");
+			}
+			// Move resources from the 'other' object
+			instance = std::exchange(other.instance, nullptr);
+			application_info = std::move(other.application_info);
+			extensions = std::move(other.extensions);
+			layers = std::move(other.layers);
+			// Reset the 'other' object's managed resource
+			other.instance = nullptr;
+		}
+		return *this;
+	}
 
-    // delete copy constructors
-    Instance(const Instance&) = delete;
-    Instance& operator=(const Instance&) = delete;
+	// delete copy constructors
+	Instance(const Instance&) = delete;
+	Instance& operator=(const Instance&) = delete;
 
-    // destructor
-    ~Instance() {
-        if (instance != nullptr) {
-            vkDestroyInstance(instance, nullptr);
-            instance = nullptr;
-            Log::info("[INSTANCE DESTROYED]");
-        }
-    }
+	// destructor
+	~Instance() {
+		if (instance != nullptr) {
+			vkDestroyInstance(instance, nullptr);
+			instance = nullptr;
+			Log::info("[INSTANCE DESTROYED]");
+		}
+	}
 
-    // set application name and version
-    void set_application(const char* name = "Vulkan Application", uint32_t major_version = 1, uint32_t minor_version = 0, uint32_t patch_version = 0) {
-        application_info.pApplicationName = name;
-        application_info.applicationVersion = VK_MAKE_VERSION(major_version, minor_version, patch_version);
-    }
+	// set application name and version
+	void set_application(const char* name = "Vulkan Application", uint32_t major_version = 1, uint32_t minor_version = 0, uint32_t patch_version = 0) {
+		application_info.pApplicationName = name;
+		application_info.applicationVersion = VK_MAKE_VERSION(major_version, minor_version, patch_version);
+	}
 
-    // initialize Vulkan engine and version
-    void set_engine(const char* name = "", uint32_t major_version = 0, uint32_t minor_version = 0, uint32_t patch_version = 0) {
-        application_info.pEngineName = name;
-        application_info.engineVersion = VK_MAKE_VERSION(major_version, minor_version, patch_version);
-    }
+	// initialize Vulkan engine and version
+	void set_engine(const char* name = "", uint32_t major_version = 0, uint32_t minor_version = 0, uint32_t patch_version = 0) {
+		application_info.pEngineName = name;
+		application_info.engineVersion = VK_MAKE_VERSION(major_version, minor_version, patch_version);
+	}
 
-    // initialize Vulkan API version
-    void set_api_version(uint32_t major_version = 0, uint32_t minor_version = 0, uint32_t patch_version = 0) {
-        application_info.apiVersion = VK_MAKE_API_VERSION(0, major_version, minor_version, patch_version);
-    }
+	// initialize Vulkan API version
+	void set_api_version(uint32_t major_version = 0, uint32_t minor_version = 0, uint32_t patch_version = 0) {
+		application_info.apiVersion = VK_MAKE_API_VERSION(0, major_version, minor_version, patch_version);
+	}
 
-    // log names of available instance layers
-    void log_available_layers() {
-        if (Log::get_level() >= LogLevel::LEVEL_INFO) {
-            uint32_t count;
-            vkEnumerateInstanceLayerProperties(&count, nullptr);
-            std::vector<VkLayerProperties> properties(count);
-            vkEnumerateInstanceLayerProperties(&count, properties.data());
-            Log::info(count, " layer types available");
-            for (uint32_t i = 0; i < count; i++) {
-                Log::debug("(", i + 1, ") ", properties[i].layerName);
-            }
-        }
-    }
+	// log names of available instance layers
+	void log_available_layers() {
+		if (Log::get_level() >= LogLevel::LEVEL_INFO) {
+			uint32_t count;
+			vkEnumerateInstanceLayerProperties(&count, nullptr);
+			std::vector<VkLayerProperties> properties(count);
+			vkEnumerateInstanceLayerProperties(&count, properties.data());
+			Log::info(count, " layer types available");
+			for (uint32_t i = 0; i < count; i++) {
+				Log::debug("(", i + 1, ") ", properties[i].layerName);
+			}
+		}
+	}
 
-    // add Vulkan layers
-    void enable_layers(const std::vector<const char*>& layer_names) {
-        for (const char* name : layer_names) {
-            layers.push_back(name);
-        }
-    }
-    void enable_layer(const char* layer_name) {
-        layers.push_back(layer_name);
-    }
+	// add Vulkan layers
+	void enable_layers(const std::vector<const char*>& layer_names) {
+		for (const char* name : layer_names) {
+			layers.push_back(name);
+		}
+	}
+	void enable_layer(const char* layer_name) {
+		layers.push_back(layer_name);
+	}
 
-    // log names of available ínstance extensions
-    void log_available_extensions() const {
-        // log available extensions
-        if (Log::get_level() >= LogLevel::LEVEL_INFO) {
-            uint32_t count;
-            vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
-            std::vector<VkExtensionProperties> available_extensions(count);
-            vkEnumerateInstanceExtensionProperties(nullptr, &count, available_extensions.data());
-            Log::info(count, " instance extensions available");
-            for (uint32_t i = 0; i < count; i++) {
-                Log::debug("(", i + 1, ") ", available_extensions[i].extensionName);
-            }
-        }
-    }
+	// log names of available ínstance extensions
+	void log_available_extensions() const {
+		// log available extensions
+		if (Log::get_level() >= LogLevel::LEVEL_INFO) {
+			uint32_t count;
+			vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+			std::vector<VkExtensionProperties> available_extensions(count);
+			vkEnumerateInstanceExtensionProperties(nullptr, &count, available_extensions.data());
+			Log::info(count, " instance extensions available");
+			for (uint32_t i = 0; i < count; i++) {
+				Log::debug("(", i + 1, ") ", available_extensions[i].extensionName);
+			}
+		}
+	}
 
-    // add Vulkan extensions
-    void enable_extensions(const std::vector<const char*>& extension_names) {
-        for (const char* name : extension_names) {
-            extensions.push_back(name);
-        }
-    }
-    void enable_extension(const char* extension_name) {
-        extensions.push_back(extension_name);
-    }
+	// add Vulkan extensions
+	void enable_extensions(const std::vector<const char*>& extension_names) {
+		for (const char* name : extension_names) {
+			extensions.push_back(name);
+		}
+	}
+	void enable_extension(const char* extension_name) {
+		extensions.push_back(extension_name);
+	}
 
-    // create Vulkan instance
-    void create(VkInstanceCreateFlags flags = 0, const void* pNext = nullptr) {
-        // destroy any previous instance
-        if (instance != nullptr) {
-            vkDestroyInstance(instance, nullptr);
-            instance = nullptr;
-            Log::info("[OLD INSTANCE DESTROYED]");
-        }
+	// create Vulkan instance
+	void create(VkInstanceCreateFlags flags = 0, const void* pNext = nullptr) {
+		// destroy any previous instance
+		if (instance != nullptr) {
+			vkDestroyInstance(instance, nullptr);
+			instance = nullptr;
+			Log::info("[OLD INSTANCE DESTROYED]");
+		}
 
-        VkInstanceCreateInfo instance_create_info = {};
-        instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-        instance_create_info.enabledLayerCount = static_cast<uint32_t>(layers.size());
-        instance_create_info.ppEnabledLayerNames = layers.data();
-        instance_create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-        instance_create_info.ppEnabledExtensionNames = extensions.data();
-        instance_create_info.pNext = pNext;
-        instance_create_info.flags = flags;
-        instance_create_info.pApplicationInfo = &application_info;
+		VkInstanceCreateInfo instance_create_info = {};
+		instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+		instance_create_info.enabledLayerCount = static_cast<uint32_t>(layers.size());
+		instance_create_info.ppEnabledLayerNames = layers.data();
+		instance_create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+		instance_create_info.ppEnabledExtensionNames = extensions.data();
+		instance_create_info.pNext = pNext;
+		instance_create_info.flags = flags;
+		instance_create_info.pApplicationInfo = &application_info;
 
-        VkResult result = vkCreateInstance(&instance_create_info, nullptr, &instance);
-        if (result == VK_SUCCESS) {
-            Log::info("Vulkan instance successfully created.");
-        }
-        else {
-            Log::error("Failed to create Vulkan Instance (VkResult=", result, ")");
-        }
-    }
+		VkResult result = vkCreateInstance(&instance_create_info, nullptr, &instance);
+		if (result == VK_SUCCESS) {
+			Log::info("Vulkan instance successfully created.");
+		}
+		else {
+			Log::error("Failed to create Vulkan Instance (VkResult=", result, ")");
+		}
+	}
 
-    // get handle to the Vulkan instance
-    VkInstance get() const {
-        return instance;
-    }
+	// get handle to the Vulkan instance
+	VkInstance get() const {
+		return instance;
+	}
 
 protected:
-    VkInstance instance = nullptr;
-    VkApplicationInfo application_info = {};
-    std::vector<const char*> extensions;
-    std::vector<const char*> layers;
+	VkInstance instance = nullptr;
+	VkApplicationInfo application_info = {};
+	std::vector<const char*> extensions = {};
+	std::vector<const char*> layers = {};
 };
 
 // class for mangaging physical and logical GPU devices
 class Device {
 public:
-    // delete default constructor
-    Device() = delete;
+	// delete default constructor
+	Device() = delete;
 
-    // parametric constructor
-    Device(const Instance& instance, const VkPhysicalDeviceFeatures& enabled_features = {}, const std::vector<const char*>& enabled_extension_names = {}, uint32_t id = 0) {
-        // confirm valid instance
-        if (instance.get() == nullptr) {
-            Log::error("Device constructor called with invalid instance parameter: create a valid object of the Instance() class first!");
-        }
-        // search for physical devices with Vulkan support
-        uint32_t num_devices = 0;
-        VkResult result = vkEnumeratePhysicalDevices(instance.get(), &num_devices, NULL);
-        if (num_devices == 0) {
-            Log::warning("No device(s) with Vulkan support found!");
-            return;
-        }
-        if (result == VK_INCOMPLETE) {
-            Log::warning("search for physical devices was incomplete");
-        }
+	// parametric constructor
+	Device(const Instance& instance, const VkPhysicalDeviceFeatures& enabled_features = {}, const std::vector<const char*>& enabled_extension_names = {}, uint32_t id = 0) {
+		// confirm valid instance
+		if (instance.get() == nullptr) {
+			Log::error("Device constructor called with invalid instance parameter: create a valid object of the Instance() class first!");
+		}
+		// search for physical devices with Vulkan support
+		uint32_t num_devices = 0;
+		VkResult result = vkEnumeratePhysicalDevices(instance.get(), &num_devices, NULL);
+		if (num_devices == 0) {
+			Log::warning("No device(s) with Vulkan support found!");
+			return;
+		}
+		if (result == VK_INCOMPLETE) {
+			Log::warning("search for physical devices was incomplete");
+		}
 
-        // list available physical devices with Vulkan support
-        std::vector<VkPhysicalDevice> devices(num_devices);
-        vkEnumeratePhysicalDevices(instance.get(), &num_devices, devices.data());
+		// list available physical devices with Vulkan support
+		std::vector<VkPhysicalDevice> devices(num_devices);
+		vkEnumeratePhysicalDevices(instance.get(), &num_devices, devices.data());
 
-        // default: select first available device (at index 0)
-        uint32_t selected_index = 0;
-        physical = devices[selected_index];
-        uint32_t selected_id = 0;
-        Log::info("available physical devices with Vulkan support:");
+		// default: select first available device (at index 0)
+		uint32_t selected_index = 0;
+		physical = devices[selected_index];
+		uint32_t selected_id = 0;
+		Log::info("available physical devices with Vulkan support:");
 
-        for (uint32_t i = 0; i < num_devices; i++) {
-            vkGetPhysicalDeviceProperties(devices[i], &properties);
-            if (i == selected_index) {
-                selected_id = properties.deviceID;
-            }
-            Log::info("(", i, ") ", properties.deviceName, ", deviceID ", properties.deviceID, ", vendorID ", properties.vendorID,
-                ", type ", properties.deviceType, ", API version ", properties.apiVersion, ", driver version ", properties.driverVersion);
-            // chose specific device (instead of default index 0) if passed id matches
-            if (id == properties.deviceID) {
-                physical = devices[i];
-                selected_id = properties.deviceID;
-                selected_index = i;
-            }
-        }
-        Log::info("Selected physical device ", selected_index, " with ID ", selected_id);
+		for (uint32_t i = 0; i < num_devices; i++) {
+			vkGetPhysicalDeviceProperties(devices[i], &properties);
+			if (i == selected_index) {
+				selected_id = properties.deviceID;
+			}
+			Log::info("(", i, ") ", properties.deviceName, ", deviceID ", properties.deviceID, ", vendorID ", properties.vendorID,
+				", type ", properties.deviceType, ", API version ", properties.apiVersion, ", driver version ", properties.driverVersion);
+			// chose specific device (instead of default index 0) if passed id matches
+			if (id == properties.deviceID) {
+				physical = devices[i];
+				selected_id = properties.deviceID;
+				selected_index = i;
+			}
+		}
+		Log::info("Selected physical device ", selected_index, " with ID ", selected_id);
 
-        // store properties for selected device
-        vkGetPhysicalDeviceProperties(physical, &properties);
-        properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-        properties2.pNext = nullptr;
-        vkGetPhysicalDeviceProperties2(physical, &properties2);
+		// store properties for selected device
+		vkGetPhysicalDeviceProperties(physical, &properties);
+		properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		properties2.pNext = nullptr;
+		vkGetPhysicalDeviceProperties2(physical, &properties2);
 
-        // get available extensions for the selected device
-        uint32_t available_extension_count;
-        vkEnumerateDeviceExtensionProperties(physical, nullptr, &available_extension_count, nullptr);
-        std::vector<VkExtensionProperties> available_extensions(available_extension_count);
-        vkEnumerateDeviceExtensionProperties(physical, nullptr, &available_extension_count, available_extensions.data());
+		// get available extensions for the selected device
+		uint32_t available_extension_count;
+		vkEnumerateDeviceExtensionProperties(physical, nullptr, &available_extension_count, nullptr);
+		std::vector<VkExtensionProperties> available_extensions(available_extension_count);
+		vkEnumerateDeviceExtensionProperties(physical, nullptr, &available_extension_count, available_extensions.data());
 
-        // log available extensions
-        if (Log::get_level() >= LogLevel::LEVEL_INFO) {
-            Log::debug(available_extension_count, " device extensions available");
-            for (uint32_t i = 0; i < available_extension_count; i++) {
-                Log::debug("(", i + 1, ") ", available_extensions[i].extensionName);
-            }
-        }
+		// log available extensions
+		if (Log::get_level() >= LogLevel::LEVEL_INFO) {
+			Log::debug(available_extension_count, " device extensions available");
+			for (uint32_t i = 0; i < available_extension_count; i++) {
+				Log::debug("(", i + 1, ") ", available_extensions[i].extensionName);
+			}
+		}
 
-        // Filter requested extensions against available extensions
-        std::vector<const char*> supported_extensions;
-        this->extensions = enabled_extension_names; // Store the original requested extensions
-        for (const auto& requested_extension : enabled_extension_names) {
-            bool found = false;
-            for (const auto& available_extension : available_extensions) {
-                if (strcmp(requested_extension, available_extension.extensionName) == 0) {
-                    found = true;
-                    break;
-                }
-            }
-            if (found) {
-                supported_extensions.push_back(requested_extension);
-            }
-            else {
-                Log::warning("Device extension '", requested_extension, "' is not supported on this device and will be removed from the request.");
-            }
-        }
-        device_extension_names = supported_extensions; // Update the member with only supported extensions
+		// Filter requested extensions against available extensions
+		std::vector<const char*> supported_extensions;
+		this->extensions = enabled_extension_names; // Store the original requested extensions
+		for (const auto& requested_extension : enabled_extension_names) {
+			bool found = false;
+			for (const auto& available_extension : available_extensions) {
+				if (strcmp(requested_extension, available_extension.extensionName) == 0) {
+					found = true;
+					break;
+				}
+			}
+			if (found) {
+				supported_extensions.push_back(requested_extension);
+			}
+			else {
+				Log::warning("Device extension '", requested_extension, "' is not supported on this device and will be removed from the request.");
+			}
+		}
+		device_extension_names = supported_extensions; // Update the member with only supported extensions
 
-        // add requested device extensions to device create info
-        VkDeviceCreateInfo device_create_info = {};
-        device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        device_create_info.enabledExtensionCount = static_cast<uint32_t>(device_extension_names.size());
-        device_create_info.ppEnabledExtensionNames = device_extension_names.data();
+		// Queue creation
+		uint32_t num_queue_families;
+		float priority = 1.0f; // default priority for all queue types
+		vkGetPhysicalDeviceQueueFamilyProperties(physical, &num_queue_families, nullptr);
+		std::vector<VkQueueFamilyProperties> queue_families(num_queue_families);
+		vkGetPhysicalDeviceQueueFamilyProperties(physical, &num_queue_families, queue_families.data());
+		std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
 
+		// Iterate over the queue families to find appropriate queue indices;
+		// check for graphics, compute, and transfer queue support;
+		// assign the first available queue family index for each type;
+		// try to use dedicated indices for each queue type if available;
+		int graphics_fallback = -1;
+		int compute_fallback = -1;
+		int transfer_fallback = -1;
 
-        // Queue creation
-        uint32_t num_queue_families;
-        float priority = 1.0f; // default priority for all queue types
-        vkGetPhysicalDeviceQueueFamilyProperties(physical, &num_queue_families, nullptr);
-        std::vector<VkQueueFamilyProperties> queue_families(num_queue_families);
-        vkGetPhysicalDeviceQueueFamilyProperties(physical, &num_queue_families, queue_families.data());
-        std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+		for (uint32_t i = 0; i < num_queue_families; ++i) {
+			const VkQueueFamilyProperties& queue_family = queue_families[i];
 
-        // Iterate over the queue families to find appropriate queue indices;
-        // check for graphics, compute, and transfer queue support;
-        // assign the first available queue family index for each type;
-        // try to use dedicated indices for each queue type if available;
-        int graphics_fallback = -1;
-        int compute_fallback = -1;
-        int transfer_fallback = -1;
+			// Check for graphics queue support
+			if (!graphics_queue_assigned && (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+				graphics_queue_family_index = i;
+				queue_create_infos.push_back({});
+				queue_create_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+				queue_create_infos[i].queueFamilyIndex = i;
+				queue_create_infos[i].queueCount = 1;
+				queue_create_infos[i].pQueuePriorities = &priority;
+				graphics_queue_assigned = true;
+				Log::info("GRAPHICS queue supported -> added to queue_create_infos for this device");
+				compute_fallback = queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT ? i : -1;
+				transfer_fallback = queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT ? i : -1;
+				continue;
+			}
 
-        for (uint32_t i = 0; i < num_queue_families; ++i) {
-            const VkQueueFamilyProperties& queue_family = queue_families[i];
+			// Check for compute queue support
+			if (!compute_queue_assigned && (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
+				compute_queue_family_index = i;
+				queue_create_infos.push_back({});
+				queue_create_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+				queue_create_infos[i].queueFamilyIndex = i;
+				queue_create_infos[i].queueCount = 1;
+				queue_create_infos[i].pQueuePriorities = &priority;
+				compute_queue_assigned = true;
+				Log::info("COMPUTE queue supported -> added to queue_create_infos for this device");
+				graphics_fallback = queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT ? i : -1;
+				transfer_fallback = queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT ? i : -1;
+				continue;
+			}
 
-            // Check for graphics queue support
-            if (!graphics_queue_assigned && (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
-                graphics_queue_family_index = i;
-                queue_create_infos.push_back({});
-                queue_create_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-                queue_create_infos[i].queueFamilyIndex = i;
-                queue_create_infos[i].queueCount = 1;
-                queue_create_infos[i].pQueuePriorities = &priority;
-                graphics_queue_assigned = true;
-                Log::info("GRAPHICS queue supported -> added to queue_create_infos for this device");
-                compute_fallback = queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT ? i : -1;
-                transfer_fallback = queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT ? i : -1;
-                continue;
-            }
+			// Check for transfer queue support
+			if (!transfer_queue_assigned && (queue_family.queueFlags & VK_QUEUE_TRANSFER_BIT)) {
+				transfer_queue_family_index = i;
+				queue_create_infos.push_back({});
+				queue_create_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+				queue_create_infos[i].queueFamilyIndex = i;
+				queue_create_infos[i].queueCount = 1;
+				queue_create_infos[i].pQueuePriorities = &priority;
+				transfer_queue_assigned = true;
+				Log::info("TRANSFER queue supported -> added to queue_create_infos for this device");
+				graphics_fallback = queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT ? i : -1;
+				compute_fallback = queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT ? i : -1;
+				continue;
+			}
+		}
 
-            // Check for compute queue support
-            if (!compute_queue_assigned && (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
-                compute_queue_family_index = i;
-                queue_create_infos.push_back({});
-                queue_create_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-                queue_create_infos[i].queueFamilyIndex = i;
-                queue_create_infos[i].queueCount = 1;
-                queue_create_infos[i].pQueuePriorities = &priority;
-                compute_queue_assigned = true;
-                Log::info("COMPUTE queue supported -> added to queue_create_infos for this device");
-                graphics_fallback = queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT ? i : -1;
-                transfer_fallback = queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT ? i : -1;
-                continue;
-            }
+		// If no dedicated queue family was found for a type, use the fallback
+		if (!graphics_queue_assigned) {
+			if (graphics_fallback != -1) {
+				graphics_queue_family_index = graphics_fallback;
+				graphics_queue_assigned = true;
+				Log::info("no dedicated GRAPHICS queue family found; using fallback queue family index ", graphics_queue_family_index, " (shared queue)");
+			}
+			else {
+				Log::warning("no dedicated GRAPHICS queue family found; no fallback available");
+			}
+		}
+		if (!compute_queue_assigned) {
+			if (compute_fallback != -1) {
+				compute_queue_family_index = compute_fallback;
+				compute_queue_assigned = true;
+				Log::info("no dedicated COMPUTE queue family found; using fallback queue family index ", compute_queue_family_index, " (shared queue)");
+			}
+			else {
+				Log::warning("no dedicated COMPUTE queue family found; no fallback available");
+			}
+		}
+		if (!transfer_queue_assigned) {
+			if (transfer_fallback != -1) {
+				transfer_queue_family_index = transfer_fallback;
+				transfer_queue_assigned = true;
+				Log::info("no dedicated TRANSFER queue family found; using fallback queue family index ", transfer_queue_family_index, " (shared queue)");
+			}
+			else {
+				Log::warning("no dedicated TRANSFER queue family found; no fallback available");
+			}
+		}
 
-            // Check for transfer queue support
-            if (!transfer_queue_assigned && (queue_family.queueFlags & VK_QUEUE_TRANSFER_BIT)) {
-                transfer_queue_family_index = i;
-                queue_create_infos.push_back({});
-                queue_create_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-                queue_create_infos[i].queueFamilyIndex = i;
-                queue_create_infos[i].queueCount = 1;
-                queue_create_infos[i].pQueuePriorities = &priority;
-                transfer_queue_assigned = true;
-                Log::info("TRANSFER queue supported -> added to queue_create_infos for this device");
-                graphics_fallback = queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT ? i : -1;
-                compute_fallback = queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT ? i : -1;
-                continue;
-            }
-        }
+		// Create logical device
+		VkDeviceCreateInfo device_create_info = {};
+		device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		device_create_info.pNext = nullptr;
+		device_create_info.flags = 0; // reserved for future use
+		device_create_info.enabledExtensionCount = static_cast<uint32_t>(device_extension_names.size());
+		device_create_info.ppEnabledExtensionNames = device_extension_names.data();
+		device_create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
+		device_create_info.pQueueCreateInfos = queue_create_infos.data();
+		device_create_info.pEnabledFeatures = &enabled_features;
+		result = vkCreateDevice(physical, &device_create_info, nullptr, &logical);
+		if (result == VK_SUCCESS) {
+			Log::info("successfully created logical device (handle: ", logical, ")");
+		}
+		else {
+			Log::error("Failed to create Vulkan logical device (VkResult=", result, ")");
+		}
 
-        // If no dedicated queue family was found for a type, use the fallback
-        if (!graphics_queue_assigned) {
-            if (graphics_fallback != -1) {
-                graphics_queue_family_index = graphics_fallback;
-                graphics_queue_assigned = true;
-                Log::info("no dedicated GRAPHICS queue family found; using fallback queue family index ", graphics_queue_family_index, " (shared queue)");
-            }
-            else {
-                Log::warning("no dedicated GRAPHICS queue family found; no fallback available");
-            }
-        }
-        if (!compute_queue_assigned) {
-            if (compute_fallback != -1) {
-                compute_queue_family_index = compute_fallback;
-                compute_queue_assigned = true;
-                Log::info("no dedicated COMPUTE queue family found; using fallback queue family index ", compute_queue_family_index, " (shared queue)");
-            }
-            else {
-                Log::warning("no dedicated COMPUTE queue family found; no fallback available");
-            }
-        }
-        if (!transfer_queue_assigned) {
-            if (transfer_fallback != -1) {
-                transfer_queue_family_index = transfer_fallback;
-                transfer_queue_assigned = true;
-                Log::info("no dedicated TRANSFER queue family found; using fallback queue family index ", transfer_queue_family_index, " (shared queue)");
-            }
-            else {
-                Log::warning("no dedicated TRANSFER queue family found; no fallback available");
-            }
-        }
+		// Acquire queue handles for this logical device
+		if (graphics_queue == nullptr) {
+			vkGetDeviceQueue(logical, graphics_queue_family_index, 0, &graphics_queue);
+			Log::info("adding graphics queue to logical device (handle: ", graphics_queue, ")");
+		}
 
-        // Create logical device
-        device_create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
-        device_create_info.pQueueCreateInfos = queue_create_infos.data();
-        device_create_info.ppEnabledExtensionNames = device_extension_names.data();
-        device_create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-        device_create_info.pEnabledFeatures = &enabled_features;
-        result = vkCreateDevice(physical, &device_create_info, nullptr, &logical);
-        if (result == VK_SUCCESS) {
-            Log::info("successfully created logical device (handle: ", logical, ")");
-        }
-        else {
-            Log::error("Failed to create Vulkan logical device (VkResult=", result, ")");
-        }
+		if (compute_queue == nullptr) {
+			vkGetDeviceQueue(logical, compute_queue_family_index, 0, &compute_queue);
+			Log::info("adding compute queue to logical device (handle: ", compute_queue, ")");
+		}
 
-        // Acquire queue handles for this logical device
-        if (graphics_queue == nullptr) {
-            vkGetDeviceQueue(logical, graphics_queue_family_index, 0, &graphics_queue);
-            Log::info("adding graphics queue to logical device (handle: ", graphics_queue, ")");
-        }
+		if (transfer_queue == nullptr) {
+			vkGetDeviceQueue(logical, transfer_queue_family_index, 0, &transfer_queue);
+			Log::info("adding transfer queue to logical device (handle: ", transfer_queue, ")");
+		}
 
-        if (compute_queue == nullptr) {
-            vkGetDeviceQueue(logical, compute_queue_family_index, 0, &compute_queue);
-            Log::info("adding compute queue to logical device (handle: ", compute_queue, ")");
-        }
+		Log::info("[DEVICE COMPLETED]");
+	}
 
-        if (transfer_queue == nullptr) {
-            vkGetDeviceQueue(logical, transfer_queue_family_index, 0, &transfer_queue);
-            Log::info("adding transfer queue to logical device (handle: ", transfer_queue, ")");
-        }
+	// move constructor
+	Device(Device&& other) noexcept {
+		move_resources(other);
+	}
 
-        Log::info("[DEVICE COMPLETED]");
-    }
+	// move assignment
+	Device& operator=(Device&& other) noexcept {
+		if (this != &other) {
+			destroy(); // release resource from 'this'
+			move_resources(other);
+			Log::info("Device resources from 'other' moved to 'this'");
+		}
+		return *this;
+	}
 
-    // move constructor
-    Device(Device&& other) noexcept {
-        move_resources(other);
-    }
+	// delete copy constructors
+	Device(const Device&) = delete;
+	Device& operator=(const Device&) = delete;
 
-    // move assignment
-    Device& operator=(Device&& other) noexcept {
-        if (this != &other) {
-            destroy(); // release resource from 'this'
-            move_resources(other);
-            Log::info("Device resources from 'other' moved to 'this'");
-        }
-        return *this;
-    }
+	// getter functions
+	// (note: member variables can be returned by reference,
+	// because the instance is usually a high-level object,
+	// expected to stay alive as long as needed)
+	VkDevice get_logical() const { return logical; }
+	VkPhysicalDevice get_physical() const { return physical; }
+	VkQueue get_graphics_queue() const { return graphics_queue; }
+	VkQueue get_compute_queue() const { return compute_queue; }
+	VkQueue get_transfer_queue() const { return transfer_queue; }
+	uint32_t get_graphics_queue_family_index() const { return graphics_queue_family_index; }
+	uint32_t get_compute_queue_family_index() const { return compute_queue_family_index; }
+	uint32_t get_transfer_queue_family_index() const { return transfer_queue_family_index; }
+	const VkPhysicalDeviceProperties& get_properties() const { return properties; }
+	const VkPhysicalDeviceProperties2& get_properties2() const { return properties2; }
+	const std::vector<const char*>& get_extensions() const { return extensions; }
+	const std::vector<const char*>& get_device_extension_names() const { return device_extension_names; }
 
-    // delete copy constructors
-    Device(const Device&) = delete;
-    Device& operator=(const Device&) = delete;
+	const VkPhysicalDeviceMemoryProperties& get_memory_properties() {
+		static bool properties_queried = false;
+		if (!properties_queried) {
+			vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties);
+			properties_queried = true;
+		}
+		return memory_properties;
+	}
 
-    // getter functions
-    // (note: member variables can be returned by reference,
-    // because the instance is usually a high-level object,
-    // expected to stay alive as long as needed)
-    VkDevice get_logical() const { return logical; }
-    VkPhysicalDevice get_physical() const { return physical; }
-    VkQueue get_graphics_queue() const { return graphics_queue; }
-    VkQueue get_compute_queue() const { return compute_queue; }
-    VkQueue get_transfer_queue() const { return transfer_queue; }
-    uint32_t get_graphics_queue_family_index() const { return graphics_queue_family_index; }
-    uint32_t get_compute_queue_family_index() const { return compute_queue_family_index; }
-    uint32_t get_transfer_queue_family_index() const { return transfer_queue_family_index; }
-    const VkPhysicalDeviceProperties& get_properties() const { return properties; }
-    const VkPhysicalDeviceProperties2& get_properties2() const { return properties2; }
-    const std::vector<const char*>& get_extensions() const { return extensions; }
-    const std::vector<const char*>& get_device_extension_names() const { return device_extension_names; }
-
-    const VkPhysicalDeviceMemoryProperties& get_memory_properties() {
-        static bool properties_queried = false;
-        if (!properties_queried) {
-            vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties);
-            properties_queried = true;
-        }
-        return memory_properties;
-    }
-
-    // destructor
-    ~Device() {
-        destroy();
-    }
+	// destructor
+	~Device() {
+		destroy();
+	}
 
 protected:
-    // helper method to release resources
-    void destroy() {
-        // destroy logical device
-        if (logical != nullptr) {
-            vkDeviceWaitIdle(logical);
-            vkDestroyDevice(logical, nullptr);
-            logical = nullptr;
-            Log::info("[LOGICAL DEVICE DESTROYED]");
-        }
-    }
+	// helper method to release resources
+	void destroy() {
+		// destroy logical device
+		if (logical != nullptr) {
+			vkDeviceWaitIdle(logical);
+			vkDestroyDevice(logical, nullptr);
+			logical = nullptr;
+			Log::info("[LOGICAL DEVICE DESTROYED]");
+		}
+	}
 
-    // helper method for move constructor and move assignment
-    void move_resources(Device& other) {
-        // Transfer ownership of Vulkan handles/resources using std::exchange;
-        // std::move may not be supported with some Vulkan objects
-        this->physical = std::exchange(other.physical, nullptr);
-        this->logical = std::exchange(other.logical, nullptr);
-        this->graphics_queue = std::exchange(other.graphics_queue, nullptr);
-        this->compute_queue = std::exchange(other.compute_queue, nullptr);
-        this->transfer_queue = std::exchange(other.transfer_queue, nullptr);
-        this->graphics_queue_assigned = std::move(other.graphics_queue_assigned);
-        this->compute_queue_assigned = std::move(other.compute_queue_assigned);
-        this->transfer_queue_assigned = std::move(other.transfer_queue_assigned);
-        this->graphics_queue_family_index = std::move(other.graphics_queue_family_index);
-        this->compute_queue_family_index = std::move(other.compute_queue_family_index);
-        this->transfer_queue_family_index = std::move(other.transfer_queue_family_index);
-        this->properties = std::exchange(other.properties, VkPhysicalDeviceProperties{});
-        this->properties2 = std::exchange(other.properties2, VkPhysicalDeviceProperties2{});
-        this->extensions = std::move(other.get_extensions());
-        this->device_extension_names = std::move(other.device_extension_names);
-        this->memory_properties = std::exchange(other.memory_properties, VkPhysicalDeviceMemoryProperties{});
-    }
+	// helper method for move constructor and move assignment
+	void move_resources(Device& other) {
+		// Transfer ownership of Vulkan handles/resources using std::exchange;
+		// std::move may not be supported with some Vulkan objects
+		this->physical = std::exchange(other.physical, nullptr);
+		this->logical = std::exchange(other.logical, nullptr);
+		this->graphics_queue = std::exchange(other.graphics_queue, nullptr);
+		this->compute_queue = std::exchange(other.compute_queue, nullptr);
+		this->transfer_queue = std::exchange(other.transfer_queue, nullptr);
+		this->graphics_queue_assigned = std::move(other.graphics_queue_assigned);
+		this->compute_queue_assigned = std::move(other.compute_queue_assigned);
+		this->transfer_queue_assigned = std::move(other.transfer_queue_assigned);
+		this->graphics_queue_family_index = std::move(other.graphics_queue_family_index);
+		this->compute_queue_family_index = std::move(other.compute_queue_family_index);
+		this->transfer_queue_family_index = std::move(other.transfer_queue_family_index);
+		this->properties = std::exchange(other.properties, VkPhysicalDeviceProperties{});
+		this->properties2 = std::exchange(other.properties2, VkPhysicalDeviceProperties2{});
+		this->extensions = std::move(other.get_extensions());
+		this->device_extension_names = std::move(other.device_extension_names);
+		this->memory_properties = std::exchange(other.memory_properties, VkPhysicalDeviceMemoryProperties{});
+	}
 
-    VkPhysicalDevice physical = nullptr;
-    VkDevice logical = nullptr;
-    VkQueue graphics_queue = nullptr;
-    VkQueue compute_queue = nullptr;
-    VkQueue transfer_queue = nullptr;
-    bool graphics_queue_assigned = false;
-    bool compute_queue_assigned = false;
-    bool transfer_queue_assigned = false;
-    uint32_t graphics_queue_family_index = 0;
-    uint32_t compute_queue_family_index = 0;
-    uint32_t transfer_queue_family_index = 0;
-    VkPhysicalDeviceProperties properties = {};
-    VkPhysicalDeviceProperties2 properties2 = {};
-    std::vector<const char*> extensions;
-    std::vector<const char*> device_extension_names;
-    VkPhysicalDeviceMemoryProperties memory_properties = {};
+	VkPhysicalDevice physical = nullptr;
+	VkDevice logical = nullptr;
+	VkQueue graphics_queue = nullptr;
+	VkQueue compute_queue = nullptr;
+	VkQueue transfer_queue = nullptr;
+	bool graphics_queue_assigned = false;
+	bool compute_queue_assigned = false;
+	bool transfer_queue_assigned = false;
+	uint32_t graphics_queue_family_index = 0;
+	uint32_t compute_queue_family_index = 0;
+	uint32_t transfer_queue_family_index = 0;
+	VkPhysicalDeviceProperties properties = {};
+	VkPhysicalDeviceProperties2 properties2 = {};
+	std::vector<const char*> extensions = {};
+	std::vector<const char*> device_extension_names = {};
+	VkPhysicalDeviceMemoryProperties memory_properties = {};
 };
 
 class Image {
-    friend class ImageView;
+	friend class ImageView;
 public:
-    Image() = delete;
-    Image(
-        Device& device,
-        VkImageType type,
-        VkFormat format,
-        VkExtent3D extent,
-        uint32_t mip_levels = 1,
-        uint32_t array_layers = 1,
-        VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
-        VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL,
-        VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED
-    ) : logical(device.get_logical()), format(format), extent(extent), layout(initial_layout) {
+	Image() = delete;
+	Image(
+		Device& device,
+		VkImageType type,
+		VkFormat format,
+		VkExtent3D extent,
+		uint32_t mip_levels = 1,
+		uint32_t array_layers = 1,
+		VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
+		VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL,
+		VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED
+	) : logical(device.get_logical()), format(format), extent(extent), layout(initial_layout) {
 
-        VkImageCreateInfo image_info{};
-        image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        image_info.imageType = type;
-        image_info.format = format;
-        image_info.extent = extent;
-        image_info.mipLevels = mip_levels;
-        image_info.arrayLayers = array_layers;
-        image_info.samples = samples;
-        image_info.tiling = tiling;
-        image_info.usage = usage;
-        image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // or VK_SHARING_MODE_CONCURRENT if needed
-        image_info.initialLayout = initial_layout;
+		VkImageCreateInfo image_info{};
+		image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		image_info.imageType = type;
+		image_info.format = format;
+		image_info.extent = extent;
+		image_info.mipLevels = mip_levels;
+		image_info.arrayLayers = array_layers;
+		image_info.samples = samples;
+		image_info.tiling = tiling;
+		image_info.usage = usage;
+		image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // or VK_SHARING_MODE_CONCURRENT if needed
+		image_info.initialLayout = initial_layout;
 
-        VkResult result = vkCreateImage(logical, &image_info, nullptr, &image);
-        if (result != VK_SUCCESS) {
-            Log::error("in constructor Image::Image(...): failed to create image (VkResult=", result, ")");
-        }
+		VkResult result = vkCreateImage(logical, &image_info, nullptr, &image);
+		if (result != VK_SUCCESS) {
+			Log::error("in constructor Image::Image(...): failed to create image (VkResult=", result, ")");
+		}
 
-        VkMemoryRequirements memory_requirements;
-        vkGetImageMemoryRequirements(logical, image, &memory_requirements);
+		VkMemoryRequirements memory_requirements;
+		vkGetImageMemoryRequirements(logical, image, &memory_requirements);
 
-        uint32_t memory_type_index = find_memory_type(device, memory_properties, memory_requirements.memoryTypeBits);
-        if (memory_type_index == UINT32_MAX) {
-            vkDestroyImage(logical, image, nullptr);
-            image = VK_NULL_HANDLE;
-            Log::error("in constructor Image::Image(...): could not find suitable memory type for image.");
-        }
+		uint32_t memory_type_index = find_memory_type(device, memory_properties, memory_requirements.memoryTypeBits);
+		if (memory_type_index == UINT32_MAX) {
+			vkDestroyImage(logical, image, nullptr);
+			image = VK_NULL_HANDLE;
+			Log::error("in constructor Image::Image(...): could not find suitable memory type for image.");
+		}
 
-        VkMemoryAllocateInfo memory_allocation_info = {};
-        memory_allocation_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memory_allocation_info.allocationSize = memory_requirements.size;
-        memory_allocation_info.memoryTypeIndex = memory_type_index;
+		VkMemoryAllocateInfo memory_allocation_info = {};
+		memory_allocation_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		memory_allocation_info.allocationSize = memory_requirements.size;
+		memory_allocation_info.memoryTypeIndex = memory_type_index;
 
-        result = vkAllocateMemory(logical, &memory_allocation_info, nullptr, &memory);
-        if (result != VK_SUCCESS) {
-            vkDestroyImage(logical, image, nullptr);
-            image = VK_NULL_HANDLE;
-            Log::error("in constructor Image::Image(...): Failed to allocate image memory (VkResult=", result, ")");
-        }
+		result = vkAllocateMemory(logical, &memory_allocation_info, nullptr, &memory);
+		if (result != VK_SUCCESS) {
+			vkDestroyImage(logical, image, nullptr);
+			image = VK_NULL_HANDLE;
+			Log::error("in constructor Image::Image(...): Failed to allocate image memory (VkResult=", result, ")");
+		}
 
-        result = vkBindImageMemory(logical, image, memory, 0);
-        if (result != VK_SUCCESS) {
-            vkFreeMemory(logical, memory, nullptr);
-            vkDestroyImage(logical, image, nullptr);
-            memory = VK_NULL_HANDLE;
-            image = VK_NULL_HANDLE;
-            Log::error("in constructor Image::Image(...): Failed to bind image memory (VkResult=", result, ")");
-        }
-        Log::debug("in constructor Image::Image(...): image created successfully (handle: ", image, ")");
-    }
+		result = vkBindImageMemory(logical, image, memory, 0);
+		if (result != VK_SUCCESS) {
+			vkFreeMemory(logical, memory, nullptr);
+			vkDestroyImage(logical, image, nullptr);
+			memory = VK_NULL_HANDLE;
+			image = VK_NULL_HANDLE;
+			Log::error("in constructor Image::Image(...): Failed to bind image memory (VkResult=", result, ")");
+		}
+		Log::debug("in constructor Image::Image(...): image created successfully (handle: ", image, ")");
+	}
 
-    // move constructor
-    Image(Image&& other) noexcept :
-        logical(std::exchange(other.logical, nullptr)),
-        image(std::exchange(other.image, VK_NULL_HANDLE)),
-        memory(std::exchange(other.memory, VK_NULL_HANDLE)),
-        format(other.format),
-        extent(other.extent),
-        layout(other.layout) {}
+	// move constructor
+	Image(Image&& other) noexcept :
+		logical(std::exchange(other.logical, nullptr)),
+		image(std::exchange(other.image, VK_NULL_HANDLE)),
+		memory(std::exchange(other.memory, VK_NULL_HANDLE)),
+		format(other.format),
+		extent(other.extent),
+		layout(other.layout) {
+	}
 
-    // move assignment
-    Image& operator=(Image&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            logical = std::exchange(other.logical, nullptr);
-            image = std::exchange(other.image, VK_NULL_HANDLE);
-            memory = std::exchange(other.memory, VK_NULL_HANDLE);
-            format = other.format;
-            extent = other.extent;
-            layout = other.layout;
-        }
-        return *this;
-    }
+	// move assignment
+	Image& operator=(Image&& other) noexcept {
+		if (this != &other) {
+			destroy();
+			logical = std::exchange(other.logical, nullptr);
+			image = std::exchange(other.image, VK_NULL_HANDLE);
+			memory = std::exchange(other.memory, VK_NULL_HANDLE);
+			format = other.format;
+			extent = other.extent;
+			layout = other.layout;
+		}
+		return *this;
+	}
 
-    // delete copy & copy assignment constructors
-    Image(const Image&) = delete;
-    Image& operator=(const Image&) = delete;
+	// delete copy & copy assignment constructors
+	Image(const Image&) = delete;
+	Image& operator=(const Image&) = delete;
 
-    ~Image() {
-        destroy();
-    }
+	~Image() {
+		destroy();
+	}
 
-    // --- Getters ---
-    VkImage get() const { return image; }
+	// --- Getters ---
+	VkImage get() const { return image; }
 
-    VkFormat get_format() const { return format; }
+	VkFormat get_format() const { return format; }
 
-    VkExtent3D get_extent() const { return extent; }
+	VkExtent3D get_extent() const { return extent; }
 
-    VkImageLayout get_layout() const { return layout; }
+	VkImageLayout get_layout() const { return layout; }
 
-    VkDeviceMemory get_memory() const { return memory; }
+	VkDeviceMemory get_memory() const { return memory; }
 
-    // --- Setters ---
-    void set_layout(VkImageLayout new_layout) { layout = new_layout; }
+	// --- Setters ---
+	void set_layout(VkImageLayout new_layout) { layout = new_layout; }
 
 protected:
-    void destroy() {
-        if (memory != VK_NULL_HANDLE) {
-            vkFreeMemory(logical, memory, nullptr);
-            memory = VK_NULL_HANDLE;
-        }
-        if (image != VK_NULL_HANDLE) {
-            Log::info("Destroying image (handle: ", image, ")");
-            vkDestroyImage(logical, image, nullptr);
-            image = VK_NULL_HANDLE;
-        }
-    }
+	void destroy() {
+		if (memory != VK_NULL_HANDLE) {
+			vkFreeMemory(logical, memory, nullptr);
+			memory = VK_NULL_HANDLE;
+		}
+		if (image != VK_NULL_HANDLE) {
+			Log::info("Destroying image (handle: ", image, ")");
+			vkDestroyImage(logical, image, nullptr);
+			image = VK_NULL_HANDLE;
+		}
+	}
 
-    // helper method to find a suitable memory type
-    uint32_t find_memory_type(Device& device, VkMemoryPropertyFlags properties, uint32_t type_filter) {
-        const auto& mem_properties = device.get_memory_properties();
-        for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
-            if ((type_filter & (1 << i)) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
-                return i;
-            }
-        }
-        return UINT32_MAX;
-    }
+	// helper method to find a suitable memory type
+	uint32_t find_memory_type(Device& device, VkMemoryPropertyFlags properties, uint32_t type_filter) {
+		const auto& mem_properties = device.get_memory_properties();
+		for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+			if ((type_filter & (1 << i)) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+				return i;
+			}
+		}
+		return UINT32_MAX;
+	}
 
-    VkDevice logical = nullptr;
-    VkImage image = VK_NULL_HANDLE;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
-    VkFormat format;
-    VkExtent3D extent;
-    VkImageLayout layout; // Track current layout
+	VkDevice logical = nullptr;
+	VkImage image = VK_NULL_HANDLE;
+	VkDeviceMemory memory = VK_NULL_HANDLE;
+	VkFormat format;
+	VkExtent3D extent;
+	VkImageLayout layout; // Track current layout
 };
 
 class ImageView {
 public:
-    // constructor
-    ImageView() = delete;
-    ImageView(const Device& device, const Image& image, VkImageViewType view_type, VkImageAspectFlags aspect_flags, uint32_t base_mip_level = 0, uint32_t level_count = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1)
-        : logical(device.get_logical()) {
+	// constructor
+	ImageView() = delete;
+	ImageView(const Device& device, const Image& image, VkImageViewType view_type, VkImageAspectFlags aspect_flags, uint32_t base_mip_level = 0, uint32_t level_count = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1)
+		: logical(device.get_logical()) {
 
-        VkImageViewCreateInfo view_info{};
-        view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        view_info.image = image.get(); // Use image handle from Image class
-        view_info.viewType = view_type;
-        view_info.format = image.get_format(); // Use format from Image class
-        view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_info.subresourceRange.aspectMask = aspect_flags;
-        view_info.subresourceRange.baseMipLevel = base_mip_level;
-        view_info.subresourceRange.levelCount = level_count;
-        view_info.subresourceRange.baseArrayLayer = base_array_layer;
-        view_info.subresourceRange.layerCount = layer_count;
+		VkImageViewCreateInfo view_info{};
+		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		view_info.image = image.get(); // Use image handle from Image class
+		view_info.viewType = view_type;
+		view_info.format = image.get_format(); // Use format from Image class
+		view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+		view_info.subresourceRange.aspectMask = aspect_flags;
+		view_info.subresourceRange.baseMipLevel = base_mip_level;
+		view_info.subresourceRange.levelCount = level_count;
+		view_info.subresourceRange.baseArrayLayer = base_array_layer;
+		view_info.subresourceRange.layerCount = layer_count;
 
-        VkResult result = vkCreateImageView(logical, &view_info, nullptr, &image_view);
-        if (result != VK_SUCCESS) {
-            Log::error("Failed to create image view (VkResult=", result, ")");
-            // Handle error
-            return;
-        }
-        Log::info("ImageView created successfully (handle: ", image_view, ")");
-    }
+		VkResult result = vkCreateImageView(logical, &view_info, nullptr, &image_view);
+		if (result != VK_SUCCESS) {
+			Log::error("Failed to create image view (VkResult=", result, ")");
+			// Handle error
+			return;
+		}
+		Log::info("ImageView created successfully (handle: ", image_view, ")");
+	}
 
-    // move constructor
-    ImageView(ImageView&& other) noexcept :
-        logical(std::exchange(other.logical, nullptr)),
-        image_view(std::exchange(other.image_view, VK_NULL_HANDLE)) {}
+	// move constructor
+	ImageView(ImageView&& other) noexcept :
+		logical(std::exchange(other.logical, nullptr)),
+		image_view(std::exchange(other.image_view, VK_NULL_HANDLE)) {
+	}
 
-    // move assignment
-    ImageView& operator=(ImageView&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            logical = std::exchange(other.logical, nullptr);
-            image_view = std::exchange(other.image_view, VK_NULL_HANDLE);
-        }
-        return *this;
-    }
+	// move assignment
+	ImageView& operator=(ImageView&& other) noexcept {
+		if (this != &other) {
+			destroy();
+			logical = std::exchange(other.logical, nullptr);
+			image_view = std::exchange(other.image_view, VK_NULL_HANDLE);
+		}
+		return *this;
+	}
 
-    // delete copy & copy assignment constructors
-    ImageView(const ImageView&) = delete;
-    ImageView& operator=(const ImageView&) = delete;
+	// delete copy & copy assignment constructors
+	ImageView(const ImageView&) = delete;
+	ImageView& operator=(const ImageView&) = delete;
 
-    // destructor
-    ~ImageView() {
-        destroy();
-    }
+	// destructor
+	~ImageView() {
+		destroy();
+	}
 
-    // getters
-    VkImageView get() const { return image_view; }
+	// getters
+	VkImageView get() const { return image_view; }
 
 protected:
-    // helper method to release resources
-    void destroy() {
-        if (image_view != VK_NULL_HANDLE) {
-            Log::info("Destroying image view (handle: ", image_view, ")");
-            vkDestroyImageView(logical, image_view, nullptr);
-            image_view = VK_NULL_HANDLE;
-        }
-    }
+	// helper method to release resources
+	void destroy() {
+		if (image_view != VK_NULL_HANDLE) {
+			Log::info("Destroying image view (handle: ", image_view, ")");
+			vkDestroyImageView(logical, image_view, nullptr);
+			image_view = VK_NULL_HANDLE;
+		}
+	}
 
-    VkDevice logical = nullptr;
-    VkImageView image_view = VK_NULL_HANDLE;
+	VkDevice logical = nullptr;
+	VkImageView image_view = VK_NULL_HANDLE;
 };
 
 // a render pass defines the structure and dependencies of graphics rendering operations
 class RenderPass {
-    friend class SubPass;
+	friend class SubPass;
 public:
-    // delete default constructor
-    RenderPass() = delete;
+	// delete default constructor
+	RenderPass() = delete;
 
-    // parametric constructor
-    RenderPass(const Device& device, uint32_t multisample_count = 1) {
-        this->logical = device.get_logical();
-        this->multisample_count = multisample_count;
-    }
+	// parametric constructor
+	RenderPass(const Device& device, uint32_t multisample_count = 1) {
+		this->logical = device.get_logical();
+		this->multisample_count = multisample_count;
+	}
 
-    // adds an attachment description (=owned by this main RenderPass) and returns its index
-    uint32_t add_attachment(AttachmentType type, VkFormat format, VkImageLayout initial_layout, VkImageLayout final_layout, VkAttachmentLoadOp load_op, VkAttachmentStoreOp store_op) {
-        uint32_t id = static_cast<uint32_t>(attachment_description.size());
-        attachment_type.push_back(type);
-        attachment_description.resize(id + 1);
-        attachment_description[id] = {};
-        attachment_description[id].flags = 0; // or: VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT
-        attachment_description[id].format = format;
-        attachment_description[id].initialLayout = initial_layout;
-        attachment_description[id].finalLayout = final_layout;
+	// adds an attachment description (=owned by this main RenderPass) and returns its index
+	uint32_t add_attachment(AttachmentType type, VkFormat format, VkImageLayout initial_layout, VkImageLayout final_layout, VkAttachmentLoadOp load_op, VkAttachmentStoreOp store_op) {
+		uint32_t id = static_cast<uint32_t>(attachment_description.size());
+		attachment_type.push_back(type);
+		attachment_description.resize(id + 1);
+		attachment_description[id] = {};
+		attachment_description[id].flags = 0; // or: VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT
+		attachment_description[id].format = format;
+		attachment_description[id].initialLayout = initial_layout;
+		attachment_description[id].finalLayout = final_layout;
 
-        switch (type) {
-            case AttachmentType::COLOR_TYPE: {
-                attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
-                attachment_description[id].loadOp = load_op;
-                attachment_description[id].storeOp = store_op;
-                break;
-            }
-            case AttachmentType::DEPTH_TYPE: {
-                attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
-                attachment_description[id].stencilLoadOp = load_op;
-                attachment_description[id].stencilStoreOp = store_op;
-                depth_stencil_flag = true;
-                break;
-            }
-            case AttachmentType::INPUT_TYPE: {
-                attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // Input attachments are usually single-sampled
-                break;
-            }
-            case AttachmentType::PRESERVE_TYPE: {
-                attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // preserve attachments are usually single-sampled
-                attachment_description[id].stencilLoadOp = load_op;
-                attachment_description[id].stencilStoreOp = store_op;
-                break;
-            }
-            case AttachmentType::RESOLVE_TYPE: {
-                attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // resolve attachments are usually single-sampled
-                attachment_description[id].loadOp = load_op;
-                attachment_description[id].storeOp = store_op;
-                break;
-            }
-            default: {
-                Log::error("method RenderPass::add_attachment() has been called with invalid RenderAttachment::Type type argument (", type, ")");
-            }
-        }
+		switch (type) {
+		case AttachmentType::COLOR_TYPE: {
+			attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
+			attachment_description[id].loadOp = load_op;
+			attachment_description[id].storeOp = store_op;
+			break;
+		}
+		case AttachmentType::DEPTH_TYPE: {
+			attachment_description[id].samples = static_cast<VkSampleCountFlagBits>(multisample_count);
+			attachment_description[id].stencilLoadOp = load_op;
+			attachment_description[id].stencilStoreOp = store_op;
+			depth_stencil_flag = true;
+			break;
+		}
+		case AttachmentType::INPUT_TYPE: {
+			attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // Input attachments are usually single-sampled
+			break;
+		}
+		case AttachmentType::PRESERVE_TYPE: {
+			attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // preserve attachments are usually single-sampled
+			attachment_description[id].stencilLoadOp = load_op;
+			attachment_description[id].stencilStoreOp = store_op;
+			break;
+		}
+		case AttachmentType::RESOLVE_TYPE: {
+			attachment_description[id].samples = VK_SAMPLE_COUNT_1_BIT; // resolve attachments are usually single-sampled
+			attachment_description[id].loadOp = load_op;
+			attachment_description[id].storeOp = store_op;
+			break;
+		}
+		default: {
+			Log::error("method RenderPass::add_attachment() has been called with invalid RenderAttachment::Type type argument (", type, ")");
+		}
+		}
 
-        return id;
-    }
+		return id;
+	}
 
-    VkSubpassDependency add_subpass_dependency(
-        uint32_t source,
-        uint32_t destination,
-        VkPipelineStageFlags src_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-        VkPipelineStageFlags dst_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-        VkAccessFlags src_access_mask = 0,
-        VkAccessFlags dst_access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
-    ) {
-        uint32_t id = static_cast<uint32_t>(subpass_dependency.size());
-        subpass_dependency.resize(id + 1);
-        subpass_dependency[id] = {};
-        subpass_dependency[id].srcSubpass = source;
-        subpass_dependency[id].dstSubpass = destination;
-        subpass_dependency[id].srcStageMask = src_stage_mask;
-        subpass_dependency[id].srcAccessMask = src_access_mask;
-        subpass_dependency[id].dstStageMask = dst_stage_mask;
-        subpass_dependency[id].dstAccessMask = dst_access_mask;
-        return subpass_dependency[id];
-    }
+	VkSubpassDependency add_subpass_dependency(
+		uint32_t source,
+		uint32_t destination,
+		VkPipelineStageFlags src_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+		VkPipelineStageFlags dst_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+		VkAccessFlags src_access_mask = 0,
+		VkAccessFlags dst_access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+	) {
+		uint32_t id = static_cast<uint32_t>(subpass_dependency.size());
+		subpass_dependency.resize(id + 1);
+		subpass_dependency[id] = {};
+		subpass_dependency[id].srcSubpass = source;
+		subpass_dependency[id].dstSubpass = destination;
+		subpass_dependency[id].srcStageMask = src_stage_mask;
+		subpass_dependency[id].srcAccessMask = src_access_mask;
+		subpass_dependency[id].dstStageMask = dst_stage_mask;
+		subpass_dependency[id].dstAccessMask = dst_access_mask;
+		return subpass_dependency[id];
+	}
 
-    void finalize() {
-        VkRenderPassCreateInfo renderpass_create_info = {};
-        renderpass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderpass_create_info.attachmentCount = static_cast<uint32_t>(attachment_description.size());
-        renderpass_create_info.pAttachments = attachment_description.data();
-        renderpass_create_info.subpassCount = static_cast<uint32_t>(subpass_description.size());
-        renderpass_create_info.pSubpasses = subpass_description.data();
-        renderpass_create_info.dependencyCount = static_cast<uint32_t>(subpass_dependency.size());
-        renderpass_create_info.pDependencies = subpass_dependency.data();
-        if (vkCreateRenderPass(logical, &renderpass_create_info, nullptr, &renderpass) != VK_SUCCESS) {
-            Log::error("failed to create render pass!");
-        }
-    }
+	void finalize() {
+		VkRenderPassCreateInfo renderpass_create_info = {};
+		renderpass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderpass_create_info.attachmentCount = static_cast<uint32_t>(attachment_description.size());
+		renderpass_create_info.pAttachments = attachment_description.data();
+		renderpass_create_info.subpassCount = static_cast<uint32_t>(subpass_description.size());
+		renderpass_create_info.pSubpasses = subpass_description.data();
+		renderpass_create_info.dependencyCount = static_cast<uint32_t>(subpass_dependency.size());
+		renderpass_create_info.pDependencies = subpass_dependency.data();
+		if (vkCreateRenderPass(logical, &renderpass_create_info, nullptr, &renderpass) != VK_SUCCESS) {
+			Log::error("failed to create render pass!");
+		}
+	}
 
-    // move constructor
-    RenderPass(RenderPass&& other) noexcept {
-        move_resources(other);
-    }
+	// move constructor
+	RenderPass(RenderPass&& other) noexcept {
+		move_resources(other);
+	}
 
-    // move assignment constructor
-    RenderPass& operator=(RenderPass&& other) noexcept {
-        if (this != &other) {
-            // Release resources held by the current object (if any)
-            this->destroy();
+	// move assignment constructor
+	RenderPass& operator=(RenderPass&& other) noexcept {
+		if (this != &other) {
+			// Release resources held by the current object (if any)
+			this->destroy();
 
-            // Move the state from 'other' to 'this'
-            move_resources(other);
-        }
-        return *this;
-    }
+			// Move the state from 'other' to 'this'
+			move_resources(other);
+		}
+		return *this;
+	}
 
-    // delete copy constructors
-    RenderPass(const RenderPass&) = delete;
-    RenderPass& operator=(const RenderPass&) = delete;
+	// delete copy constructors
+	RenderPass(const RenderPass&) = delete;
+	RenderPass& operator=(const RenderPass&) = delete;
 
-    // getter functions
-    VkRenderPass get() const { return renderpass; }
-    uint32_t get_multisample_count() const { return multisample_count; }
-    uint32_t get_attachment_count() const { return static_cast<uint32_t>(attachment_description.size()); }
-    uint32_t get_subpass_count() const { return static_cast<uint32_t>(subpass_description.size()); }
-    bool has_depth_stencil() const { return depth_stencil_flag; }
-    const std::vector<VkAttachmentDescription>& get_attachment_descriptions() { return attachment_description; }
-    const AttachmentType get_attachment_type(uint32_t index) const { return attachment_type[index]; }
+	// getter functions
+	VkRenderPass get() const { return renderpass; }
+	uint32_t get_multisample_count() const { return multisample_count; }
+	uint32_t get_attachment_count() const { return static_cast<uint32_t>(attachment_description.size()); }
+	uint32_t get_subpass_count() const { return static_cast<uint32_t>(subpass_description.size()); }
+	bool has_depth_stencil() const { return depth_stencil_flag; }
+	const std::vector<VkAttachmentDescription>& get_attachment_descriptions() { return attachment_description; }
+	const AttachmentType get_attachment_type(uint32_t index) const { return attachment_type[index]; }
 
-    void destroy() {
-        if (renderpass != nullptr) {
-            vkDestroyRenderPass(logical, renderpass, nullptr);
-            renderpass = nullptr;
-        }
-    }
+	void destroy() {
+		if (renderpass != nullptr) {
+			vkDestroyRenderPass(logical, renderpass, nullptr);
+			renderpass = nullptr;
+		}
+	}
 
-    // destructor
-    ~RenderPass() {
-        destroy();
-    }
+	// destructor
+	~RenderPass() {
+		destroy();
+	}
 
 protected:
-    // helper method to move resources for the move constructor and move assignment
-    void move_resources(RenderPass& other) {
-        logical = std::exchange(other.logical, nullptr);
-        renderpass = std::exchange(other.renderpass, nullptr);
-        multisample_count = std::move(other.multisample_count);
-        attachment_description = std::move(other.attachment_description);
-        subpass_description = std::move(other.subpass_description);
-    }
+	// helper method to move resources for the move constructor and move assignment
+	void move_resources(RenderPass& other) {
+		logical = std::exchange(other.logical, nullptr);
+		renderpass = std::exchange(other.renderpass, nullptr);
+		multisample_count = std::move(other.multisample_count);
+		attachment_description = std::move(other.attachment_description);
+		subpass_description = std::move(other.subpass_description);
+	}
 
-    VkRenderPass renderpass = nullptr;
-    VkDevice logical = nullptr;
-    uint32_t multisample_count = 1;
-    bool depth_stencil_flag = false;
-    std::vector<VkAttachmentDescription> attachment_description;
-    std::vector<AttachmentType> attachment_type;
-    std::vector<VkSubpassDescription> subpass_description;
-    std::vector<VkSubpassDependency> subpass_dependency;
+	VkRenderPass renderpass = nullptr;
+	VkDevice logical = nullptr;
+	uint32_t multisample_count = 1;
+	bool depth_stencil_flag = false;
+	std::vector<VkAttachmentDescription> attachment_description;
+	std::vector<AttachmentType> attachment_type;
+	std::vector<VkSubpassDescription> subpass_description;
+	std::vector<VkSubpassDependency> subpass_dependency;
 };
 
 class SubPass {
 public:
-    SubPass(RenderPass& renderpass) : renderpass(&renderpass) {}
+	SubPass(RenderPass& renderpass) : renderpass(&renderpass) {}
 
-    // add a reference to an attachment from the pool of attachment descriptions owned by the main RenderPass
-    void add_attachment_reference(uint32_t attachment_index) {
-        if (finalized) {
-            Log::warning("in method SubPass::add_attachment(): this subpass has already been finalized, as it's already been added to a parent RenderPass; hence no more attachments can be added at this point");
-            return;
-        }
-        else {
-            switch (renderpass->get_attachment_type(attachment_index)) {
-                case AttachmentType::COLOR_TYPE: {
-                    uint32_t id = static_cast<uint32_t>(color_attachment_reference.size());
-                    color_attachment_reference.resize(id + 1);
-                    color_attachment_reference[id].attachment = attachment_index;
-                    color_attachment_reference[id].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-                    break;
-                }
-                case AttachmentType::DEPTH_TYPE: {
-                    depth_attachment_reference.attachment = attachment_index;
-                    depth_attachment_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-                    break;
-                }
-                case AttachmentType::INPUT_TYPE: {
-                    uint32_t id = static_cast<uint32_t>(input_attachment_reference.size());
-                    input_attachment_reference.resize(id + 1);
-                    input_attachment_reference[id].attachment = attachment_index;
-                    input_attachment_reference[id].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    break;
-                }
-                case AttachmentType::PRESERVE_TYPE: {
-                    preserve_attachment_reference.push_back(attachment_index);
-                    break;
-                }
-                case AttachmentType::RESOLVE_TYPE: {
-                    resolve_attachment_reference.attachment = attachment_index;
-                    resolve_attachment_reference.layout = VK_IMAGE_LAYOUT_GENERAL; // 'general' supports all types of device access, unless specified otherwise
-                    break;
-                }
-                default: {
-                    Log::warning("in method SubPass::add_attachment(): RenderAttachment has invalid type; failed to add the attachment to the subpass");
-                }
-            }
-        }
-    }
+	// add a reference to an attachment from the pool of attachment descriptions owned by the main RenderPass
+	void add_attachment_reference(uint32_t attachment_index) {
+		if (finalized) {
+			Log::warning("in method SubPass::add_attachment(): this subpass has already been finalized, as it's already been added to a parent RenderPass; hence no more attachments can be added at this point");
+			return;
+		}
+		else {
+			switch (renderpass->get_attachment_type(attachment_index)) {
+			case AttachmentType::COLOR_TYPE: {
+				uint32_t id = static_cast<uint32_t>(color_attachment_reference.size());
+				color_attachment_reference.resize(id + 1);
+				color_attachment_reference[id].attachment = attachment_index;
+				color_attachment_reference[id].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+				break;
+			}
+			case AttachmentType::DEPTH_TYPE: {
+				depth_attachment_reference.attachment = attachment_index;
+				depth_attachment_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+				break;
+			}
+			case AttachmentType::INPUT_TYPE: {
+				uint32_t id = static_cast<uint32_t>(input_attachment_reference.size());
+				input_attachment_reference.resize(id + 1);
+				input_attachment_reference[id].attachment = attachment_index;
+				input_attachment_reference[id].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				break;
+			}
+			case AttachmentType::PRESERVE_TYPE: {
+				preserve_attachment_reference.push_back(attachment_index);
+				break;
+			}
+			case AttachmentType::RESOLVE_TYPE: {
+				resolve_attachment_reference.attachment = attachment_index;
+				resolve_attachment_reference.layout = VK_IMAGE_LAYOUT_GENERAL; // 'general' supports all types of device access, unless specified otherwise
+				break;
+			}
+			default: {
+				Log::warning("in method SubPass::add_attachment(): RenderAttachment has invalid type; failed to add the attachment to the subpass");
+			}
+			}
+		}
+	}
 
-    // finalize the subpass and add it to the parent RenderPass;
-    // returns the index of the subpass within the parent RenderPass
-    uint32_t finalize(VkSubpassDescriptionFlags flags, VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS) {
-        if (finalized) {
-            Log::warning("in method Subpass::finalize() this subpass has already been finalized and added to a parent RenderPass");
-            return UINT32_MAX;
-        }
-        uint32_t id = static_cast<uint32_t>(renderpass->subpass_description.size());
-        renderpass->subpass_description.resize(id + 1);
-        renderpass->subpass_description[id].flags = flags;
-        renderpass->subpass_description[id].pipelineBindPoint = bind_point;
+	// finalize the subpass and add it to the parent RenderPass;
+	// returns the index of the subpass within the parent RenderPass
+	uint32_t finalize(VkSubpassDescriptionFlags flags, VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS) {
+		if (finalized) {
+			Log::warning("in method Subpass::finalize() this subpass has already been finalized and added to a parent RenderPass");
+			return UINT32_MAX;
+		}
+		uint32_t id = static_cast<uint32_t>(renderpass->subpass_description.size());
+		renderpass->subpass_description.resize(id + 1);
+		renderpass->subpass_description[id].flags = flags;
+		renderpass->subpass_description[id].pipelineBindPoint = bind_point;
 
-        renderpass->subpass_description[id].inputAttachmentCount = static_cast<uint32_t>(input_attachment_reference.size());
-        renderpass->subpass_description[id].pInputAttachments = input_attachment_reference.empty() ? nullptr : input_attachment_reference.data();
+		renderpass->subpass_description[id].inputAttachmentCount = static_cast<uint32_t>(input_attachment_reference.size());
+		renderpass->subpass_description[id].pInputAttachments = input_attachment_reference.empty() ? nullptr : input_attachment_reference.data();
 
-        renderpass->subpass_description[id].colorAttachmentCount = static_cast<uint32_t>(color_attachment_reference.size());
-        renderpass->subpass_description[id].pColorAttachments = color_attachment_reference.empty() ? nullptr : color_attachment_reference.data();
+		renderpass->subpass_description[id].colorAttachmentCount = static_cast<uint32_t>(color_attachment_reference.size());
+		renderpass->subpass_description[id].pColorAttachments = color_attachment_reference.empty() ? nullptr : color_attachment_reference.data();
 
-        renderpass->subpass_description[id].pResolveAttachments = &resolve_attachment_reference;
+		renderpass->subpass_description[id].pResolveAttachments = &resolve_attachment_reference;
 
-        renderpass->subpass_description[id].pDepthStencilAttachment = &depth_attachment_reference;
-        renderpass->depth_stencil_flag = depth_attachment_reference.layout != VK_IMAGE_LAYOUT_UNDEFINED;
+		renderpass->subpass_description[id].pDepthStencilAttachment = &depth_attachment_reference;
+		renderpass->depth_stencil_flag = depth_attachment_reference.layout != VK_IMAGE_LAYOUT_UNDEFINED;
 
-        renderpass->subpass_description[id].preserveAttachmentCount = static_cast<uint32_t>(preserve_attachment_reference.size());
-        renderpass->subpass_description[id].pPreserveAttachments = preserve_attachment_reference.empty() ? nullptr : preserve_attachment_reference.data();
+		renderpass->subpass_description[id].preserveAttachmentCount = static_cast<uint32_t>(preserve_attachment_reference.size());
+		renderpass->subpass_description[id].pPreserveAttachments = preserve_attachment_reference.empty() ? nullptr : preserve_attachment_reference.data();
 
-        finalized = true;
-        return id;
-    }
+		finalized = true;
+		return id;
+	}
 
 protected:
-    RenderPass* renderpass = nullptr; // pointer to the parent RenderPass
-    std::vector<VkAttachmentReference> color_attachment_reference = {};
-    std::vector<VkAttachmentReference> input_attachment_reference = {};
-    std::vector<uint32_t> preserve_attachment_reference = {};
-    VkAttachmentReference depth_attachment_reference = {0, VK_IMAGE_LAYOUT_UNDEFINED};
-    VkAttachmentReference resolve_attachment_reference = {0, VK_IMAGE_LAYOUT_UNDEFINED};
-    bool finalized = false; // this flag is updated by the parent RenderPass class (as a friend class) after the subpass has been added
+	RenderPass* renderpass = nullptr; // pointer to the parent RenderPass
+	std::vector<VkAttachmentReference> color_attachment_reference = {};
+	std::vector<VkAttachmentReference> input_attachment_reference = {};
+	std::vector<uint32_t> preserve_attachment_reference = {};
+	VkAttachmentReference depth_attachment_reference = { 0, VK_IMAGE_LAYOUT_UNDEFINED };
+	VkAttachmentReference resolve_attachment_reference = { 0, VK_IMAGE_LAYOUT_UNDEFINED };
+	bool finalized = false; // this flag is updated by the parent RenderPass class (as a friend class) after the subpass has been added
 };
 
 // Platform Agnostic Surface Class
 class Surface {
 public:
-    // Delete default constructor (Surface always needs an instance and platform info)
-    Surface() = delete;
+	// Delete default constructor (Surface always needs an instance and platform info)
+	Surface() = delete;
 
-    // Platform-Specific Constructors
+	// Platform-Specific Constructors
 
-    #ifdef VK_USE_PLATFORM_WIN32_KHR
-    Surface(const Instance& instance, HINSTANCE hinstance, HWND hwnd) {
-        instance_handle = instance.get();
-        if (instance_handle == nullptr) {
-            Log::error("Surface creation failed: Provided VkInstance is NULL.");
-        }
-        if (!hinstance || !hwnd) {
-            Log::error("Surface creation failed: Provided Win32 HINSTANCE or HWND is NULL.");
-        }
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+	Surface(const Instance& instance, HINSTANCE hinstance, HWND hwnd) {
+		instance_handle = instance.get();
+		if (instance_handle == nullptr) {
+			Log::error("Surface creation failed: Provided VkInstance is NULL.");
+		}
+		if (!hinstance || !hwnd) {
+			Log::error("Surface creation failed: Provided Win32 HINSTANCE or HWND is NULL.");
+		}
 
-        VkWin32SurfaceCreateInfoKHR create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-        create_info.pNext = nullptr;
-        create_info.flags = 0;
-        create_info.hinstance = hinstance;
-        create_info.hwnd = hwnd;
+		VkWin32SurfaceCreateInfoKHR create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+		create_info.pNext = nullptr;
+		create_info.flags = 0;
+		create_info.hinstance = hinstance;
+		create_info.hwnd = hwnd;
 
-        VkResult result = vkCreateWin32SurfaceKHR(instance_handle, &create_info, nullptr, &surface);
+		VkResult result = vkCreateWin32SurfaceKHR(instance_handle, &create_info, nullptr, &surface);
 
-        if (result != VK_SUCCESS) {
-            surface = VK_NULL_HANDLE; // Ensure null on failure
-            Log::error("Failed to create Win32 surface (VkResult=", result, ")");
-        }
-        else {
-            Log::info("Win32 Vulkan surface created successfully (handle: ", surface, ")");
-        }
-    }
-    #endif
+		if (result != VK_SUCCESS) {
+			surface = VK_NULL_HANDLE; // Ensure null on failure
+			Log::error("Failed to create Win32 surface (VkResult=", result, ")");
+		}
+		else {
+			Log::info("Win32 Vulkan surface created successfully (handle: ", surface, ")");
+		}
+	}
+#endif
 
-    #ifdef VK_USE_PLATFORM_ANDROID_KHR
-    Surface(Instance& instance, ANativeWindow* window) {
-        instance_handle = instance.get();
-        surface = VK_NULL_HANDLE;
-        if (!instance_handle) {
-            Log::error("Surface creation failed: Provided VkInstance is NULL.");
-        }
-        if (!window) {
-            Log::error("Surface creation failed: Provided Android ANativeWindow is NULL.");
-        }
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+	Surface(Instance& instance, ANativeWindow* window) {
+		instance_handle = instance.get();
+		surface = VK_NULL_HANDLE;
+		if (!instance_handle) {
+			Log::error("Surface creation failed: Provided VkInstance is NULL.");
+		}
+		if (!window) {
+			Log::error("Surface creation failed: Provided Android ANativeWindow is NULL.");
+		}
 
-        VkAndroidSurfaceCreateInfoKHR create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
-        create_info.pNext = nullptr;
-        create_info.flags = 0;
-        create_info.window = window;
+		VkAndroidSurfaceCreateInfoKHR create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+		create_info.pNext = nullptr;
+		create_info.flags = 0;
+		create_info.window = window;
 
-        VkResult result = vkCreateAndroidSurfaceKHR(instance_handle, &create_info, nullptr, &surface);
-        if (result != VK_SUCCESS) {
-            surface = VK_NULL_HANDLE;
-            Log::error("Failed to create Android surface (VkResult=", result, ")");
-        }
-        else {
-            Log::info("Android Vulkan surface created successfully (handle: ", surface, ")");
-        }
-    }
-    #endif
+		VkResult result = vkCreateAndroidSurfaceKHR(instance_handle, &create_info, nullptr, &surface);
+		if (result != VK_SUCCESS) {
+			surface = VK_NULL_HANDLE;
+			Log::error("Failed to create Android surface (VkResult=", result, ")");
+		}
+		else {
+			Log::info("Android Vulkan surface created successfully (handle: ", surface, ")");
+		}
+	}
+#endif
 
-    #ifdef VK_USE_PLATFORM_XCB_KHR
-    Surface(Instance& instance, xcb_connection_t* connection, xcb_window_t window)
-        : instance_handle(instance.get()), surface(VK_NULL_HANDLE) {
-        if (!instance_handle) {
-            Log::error("Surface creation failed: Provided VkInstance is NULL.");
-        }
-        if (!connection) { // xcb_window_t can be 0, might be valid depending on context
-            Log::error("Surface creation failed: Provided XCB connection is NULL.");
-        }
+#ifdef VK_USE_PLATFORM_XCB_KHR
+	Surface(Instance& instance, xcb_connection_t* connection, xcb_window_t window)
+		: instance_handle(instance.get()), surface(VK_NULL_HANDLE) {
+		if (!instance_handle) {
+			Log::error("Surface creation failed: Provided VkInstance is NULL.");
+		}
+		if (!connection) { // xcb_window_t can be 0, might be valid depending on context
+			Log::error("Surface creation failed: Provided XCB connection is NULL.");
+		}
 
-        VkXcbSurfaceCreateInfoKHR create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
-        create_info.pNext = nullptr;
-        create_info.flags = 0;
-        create_info.connection = connection;
-        create_info.window = window;
+		VkXcbSurfaceCreateInfoKHR create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
+		create_info.pNext = nullptr;
+		create_info.flags = 0;
+		create_info.connection = connection;
+		create_info.window = window;
 
-        VkResult result = vkCreateXcbSurfaceKHR(instance_handle, &create_info, nullptr, &surface);
-        if (result != VK_SUCCESS) {
-            surface_ = VK_NULL_HANDLE;
-            Log::error("Failed to create XCB surface (VkResult=", result, ")");
-        }
-        else {
-            Log::info("XCB Vulkan surface created successfully (handle: ", surface, ")");
-        }
-    }
-    #endif
+		VkResult result = vkCreateXcbSurfaceKHR(instance_handle, &create_info, nullptr, &surface);
+		if (result != VK_SUCCESS) {
+			surface_ = VK_NULL_HANDLE;
+			Log::error("Failed to create XCB surface (VkResult=", result, ")");
+		}
+		else {
+			Log::info("XCB Vulkan surface created successfully (handle: ", surface, ")");
+		}
+	}
+#endif
 
-    #ifdef VK_USE_PLATFORM_METAL_EXT
-        // Using void* to pass CAMetalLayer* to avoid Objective-C type in header
-    Surface(Instance& instance, void* caMetalLayer) {
-        instance_handle = instance.get();
-        surface = VK_NULL_HANDLE;
-        if (!instance_handle) {
-            Log::error("Surface creation failed: Provided VkInstance is NULL.");
-        }
-        if (!caMetalLayer) {
-            Log::error("Surface creation failed: Provided CAMetalLayer pointer is NULL.");
-        }
+#ifdef VK_USE_PLATFORM_METAL_EXT
+	// Using void* to pass CAMetalLayer* to avoid Objective-C type in header
+	Surface(Instance& instance, void* caMetalLayer) {
+		instance_handle = instance.get();
+		surface = VK_NULL_HANDLE;
+		if (!instance_handle) {
+			Log::error("Surface creation failed: Provided VkInstance is NULL.");
+		}
+		if (!caMetalLayer) {
+			Log::error("Surface creation failed: Provided CAMetalLayer pointer is NULL.");
+		}
 
-        VkMetalSurfaceCreateInfoEXT create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
-        create_info.pNext = nullptr;
-        create_info.flags = 0;
-        // User *must* ensure the void* is actually a CAMetalLayer*
-        // In Objective-C++, CAMetalLayer* is compatible with `id`, which is compatible with `void*`
-        create_info.pLayer = (CAMetalLayer*)caMetalLayer; // Cast needed
+		VkMetalSurfaceCreateInfoEXT create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+		create_info.pNext = nullptr;
+		create_info.flags = 0;
+		// User *must* ensure the void* is actually a CAMetalLayer*
+		// In Objective-C++, CAMetalLayer* is compatible with `id`, which is compatible with `void*`
+		create_info.pLayer = (CAMetalLayer*)caMetalLayer; // Cast needed
 
-        // Requires VK_EXT_metal_surface extension enabled
-        VkResult result = vkCreateMetalSurfaceEXT(instance_handle, &create_info, nullptr, &surface);
-        if (result != VK_SUCCESS) {
-            surface = VK_NULL_HANDLE;
-            Log::error("Failed to create Metal surface (VkResult=", result, ")");
-        }
-        else {
-            Log::info("Metal Vulkan surface created successfully (handle: ", surface, ")");
-        }
-    }
-    #endif
+		// Requires VK_EXT_metal_surface extension enabled
+		VkResult result = vkCreateMetalSurfaceEXT(instance_handle, &create_info, nullptr, &surface);
+		if (result != VK_SUCCESS) {
+			surface = VK_NULL_HANDLE;
+			Log::error("Failed to create Metal surface (VkResult=", result, ")");
+		}
+		else {
+			Log::info("Metal Vulkan surface created successfully (handle: ", surface, ")");
+		}
+	}
+#endif
 
 
-    // Move constructor
-    Surface(Surface&& other) noexcept {
-        instance_handle = std::exchange(other.instance_handle, nullptr);
-        surface = std::exchange(other.surface, VK_NULL_HANDLE);
-    }
+	// Move constructor
+	Surface(Surface&& other) noexcept {
+		instance_handle = std::exchange(other.instance_handle, nullptr);
+		surface = std::exchange(other.surface, VK_NULL_HANDLE);
+	}
 
-    // Move assignment
-    Surface& operator=(Surface&& other) noexcept {
-        if (this != &other) {
-            destroy(); // Clean up existing resource before move
-            instance_handle = std::exchange(other.instance_handle, nullptr);
-            surface = std::exchange(other.surface, VK_NULL_HANDLE);
-        }
-        return *this;
-    }
+	// Move assignment
+	Surface& operator=(Surface&& other) noexcept {
+		if (this != &other) {
+			destroy(); // Clean up existing resource before move
+			instance_handle = std::exchange(other.instance_handle, nullptr);
+			surface = std::exchange(other.surface, VK_NULL_HANDLE);
+		}
+		return *this;
+	}
 
-    // Delete copy operations
-    Surface(const Surface&) = delete;
-    Surface& operator=(const Surface&) = delete;
+	// Delete copy operations
+	Surface(const Surface&) = delete;
+	Surface& operator=(const Surface&) = delete;
 
-    // Destructor
-    ~Surface() {
-        destroy();
-    }
+	// Destructor
+	~Surface() {
+		destroy();
+	}
 
-    // Get the underlying VkSurfaceKHR handle
-    VkSurfaceKHR get() const {
-        return surface;
-    }
+	// Get the underlying VkSurfaceKHR handle
+	VkSurfaceKHR get() const {
+		return surface;
+	}
 
-    // Check if the surface handle is valid
-    const bool is_valid() const {
-        return surface != VK_NULL_HANDLE;
-    }
+	// Check if the surface handle is valid
+	const bool is_valid() const {
+		return surface != VK_NULL_HANDLE;
+	}
 
-    // Check if a specific queue family on a physical device supports presentation to this surface
-    const bool get_physical_device_support(Device& device, QueueFamily queue_family) const {
-        if (surface == VK_NULL_HANDLE || device.get_physical() == VK_NULL_HANDLE) {
-            Log::warning("Attempted to check surface support with null surface or physical device.");
-            return VK_FALSE;
-        }
-        VkBool32 present_support = VK_FALSE;
-        VkResult result;
-        switch (queue_family) {
-            case QueueFamily::COMPUTE_QUEUE:
-                result = vkGetPhysicalDeviceSurfaceSupportKHR(device.get_physical(), device.get_compute_queue_family_index(), surface, &present_support);
-                break;
-            case QueueFamily::GRAPHICS_QUEUE:
-                result = vkGetPhysicalDeviceSurfaceSupportKHR(device.get_physical(), device.get_graphics_queue_family_index(), surface, &present_support);
-                break;
-            case QueueFamily::TRANSFER_QUEUE:
-                result = vkGetPhysicalDeviceSurfaceSupportKHR(device.get_physical(), device.get_transfer_queue_family_index(), surface, &present_support);
-                break;
-            default:
-                result = VK_ERROR_UNKNOWN;
-        }
-        if (result != VK_SUCCESS) {
-            Log::warning("Failed to query physical device surface support, i.e. invalid device or unsupported surface extension (VkResult=", result, ")");
-        }
-        return bool(present_support);
-    }
+	// Check if a specific queue family on a physical device supports presentation to this surface
+	const bool get_physical_device_support(Device& device, QueueFamily queue_family) const {
+		if (surface == VK_NULL_HANDLE || device.get_physical() == VK_NULL_HANDLE) {
+			Log::warning("Attempted to check surface support with null surface or physical device.");
+			return VK_FALSE;
+		}
+		VkBool32 present_support = VK_FALSE;
+		VkResult result;
+		switch (queue_family) {
+		case QueueFamily::COMPUTE_QUEUE:
+			result = vkGetPhysicalDeviceSurfaceSupportKHR(device.get_physical(), device.get_compute_queue_family_index(), surface, &present_support);
+			break;
+		case QueueFamily::GRAPHICS_QUEUE:
+			result = vkGetPhysicalDeviceSurfaceSupportKHR(device.get_physical(), device.get_graphics_queue_family_index(), surface, &present_support);
+			break;
+		case QueueFamily::TRANSFER_QUEUE:
+			result = vkGetPhysicalDeviceSurfaceSupportKHR(device.get_physical(), device.get_transfer_queue_family_index(), surface, &present_support);
+			break;
+		default:
+			result = VK_ERROR_UNKNOWN;
+		}
+		if (result != VK_SUCCESS) {
+			Log::warning("Failed to query physical device surface support, i.e. invalid device or unsupported surface extension (VkResult=", result, ")");
+		}
+		return bool(present_support);
+	}
 
-    // Get the capabilities of the surface for a specific physical device
-    VkSurfaceCapabilitiesKHR get_capabilities(Device& device) const {
-        VkSurfaceCapabilitiesKHR capabilities = {};
-        if (surface == VK_NULL_HANDLE || device.get_physical() == VK_NULL_HANDLE) {
-            Log::warning("Attempted to get surface capabilities with null surface or physical device.");
-            return capabilities; // Return empty struct
-        }
-        VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device.get_physical(), surface, &capabilities);
-        if (result != VK_SUCCESS) {
-            Log::error("Failed to query physical device surface capabilities (VkResult=", result, ")");
-        }
-        return capabilities;
-    }
+	// Get the capabilities of the surface for a specific physical device
+	VkSurfaceCapabilitiesKHR get_capabilities(Device& device) const {
+		VkSurfaceCapabilitiesKHR capabilities = {};
+		if (surface == VK_NULL_HANDLE || device.get_physical() == VK_NULL_HANDLE) {
+			Log::warning("Attempted to get surface capabilities with null surface or physical device.");
+			return capabilities; // Return empty struct
+		}
+		VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device.get_physical(), surface, &capabilities);
+		if (result != VK_SUCCESS) {
+			Log::error("Failed to query physical device surface capabilities (VkResult=", result, ")");
+		}
+		return capabilities;
+	}
 
-    // Get the supported surface formats for a specific physical device
-    std::vector<VkSurfaceFormatKHR> get_formats(Device& device) const {
-        std::vector<VkSurfaceFormatKHR> formats;
-        if (surface == VK_NULL_HANDLE || device.get_physical() == VK_NULL_HANDLE) {
-            Log::warning("Attempted to get surface formats with null surface or physical device.");
-            return formats; // Return empty vector
-        }
-        uint32_t formatCount = 0;
-        // Query count first
-        VkResult result = vkGetPhysicalDeviceSurfaceFormatsKHR(device.get_physical(), surface, &formatCount, nullptr);
-        if (result != VK_SUCCESS || formatCount == 0) {
-            Log::warning("Failed to query physical device surface format count or none available (VkResult=", result, ")");
-            return formats; // Return empty vector
-        }
+	// Get the supported surface formats for a specific physical device
+	std::vector<VkSurfaceFormatKHR> get_formats(Device& device) const {
+		std::vector<VkSurfaceFormatKHR> formats;
+		if (surface == VK_NULL_HANDLE || device.get_physical() == VK_NULL_HANDLE) {
+			Log::warning("Attempted to get surface formats with null surface or physical device.");
+			return formats; // Return empty vector
+		}
+		uint32_t formatCount = 0;
+		// Query count first
+		VkResult result = vkGetPhysicalDeviceSurfaceFormatsKHR(device.get_physical(), surface, &formatCount, nullptr);
+		if (result != VK_SUCCESS || formatCount == 0) {
+			Log::warning("Failed to query physical device surface format count or none available (VkResult=", result, ")");
+			return formats; // Return empty vector
+		}
 
-        formats.resize(formatCount);
-        // Query actual formats
-        result = vkGetPhysicalDeviceSurfaceFormatsKHR(device.get_physical(), surface, &formatCount, formats.data());
-        if (result != VK_SUCCESS) {
-            Log::error("Failed to query physical device surface formats (VkResult=", result, ")");
-        }
-        return formats;
-    }
+		formats.resize(formatCount);
+		// Query actual formats
+		result = vkGetPhysicalDeviceSurfaceFormatsKHR(device.get_physical(), surface, &formatCount, formats.data());
+		if (result != VK_SUCCESS) {
+			Log::error("Failed to query physical device surface formats (VkResult=", result, ")");
+		}
+		return formats;
+	}
 
-    // Get the supported presentation modes for a specific physical device
-    std::vector<VkPresentModeKHR> get_present_modes(Device& device) const {
-        std::vector<VkPresentModeKHR> presentModes;
-        if (surface == VK_NULL_HANDLE || device.get_physical() == VK_NULL_HANDLE) {
-            Log::warning("Attempted to get surface present modes with null surface or physical device.");
-            return presentModes; // Return empty vector
-        }
-        uint32_t presentModeCount = 0;
-        // Query count first
-        VkResult result = vkGetPhysicalDeviceSurfacePresentModesKHR(device.get_physical(), surface, &presentModeCount, nullptr);
-        if (result != VK_SUCCESS || presentModeCount == 0) {
-            Log::warning("Failed to query physical device surface present mode count or none available (VkResult=", result, ")");
-            return presentModes; // Return empty vector
-        }
+	// Get the supported presentation modes for a specific physical device
+	std::vector<VkPresentModeKHR> get_present_modes(Device& device) const {
+		std::vector<VkPresentModeKHR> presentModes;
+		if (surface == VK_NULL_HANDLE || device.get_physical() == VK_NULL_HANDLE) {
+			Log::warning("Attempted to get surface present modes with null surface or physical device.");
+			return presentModes; // Return empty vector
+		}
+		uint32_t presentModeCount = 0;
+		// Query count first
+		VkResult result = vkGetPhysicalDeviceSurfacePresentModesKHR(device.get_physical(), surface, &presentModeCount, nullptr);
+		if (result != VK_SUCCESS || presentModeCount == 0) {
+			Log::warning("Failed to query physical device surface present mode count or none available (VkResult=", result, ")");
+			return presentModes; // Return empty vector
+		}
 
-        presentModes.resize(presentModeCount);
-        // Query actual modes
-        result = vkGetPhysicalDeviceSurfacePresentModesKHR(device.get_physical(), surface, &presentModeCount, presentModes.data());
-        if (result != VK_SUCCESS) {
-            Log::error("Failed to query physical device surface present modes (VkResult=", result, ")");
-        }
-        return presentModes;
-    }
+		presentModes.resize(presentModeCount);
+		// Query actual modes
+		result = vkGetPhysicalDeviceSurfacePresentModesKHR(device.get_physical(), surface, &presentModeCount, presentModes.data());
+		if (result != VK_SUCCESS) {
+			Log::error("Failed to query physical device surface present modes (VkResult=", result, ")");
+		}
+		return presentModes;
+	}
 
 protected:
-    // Helper to destroy the surface (called by destructor and move assignment)
-    void destroy() {
-        if (surface != VK_NULL_HANDLE && instance_handle != VK_NULL_HANDLE) {
-            vkDestroySurfaceKHR(instance_handle, surface, nullptr);
-            Log::info("[SURFACE DESTROYED] (handle: ", surface, ")");
-        }
-        surface = VK_NULL_HANDLE;
-    }
+	// Helper to destroy the surface (called by destructor and move assignment)
+	void destroy() {
+		if (surface != VK_NULL_HANDLE && instance_handle != VK_NULL_HANDLE) {
+			vkDestroySurfaceKHR(instance_handle, surface, nullptr);
+			Log::info("[SURFACE DESTROYED] (handle: ", surface, ")");
+		}
+		surface = VK_NULL_HANDLE;
+	}
 
-    VkInstance instance_handle = nullptr;
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
+	VkInstance instance_handle = nullptr;
+	VkSurfaceKHR surface = VK_NULL_HANDLE;
 };
 
 class SurfaceFormat {
 public:
-    SurfaceFormat(VkFormat format = VK_FORMAT_R32G32_SFLOAT, VkColorSpaceKHR color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) : format(format), color_space(color_space) {
-        surface_format.format = format;
-        surface_format.colorSpace = color_space;
-    }
+	SurfaceFormat(VkFormat format = VK_FORMAT_R32G32_SFLOAT, VkColorSpaceKHR color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) : format(format), color_space(color_space) {
+		surface_format.format = format;
+		surface_format.colorSpace = color_space;
+	}
 
-    // Move constructor
-    SurfaceFormat(SurfaceFormat&& other) noexcept : format(std::exchange(other.format, VK_FORMAT_UNDEFINED)), color_space(std::exchange(other.color_space, VK_COLOR_SPACE_MAX_ENUM_KHR)) {}
+	// Move constructor
+	SurfaceFormat(SurfaceFormat&& other) noexcept : format(std::exchange(other.format, VK_FORMAT_UNDEFINED)), color_space(std::exchange(other.color_space, VK_COLOR_SPACE_MAX_ENUM_KHR)) {}
 
-    // Move assignment
-    SurfaceFormat& operator=(SurfaceFormat&& other) noexcept {
-        if (this != &other) {
-            format = std::exchange(other.format, VK_FORMAT_UNDEFINED);
-            color_space = std::exchange(other.color_space, VK_COLOR_SPACE_MAX_ENUM_KHR);
-        }
-        return *this;
-    }
+	// Move assignment
+	SurfaceFormat& operator=(SurfaceFormat&& other) noexcept {
+		if (this != &other) {
+			format = std::exchange(other.format, VK_FORMAT_UNDEFINED);
+			color_space = std::exchange(other.color_space, VK_COLOR_SPACE_MAX_ENUM_KHR);
+		}
+		return *this;
+	}
 
-    // Deleted copy constructor and assignment
-    SurfaceFormat(const SurfaceFormat&) = delete;
-    SurfaceFormat& operator=(const SurfaceFormat&) = delete;
+	// Deleted copy constructor and assignment
+	SurfaceFormat(const SurfaceFormat&) = delete;
+	SurfaceFormat& operator=(const SurfaceFormat&) = delete;
 
-    // Destructor
-    ~SurfaceFormat() {}
+	// Destructor
+	~SurfaceFormat() {}
 
-    // Getters
-    VkSurfaceFormatKHR get() const { return surface_format; }
-    VkFormat get_format() const { return format; }
-    VkColorSpaceKHR get_color_space() const { return color_space; }
+	// Getters
+	VkSurfaceFormatKHR get() const { return surface_format; }
+	VkFormat get_format() const { return format; }
+	VkColorSpaceKHR get_color_space() const { return color_space; }
 
-        // Setters
-    void set_format(VkFormat new_format) { this->format = new_format; surface_format.format = new_format; }
-    void set_color_space(VkColorSpaceKHR new_color_space) { this->color_space = new_color_space; surface_format.colorSpace = new_color_space; }
+	// Setters
+	void set_format(VkFormat new_format) { this->format = new_format; surface_format.format = new_format; }
+	void set_color_space(VkColorSpaceKHR new_color_space) { this->color_space = new_color_space; surface_format.colorSpace = new_color_space; }
 private:
-    VkFormat format;
-    VkColorSpaceKHR color_space;
-    VkSurfaceFormatKHR surface_format = {};
+	VkFormat format;
+	VkColorSpaceKHR color_space;
+	VkSurfaceFormatKHR surface_format = {};
 };
 
 // for synchronization between GPU and CPU
 class Fence {
 public:
-    // constructor
-    Fence() = delete;
-    Fence(const Device& device, bool signaled = false) {
-        this->logical = device.get_logical();
-        VkFenceCreateInfo create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        create_info.pNext = NULL;
-        create_info.flags = signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0;
-        vkCreateFence(logical, &create_info, nullptr, &fence);
-    }
+	// constructor
+	Fence() = delete;
+	Fence(const Device& device, bool signaled = false) {
+		this->logical = device.get_logical();
+		VkFenceCreateInfo create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		create_info.pNext = NULL;
+		create_info.flags = signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0;
+		vkCreateFence(logical, &create_info, nullptr, &fence);
+	}
 
-    // move constructor
-    Fence(Fence&& other) noexcept : fence(std::exchange(other.fence, nullptr)), logical(std::exchange(other.logical, nullptr)) {}
+	// move constructor
+	Fence(Fence&& other) noexcept : fence(std::exchange(other.fence, nullptr)), logical(std::exchange(other.logical, nullptr)) {}
 
-    // move assignment
-    Fence& operator=(Fence&& other) noexcept {
-        if (this != &other) {
-            logical = std::exchange(other.logical, nullptr);
-            fence = std::exchange(other.fence, nullptr);
-        }
-        return *this;
-    }
+	// move assignment
+	Fence& operator=(Fence&& other) noexcept {
+		if (this != &other) {
+			logical = std::exchange(other.logical, nullptr);
+			fence = std::exchange(other.fence, nullptr);
+		}
+		return *this;
+	}
 
-    // deleted copy constructor and assignment
-    Fence(const Fence&) = delete;
-    Fence& operator=(const Fence&) = delete;
+	// deleted copy constructor and assignment
+	Fence(const Fence&) = delete;
+	Fence& operator=(const Fence&) = delete;
 
-    // destructor
-    ~Fence() {
-        vkDestroyFence(logical, fence, nullptr);
-    }
+	// destructor
+	~Fence() {
+		vkDestroyFence(logical, fence, nullptr);
+	}
 
-    // query fence status
-    bool signaled() const {
-        return vkGetFenceStatus(logical, fence) == VK_SUCCESS;
-    }
+	// query fence status
+	bool signaled() const {
+		return vkGetFenceStatus(logical, fence) == VK_SUCCESS;
+	}
 
-    // reset the fence to unsignaled state
-    VkResult reset() const {
-        return vkResetFences(logical, 1, &fence);
-    }
+	// reset the fence to unsignaled state
+	VkResult reset() const {
+		return vkResetFences(logical, 1, &fence);
+	}
 
-    // wait for the fence to be signaled
-    VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) const {
-        return vkWaitForFences(logical, 1, &fence, VK_TRUE, timeout_nanosec);
-    }
+	// wait for the fence to be signaled
+	VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) const {
+		return vkWaitForFences(logical, 1, &fence, VK_TRUE, timeout_nanosec);
+	}
 
-    VkFence get() const { return fence; }
+	VkFence get() const { return fence; }
 private:
-    VkFence fence = nullptr;
-    VkDevice logical = nullptr;
+	VkFence fence = nullptr;
+	VkDevice logical = nullptr;
 };
 
 // for synchronization on the GPU
 class Semaphore {
 public:
-    // constructor
-    Semaphore() = delete;
-    Semaphore(const Device& device, VkSemaphoreType type = VK_SEMAPHORE_TYPE_BINARY, uint64_t initial_value = 0) {
-        this->logical = device.get_logical();
-        this->type = type;
+	// constructor
+	Semaphore() = delete;
+	Semaphore(const Device& device, VkSemaphoreType type = VK_SEMAPHORE_TYPE_BINARY, uint64_t initial_value = 0) {
+		this->logical = device.get_logical();
+		this->type = type;
 
-        VkSemaphoreTypeCreateInfo type_create_info = {};
-        type_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-        type_create_info.pNext = NULL;
-        type_create_info.semaphoreType = type;
-        type_create_info.initialValue = type == VK_SEMAPHORE_TYPE_BINARY ? 0 : initial_value;
+		VkSemaphoreTypeCreateInfo type_create_info = {};
+		type_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+		type_create_info.pNext = NULL;
+		type_create_info.semaphoreType = type;
+		type_create_info.initialValue = type == VK_SEMAPHORE_TYPE_BINARY ? 0 : initial_value;
 
-        VkSemaphoreCreateInfo create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        create_info.pNext = &type_create_info;
-        create_info.flags = 0;
-        vkCreateSemaphore(logical, &create_info, nullptr, &semaphore);
-    }
+		VkSemaphoreCreateInfo create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		create_info.pNext = &type_create_info;
+		create_info.flags = 0;
+		vkCreateSemaphore(logical, &create_info, nullptr, &semaphore);
+	}
 
-    // destructor
-    ~Semaphore() {
-        vkDestroySemaphore(logical, semaphore, nullptr);
-        semaphore = nullptr;
-    }
+	// destructor
+	~Semaphore() {
+		vkDestroySemaphore(logical, semaphore, nullptr);
+		semaphore = nullptr;
+	}
 
-    // move constructor
-    Semaphore(Semaphore&& other) noexcept : semaphore(std::exchange(other.semaphore, nullptr)), logical(std::exchange(other.logical, nullptr)), type(other.type) {}
+	// move constructor
+	Semaphore(Semaphore&& other) noexcept : semaphore(std::exchange(other.semaphore, nullptr)), logical(std::exchange(other.logical, nullptr)), type(other.type) {}
 
-    // move assignment
-    Semaphore& operator=(Semaphore&& other) noexcept {
-        if (this != &other) {
-            logical = std::exchange(other.logical, nullptr);
-            semaphore = std::exchange(other.semaphore, nullptr);
-            type = other.type;
-        }
-        return *this;
-    }
+	// move assignment
+	Semaphore& operator=(Semaphore&& other) noexcept {
+		if (this != &other) {
+			logical = std::exchange(other.logical, nullptr);
+			semaphore = std::exchange(other.semaphore, nullptr);
+			type = other.type;
+		}
+		return *this;
+	}
 
-    // deleted copy constructor and assignment
-    Semaphore(const Semaphore&) = delete;
-    Semaphore& operator=(const Semaphore&) = delete;
+	// deleted copy constructor and assignment
+	Semaphore(const Semaphore&) = delete;
+	Semaphore& operator=(const Semaphore&) = delete;
 
-    // wait for the semaphore to be signaled
-    VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) {
-        wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        wait_info.pNext = NULL;
-        wait_info.flags = VK_SEMAPHORE_WAIT_ANY_BIT;
-        wait_info.semaphoreCount = 1;
-        wait_info.pSemaphores = &semaphore;
-        return vkWaitSemaphores(logical, &wait_info, timeout_nanosec);
-    }
+	// wait for the semaphore to be signaled
+	VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) {
+		wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+		wait_info.pNext = NULL;
+		wait_info.flags = VK_SEMAPHORE_WAIT_ANY_BIT;
+		wait_info.semaphoreCount = 1;
+		wait_info.pSemaphores = &semaphore;
+		return vkWaitSemaphores(logical, &wait_info, timeout_nanosec);
+	}
 
-    // query semaphore counter value
-    uint64_t counter() const {
-        uint64_t value;
-        vkGetSemaphoreCounterValue(logical, semaphore, &value);
-        return value;
-    }
+	// query semaphore counter value
+	uint64_t counter() const {
+		uint64_t value;
+		vkGetSemaphoreCounterValue(logical, semaphore, &value);
+		return value;
+	}
 
-    // signal the semaphore with a specified value
-    void signal(uint64_t value) {
-        signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
-        signal_info.pNext = NULL;
-        signal_info.semaphore = semaphore;
-        signal_info.value = value;
-        vkSignalSemaphore(logical, &signal_info);
-    }
+	// signal the semaphore with a specified value
+	void signal(uint64_t value) {
+		signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
+		signal_info.pNext = NULL;
+		signal_info.semaphore = semaphore;
+		signal_info.value = value;
+		vkSignalSemaphore(logical, &signal_info);
+	}
 
-    // returns the semaphore handle
-    VkSemaphore get() const { return semaphore; }
-    const VkSemaphore* get_ptr() const { return &semaphore; }
+	// returns the semaphore handle
+	VkSemaphore get() const { return semaphore; }
+	const VkSemaphore* get_ptr() const { return &semaphore; }
 
 private:
-    VkSemaphore semaphore = nullptr;
-    VkDevice logical = nullptr;
-    VkSemaphoreType type;
-    VkSemaphoreWaitInfo wait_info = {};
-    VkSemaphoreSignalInfo signal_info = {};
+	VkSemaphore semaphore = nullptr;
+	VkDevice logical = nullptr;
+	VkSemaphoreType type;
+	VkSemaphoreWaitInfo wait_info = {};
+	VkSemaphoreSignalInfo signal_info = {};
 };
 
 // events are used for synchronization between the CPU and GPU
 class Event {
 public:
-    // constructor
-    Event() = delete;
-    Event(const Device& device) {
-        // If the VK_KHR_portability_subset extension is enabled, and VkPhysicalDevicePortabilitySubsetFeaturesKHR::events is VK_FALSE,
-        // then the implementation does not support events, and vkCreateEvent must not be used !!!
-        this->logical = device.get_logical();
-        VkEventCreateInfo create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO;
-        create_info.pNext = NULL;
-        create_info.flags = VK_EVENT_CREATE_DEVICE_ONLY_BIT;
-        vkCreateEvent(logical, &create_info, nullptr, &event);
-    }
+	// constructor
+	Event() = delete;
+	Event(const Device& device) {
+		// If the VK_KHR_portability_subset extension is enabled, and VkPhysicalDevicePortabilitySubsetFeaturesKHR::events is VK_FALSE,
+		// then the implementation does not support events, and vkCreateEvent must not be used !!!
+		this->logical = device.get_logical();
+		VkEventCreateInfo create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO;
+		create_info.pNext = NULL;
+		create_info.flags = VK_EVENT_CREATE_DEVICE_ONLY_BIT;
+		vkCreateEvent(logical, &create_info, nullptr, &event);
+	}
 
-    // destructor
-    ~Event() {
-        vkDestroyEvent(logical, event, nullptr);
-    }
+	// destructor
+	~Event() {
+		vkDestroyEvent(logical, event, nullptr);
+	}
 
-    // move constructor
-    Event(Event&& other) noexcept : event(std::exchange(other.event, nullptr)), logical(std::exchange(other.logical, nullptr)) {}
+	// move constructor
+	Event(Event&& other) noexcept : event(std::exchange(other.event, nullptr)), logical(std::exchange(other.logical, nullptr)) {}
 
-    // move assignment
-    Event& operator=(Event&& other) noexcept {
-        if (this != &other) {
-            logical = std::exchange(other.logical, nullptr);
-            event = std::exchange(other.event, nullptr);
-        }
-        return *this;
-    }
+	// move assignment
+	Event& operator=(Event&& other) noexcept {
+		if (this != &other) {
+			logical = std::exchange(other.logical, nullptr);
+			event = std::exchange(other.event, nullptr);
+		}
+		return *this;
+	}
 
-    // deleted copy constructor and assignment
-    Event(const Event&) = delete;
-    Event& operator=(const Event&) = delete;
+	// deleted copy constructor and assignment
+	Event(const Event&) = delete;
+	Event& operator=(const Event&) = delete;
 
-    void reset() const {
-        vkResetEvent(logical, event);
-    }
+	void reset() const {
+		vkResetEvent(logical, event);
+	}
 
-    // set the event to signaled state
-    void set() const {
-        vkSetEvent(logical, event);
-    }
+	// set the event to signaled state
+	void set() const {
+		vkSetEvent(logical, event);
+	}
 
-    // query event status
-    bool signaled() const {
-        return vkGetEventStatus(logical, event) == VK_EVENT_SET;
-    }
+	// query event status
+	bool signaled() const {
+		return vkGetEventStatus(logical, event) == VK_EVENT_SET;
+	}
 
-    // getters
-    const VkEvent& get() const { return event; }
-    const VkDependencyInfo& get_dependency_info() const { return dependency_info; }
-    VkDependencyInfo* get_dependency_info_ptr() { return &dependency_info; }
+	// getters
+	const VkEvent& get() const { return event; }
+	const VkDependencyInfo& get_dependency_info() const { return dependency_info; }
+	VkDependencyInfo* get_dependency_info_ptr() { return &dependency_info; }
 
 protected:
-    VkDependencyInfo dependency_info = {};
-    VkEvent event = nullptr;
-    VkDevice logical = nullptr;
+	VkDependencyInfo dependency_info = {};
+	VkEvent event = nullptr;
+	VkDevice logical = nullptr;
 
 };
 
 class Swapchain {
 public:
-    // constructor
-    Swapchain() = delete;
-    Swapchain(
-        Device& device,
-        Surface& surface,
-        SurfaceFormat& surface_format,
-        RenderPass& renderpass,
-        VkImageUsageFlags usage,
-        uint32_t extent_width = 1920,
-        uint32_t extent_height = 1080,
-        uint32_t min_image_count = 3,
-        VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D,
-        VkPresentModeKHR present_mode_preference = VK_PRESENT_MODE_FIFO_KHR
-    ) {
-        // store member variables according to constructor arguments
-        if (!surface.get_physical_device_support(device, QueueFamily::GRAPHICS_QUEUE)) {
-            Log::error("invalid swapchain call: physical device doesn't support graphics queue family present to this surface");
-        }
-        this->device = &device;
-        this->logical = device.get_logical();
-        surface_capabilities = surface.get_capabilities(device);
-        this->view_type = view_type;
-        this->surface_format = &surface_format;
-        this->renderpass = &renderpass;
-        this->surface = &surface;
-        this->usage = usage;
+	// constructor
+	Swapchain() = delete;
+	Swapchain(
+		Device& device,
+		Surface& surface,
+		SurfaceFormat& surface_format,
+		RenderPass& renderpass,
+		VkImageUsageFlags usage,
+		uint32_t extent_width = 1920,
+		uint32_t extent_height = 1080,
+		uint32_t min_image_count = 3,
+		VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D,
+		VkPresentModeKHR present_mode_preference = VK_PRESENT_MODE_FIFO_KHR
+	) {
+		// store member variables according to constructor arguments
+		if (!surface.get_physical_device_support(device, QueueFamily::GRAPHICS_QUEUE)) {
+			Log::error("invalid swapchain call: physical device doesn't support graphics queue family present to this surface");
+		}
+		this->device = &device;
+		this->logical = device.get_logical();
+		surface_capabilities = surface.get_capabilities(device);
+		this->view_type = view_type;
+		this->surface_format = &surface_format;
+		this->renderpass = &renderpass;
+		this->surface = &surface;
+		this->usage = usage;
 
-        // chose present mode
-        std::vector<VkPresentModeKHR> available_present_modes = surface.get_present_modes(device);
-        if (available_present_modes.empty()) {
-            Log::error("swapchain creation failed; no suitable present modes available for the surface");
-        }
-        VkPresentModeKHR selected_present_mode = VK_PRESENT_MODE_FIFO_KHR;
-        bool success = false;
-        for (const auto& available : available_present_modes) {
-            if (available == present_mode_preference) {
-                selected_present_mode = present_mode_preference;
-                success = true;
-            }
-        }
-        if (!success) {
-            Log::warning("in swapchain constructor: preferred present mode not available -> falling back to FIFO as default");
-        }
+		// chose present mode
+		std::vector<VkPresentModeKHR> available_present_modes = surface.get_present_modes(device);
+		if (available_present_modes.empty()) {
+			Log::error("swapchain creation failed; no suitable present modes available for the surface");
+		}
+		VkPresentModeKHR selected_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+		bool success = false;
+		for (const auto& available : available_present_modes) {
+			if (available == present_mode_preference) {
+				selected_present_mode = present_mode_preference;
+				success = true;
+			}
+		}
+		if (!success) {
+			Log::warning("in swapchain constructor: preferred present mode not available -> falling back to FIFO as default");
+		}
 
-        // adjust image count
-        uint32_t image_count = min_image_count;
-        if (image_count > surface_capabilities.maxImageCount) {
-            image_count = surface_capabilities.maxImageCount;
-            Log::warning("in swapchain constructor: min image count exceeds max image count of surface capabilities -> reduced to ", image_count);
-        }
-        if (image_count < surface_capabilities.minImageCount) {
-            image_count = surface_capabilities.minImageCount;
-            Log::warning("in swapchain constructor: surface capabilities require min image count of >=", image_count, " -> adjusted accordingly");
-        }
+		// adjust image count
+		uint32_t image_count = min_image_count;
+		if (image_count > surface_capabilities.maxImageCount) {
+			image_count = surface_capabilities.maxImageCount;
+			Log::warning("in swapchain constructor: min image count exceeds max image count of surface capabilities -> reduced to ", image_count);
+		}
+		if (image_count < surface_capabilities.minImageCount) {
+			image_count = surface_capabilities.minImageCount;
+			Log::warning("in swapchain constructor: surface capabilities require min image count of >=", image_count, " -> adjusted accordingly");
+		}
 
-        // adjust image extent
-        // (note: std::min & std::max can't be used to replace the if statements due to an IntelliSense bug)
-        extent.width = extent_width;
-        if (extent.width > surface_capabilities.maxImageExtent.width) {
-            extent.width = surface_capabilities.maxImageExtent.width;
-        }
-        else if (extent.width < surface_capabilities.minImageExtent.width) {
-            extent.width = surface_capabilities.minImageExtent.width;
-        }
-        extent.height = extent_height;
-        if (extent.height > surface_capabilities.maxImageExtent.height) {
-            extent.height = surface_capabilities.maxImageExtent.height;
-        }
-        else if (extent.height < surface_capabilities.minImageExtent.height) {
-            extent.height = surface_capabilities.minImageExtent.height;
-        }
+		// adjust image extent
+		// (note: std::min & std::max can't be used to replace the if statements due to an IntelliSense bug)
+		extent.width = extent_width;
+		if (extent.width > surface_capabilities.maxImageExtent.width) {
+			extent.width = surface_capabilities.maxImageExtent.width;
+		}
+		else if (extent.width < surface_capabilities.minImageExtent.width) {
+			extent.width = surface_capabilities.minImageExtent.width;
+		}
+		extent.height = extent_height;
+		if (extent.height > surface_capabilities.maxImageExtent.height) {
+			extent.height = surface_capabilities.maxImageExtent.height;
+		}
+		else if (extent.height < surface_capabilities.minImageExtent.height) {
+			extent.height = surface_capabilities.minImageExtent.height;
+		}
 
-        // setup swapchain details
-        VkSwapchainCreateInfoKHR create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        create_info.surface = surface.get();
-        create_info.minImageCount = image_count;
-        create_info.imageFormat = surface_format.get_format(); // e.g., VK_FORMAT_B8G8R8A8_SRGB
-        create_info.imageColorSpace = surface_format.get_color_space(); // e.g., VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
-        create_info.imageExtent = extent;
-        create_info.imageArrayLayers = 1; // Use > 1 for stereoscopic rendering
-        create_info.imageUsage = usage; // e.g., VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-        create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        create_info.queueFamilyIndexCount = 0; // Optional for exclusive
-        create_info.pQueueFamilyIndices = nullptr; // Optional for exclusive
-        create_info.preTransform = surface_capabilities.currentTransform; // e.g. VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-        create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        create_info.clipped = VK_TRUE; // Allow clipping occluded pixels
-        create_info.oldSwapchain = VK_NULL_HANDLE; // Required for recreation, null for initial creation
-        create_info.presentMode = selected_present_mode;
+		// setup swapchain details
+		VkSwapchainCreateInfoKHR create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+		create_info.surface = surface.get();
+		create_info.minImageCount = image_count;
+		create_info.imageFormat = surface_format.get_format(); // e.g., VK_FORMAT_B8G8R8A8_SRGB
+		create_info.imageColorSpace = surface_format.get_color_space(); // e.g., VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+		create_info.imageExtent = extent;
+		create_info.imageArrayLayers = 1; // Use > 1 for stereoscopic rendering
+		create_info.imageUsage = usage; // e.g., VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+		create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		create_info.queueFamilyIndexCount = 0; // Optional for exclusive
+		create_info.pQueueFamilyIndices = nullptr; // Optional for exclusive
+		create_info.preTransform = surface_capabilities.currentTransform; // e.g. VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+		create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+		create_info.clipped = VK_TRUE; // Allow clipping occluded pixels
+		create_info.oldSwapchain = VK_NULL_HANDLE; // Required for recreation, null for initial creation
+		create_info.presentMode = selected_present_mode;
 
-        // finalize swapchain
-        VkResult result = vkCreateSwapchainKHR(logical, &create_info, nullptr, &swapchain);
-        if (result != VK_SUCCESS) {
-            Log::error("Failed to create swapchain (VkResult=", result, ")");
-        }
-        else {
-            Log::debug("Swapchain created successfully.");
-        }
+		// finalize swapchain
+		VkResult result = vkCreateSwapchainKHR(logical, &create_info, nullptr, &swapchain);
+		if (result != VK_SUCCESS) {
+			Log::error("Failed to create swapchain (VkResult=", result, ")");
+		}
+		else {
+			Log::debug("Swapchain created successfully.");
+		}
 
-        // get images
-        vkGetSwapchainImagesKHR(logical, swapchain, &num_images, nullptr);
-        image.resize(num_images);
-        vkGetSwapchainImagesKHR(logical, swapchain, &num_images, image.data());
+		// get images
+		vkGetSwapchainImagesKHR(logical, swapchain, &num_images, nullptr);
+		image.resize(num_images);
+		vkGetSwapchainImagesKHR(logical, swapchain, &num_images, image.data());
 
-        // create image views for swapchain images
-        color_image_views.resize(num_images);
-        for (uint32_t i = 0; i < num_images; i++) {
-            VkImageViewCreateInfo view_info = {};
-            view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            view_info.image = image[i];
-            view_info.viewType = view_type; // e.g. VK_IMAGE_VIEW_TYPE_2D (assuming 2D)
-            view_info.format = surface_format.get_format();
-            view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            view_info.subresourceRange.baseMipLevel = 0;
-            view_info.subresourceRange.levelCount = 1;
-            view_info.subresourceRange.baseArrayLayer = 0;
-            view_info.subresourceRange.layerCount = 1;
+		// create image views for swapchain images
+		color_image_views.resize(num_images);
+		for (uint32_t i = 0; i < num_images; i++) {
+			VkImageViewCreateInfo view_info = {};
+			view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			view_info.image = image[i];
+			view_info.viewType = view_type; // e.g. VK_IMAGE_VIEW_TYPE_2D (assuming 2D)
+			view_info.format = surface_format.get_format();
+			view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			view_info.subresourceRange.baseMipLevel = 0;
+			view_info.subresourceRange.levelCount = 1;
+			view_info.subresourceRange.baseArrayLayer = 0;
+			view_info.subresourceRange.layerCount = 1;
 
-            result = vkCreateImageView(logical, &view_info, nullptr, &color_image_views[i]);
-            if (result != VK_SUCCESS) {
-                Log::error("Failed to create swapchain image view ", i);
-            }
-        }
-        Log::info("Swapchain created with ", num_images, " images/views.");
+			result = vkCreateImageView(logical, &view_info, nullptr, &color_image_views[i]);
+			if (result != VK_SUCCESS) {
+				Log::error("Failed to create swapchain image view ", i);
+			}
+		}
+		Log::info("Swapchain created with ", num_images, " images/views.");
 
-    }
+	}
 
-    void create_framebuffers(const std::vector<ImageView>& attachments_imageviews) {
+	void create_framebuffers(const std::vector<ImageView>& attachments_imageviews) {
 
-        framebuffer.resize(num_images);
-        uint32_t expected_attachments = renderpass->get_attachment_count();
+		framebuffer.resize(num_images);
+		uint32_t expected_attachments = renderpass->get_attachment_count();
 
-        for (uint32_t i = 0; i < num_images; i++) {
-            std::vector<VkImageView> attachments;
-            // add swapchain color view first (assuming it's attachment 0 in the render pass)
-            attachments.push_back(color_image_views[i]);
-            // add other attachments provided externally (if any), e.g. depth buffer view;
-            // the order must match the order in the render pass !!
-            for (uint32_t j = 0; j < attachments_imageviews.size(); j++) {
-                if (attachments_imageviews[j].get() != nullptr) {
-                    attachments.push_back(attachments_imageviews[j].get());
-                }
-            }
-            if (attachments.size() != expected_attachments) {
-                Log::error("Framebuffer creation failed: Mismatched attachment count (expected ", expected_attachments, ", got ", attachments.size(), ")");
-            }
-            VkFramebufferCreateInfo framebuffer_create_info = {};
-            framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-            framebuffer_create_info.renderPass = this->renderpass->get();
-            framebuffer_create_info.attachmentCount = expected_attachments;
-            framebuffer_create_info.pAttachments = attachments.data();
-            framebuffer_create_info.width = extent.width;
-            framebuffer_create_info.height = extent.height;
-            framebuffer_create_info.layers = 1;
+		for (uint32_t i = 0; i < num_images; i++) {
+			std::vector<VkImageView> attachments;
+			// add swapchain color view first (assuming it's attachment 0 in the render pass)
+			attachments.push_back(color_image_views[i]);
+			// add other attachments provided externally (if any), e.g. depth buffer view;
+			// the order must match the order in the render pass !!
+			for (uint32_t j = 0; j < attachments_imageviews.size(); j++) {
+				if (attachments_imageviews[j].get() != nullptr) {
+					attachments.push_back(attachments_imageviews[j].get());
+				}
+			}
+			if (attachments.size() != expected_attachments) {
+				Log::error("Framebuffer creation failed: Mismatched attachment count (expected ", expected_attachments, ", got ", attachments.size(), ")");
+			}
+			VkFramebufferCreateInfo framebuffer_create_info = {};
+			framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			framebuffer_create_info.renderPass = this->renderpass->get();
+			framebuffer_create_info.attachmentCount = expected_attachments;
+			framebuffer_create_info.pAttachments = attachments.data();
+			framebuffer_create_info.width = extent.width;
+			framebuffer_create_info.height = extent.height;
+			framebuffer_create_info.layers = 1;
 
-            VkResult result = vkCreateFramebuffer(logical, &framebuffer_create_info, nullptr, &framebuffer[i]);
-            if (result != VK_SUCCESS) {
-                Log::error("Failed to create framebuffer ", i, " (VkResult=", result, ")");
-            }
-        }
+			VkResult result = vkCreateFramebuffer(logical, &framebuffer_create_info, nullptr, &framebuffer[i]);
+			if (result != VK_SUCCESS) {
+				Log::error("Failed to create framebuffer ", i, " (VkResult=", result, ")");
+			}
+		}
 
-        Log::info("Swapchain framebuffers created successfully.");
-    }
+		Log::info("Swapchain framebuffers created successfully.");
+	}
 
-    void acquire_next_image(const Semaphore& image_available_semaphore, const std::optional<Fence>& fence = std::nullopt, uint64_t timeout = UINT64_MAX) {
-        VkResult result;
-        if (fence.has_value()) {
-            result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), fence.value().get(), &current_image_index);
-        }
-        else {
-            result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), nullptr, &current_image_index);
-        }
+	void acquire_next_image(const Semaphore& image_available_semaphore, const std::optional<Fence>& fence = std::nullopt, uint64_t timeout = UINT64_MAX) {
+		VkResult result;
+		if (fence.has_value()) {
+			result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), fence.value().get(), &current_image_index);
+		}
+		else {
+			result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), nullptr, &current_image_index);
+		}
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            Log::warning("Swapchain out of date during acquire -> recreating");
-            this->recreate();
-        }
-        else if (result == VK_SUBOPTIMAL_KHR) {
-            Log::info("Swapchain suboptimal during acquire. Okay to continue, but should be recreated soon.");
-        }
-        else if (result != VK_SUCCESS) {
-            Log::error("Failed to acquire swapchain image (VkResult=", result, ")");
-        }
-        // else: Success
-    }
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			Log::warning("Swapchain out of date during acquire -> recreating");
+			this->recreate();
+		}
+		else if (result == VK_SUBOPTIMAL_KHR) {
+			Log::info("Swapchain suboptimal during acquire. Okay to continue, but should be recreated soon.");
+		}
+		else if (result != VK_SUCCESS) {
+			Log::error("Failed to acquire swapchain image (VkResult=", result, ")");
+		}
+		// else: Success
+	}
 
-    // present the rendered image to the graphics queue (method overload without semaphores)
-    VkResult present_rendered_image() {
-        VkPresentInfoKHR present_info{};
-        present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        present_info.waitSemaphoreCount = 0;
-        present_info.pWaitSemaphores = nullptr;
+	// present the rendered image to the graphics queue (method overload without semaphores)
+	VkResult present_rendered_image() {
+		VkPresentInfoKHR present_info{};
+		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		present_info.waitSemaphoreCount = 0;
+		present_info.pWaitSemaphores = nullptr;
 
-        present_info.swapchainCount = 1;
-        present_info.pSwapchains = &swapchain;
-        present_info.pImageIndices = &current_image_index;
-        present_info.pResults = nullptr;
+		present_info.swapchainCount = 1;
+		present_info.pSwapchains = &swapchain;
+		present_info.pImageIndices = &current_image_index;
+		present_info.pResults = nullptr;
 
-        VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
+		VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            Log::warning("Swapchain out of date during present -> recreating");
-            this->recreate();
-        }
-        else if (result == VK_SUBOPTIMAL_KHR) {
-            Log::info("Swapchain suboptimal during present. Okay to continue, but should be recreated soon");
-        }
-        else if (result != VK_SUCCESS) {
-            Log::error("Failed to present swapchain image (VkResult=", result, ")");
-        }
-        // else: Success
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			Log::warning("Swapchain out of date during present -> recreating");
+			this->recreate();
+		}
+		else if (result == VK_SUBOPTIMAL_KHR) {
+			Log::info("Swapchain suboptimal during present. Okay to continue, but should be recreated soon");
+		}
+		else if (result != VK_SUCCESS) {
+			Log::error("Failed to present swapchain image (VkResult=", result, ")");
+		}
+		// else: Success
 
-        return result;
-    }
+		return result;
+	}
 
-    // present the rendered image to the graphics queue (method overload with single semaphore)
-    VkResult present_rendered_image(const Semaphore& wait_semaphore) {
-        VkPresentInfoKHR present_info{};
-        present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        present_info.waitSemaphoreCount = 1;
-        present_info.pWaitSemaphores = wait_semaphore.get_ptr();
+	// present the rendered image to the graphics queue (method overload with single semaphore)
+	VkResult present_rendered_image(const Semaphore& wait_semaphore) {
+		VkPresentInfoKHR present_info{};
+		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		present_info.waitSemaphoreCount = 1;
+		present_info.pWaitSemaphores = wait_semaphore.get_ptr();
 
-        present_info.swapchainCount = 1;
-        present_info.pSwapchains = &swapchain;
-        present_info.pImageIndices = &current_image_index;
-        present_info.pResults = nullptr;
+		present_info.swapchainCount = 1;
+		present_info.pSwapchains = &swapchain;
+		present_info.pImageIndices = &current_image_index;
+		present_info.pResults = nullptr;
 
-        VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
+		VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            Log::warning("Swapchain out of date during present -> recreating");
-            this->recreate();
-        }
-        else if (result == VK_SUBOPTIMAL_KHR) {
-            Log::info("Swapchain suboptimal during present. Okay to continue, but should be recreated soon");
-        }
-        else if (result != VK_SUCCESS) {
-            Log::error("Failed to present swapchain image (VkResult=", result, ")");
-        }
-        // else: Success
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			Log::warning("Swapchain out of date during present -> recreating");
+			this->recreate();
+		}
+		else if (result == VK_SUBOPTIMAL_KHR) {
+			Log::info("Swapchain suboptimal during present. Okay to continue, but should be recreated soon");
+		}
+		else if (result != VK_SUCCESS) {
+			Log::error("Failed to present swapchain image (VkResult=", result, ")");
+		}
+		// else: Success
 
-        return result;
-    }
+		return result;
+	}
 
-    // present the rendered image to the graphics queue (method overload with multiple semaphores)
-    VkResult present_rendered_image(const std::vector<Semaphore>& wait_semaphores) {
-        VkPresentInfoKHR present_info{};
-        present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        present_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
-        std::vector<VkSemaphore> wait_semaphore_handles(wait_semaphores.size());
-        for (uint32_t i = 0; i < wait_semaphores.size(); i++) {
-            wait_semaphore_handles[i] = wait_semaphores[i].get();
-        }
-        present_info.pWaitSemaphores = wait_semaphore_handles.data();
-        present_info.swapchainCount = 1;
-        present_info.pSwapchains = &swapchain;
-        present_info.pImageIndices = &current_image_index;
-        present_info.pResults = nullptr;
+	// present the rendered image to the graphics queue (method overload with multiple semaphores)
+	VkResult present_rendered_image(const std::vector<Semaphore>& wait_semaphores) {
+		VkPresentInfoKHR present_info{};
+		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		present_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
+		std::vector<VkSemaphore> wait_semaphore_handles(wait_semaphores.size());
+		for (uint32_t i = 0; i < wait_semaphores.size(); i++) {
+			wait_semaphore_handles[i] = wait_semaphores[i].get();
+		}
+		present_info.pWaitSemaphores = wait_semaphore_handles.data();
+		present_info.swapchainCount = 1;
+		present_info.pSwapchains = &swapchain;
+		present_info.pImageIndices = &current_image_index;
+		present_info.pResults = nullptr;
 
-        VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
+		VkResult result = vkQueuePresentKHR(device->get_graphics_queue(), &present_info);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            Log::warning("Swapchain out of date during present -> recreating");
-            this->recreate();
-        }
-        else if (result == VK_SUBOPTIMAL_KHR) {
-            Log::info("Swapchain suboptimal during present. Okay to continue, but should be recreated soon");
-        }
-        else if (result != VK_SUCCESS) {
-            Log::error("Failed to present swapchain image (VkResult=", result, ")");
-        }
-        // else: Success
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			Log::warning("Swapchain out of date during present -> recreating");
+			this->recreate();
+		}
+		else if (result == VK_SUBOPTIMAL_KHR) {
+			Log::info("Swapchain suboptimal during present. Okay to continue, but should be recreated soon");
+		}
+		else if (result != VK_SUCCESS) {
+			Log::error("Failed to present swapchain image (VkResult=", result, ")");
+		}
+		// else: Success
 
-        return result;
-    }
+		return result;
+	}
 
-    void recreate() {
-        destroy();
-        // Recreate swapchain with the same parameters
-        Swapchain new_swapchain(
-            *device,
-            *surface,
-            *surface_format,
-            *renderpass,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            extent.width,
-            extent.height,
-            num_images,
-            view_type
-        );
-        swapchain = new_swapchain.get();
-        image = new_swapchain.image;
-        color_image_views = new_swapchain.color_image_views;
-        framebuffer = new_swapchain.framebuffer;
-        framebuffer_image_views = new_swapchain.framebuffer_image_views;
-    }
+	void recreate() {
+		destroy();
+		// Recreate swapchain with the same parameters
+		Swapchain new_swapchain(
+			*device,
+			*surface,
+			*surface_format,
+			*renderpass,
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+			extent.width,
+			extent.height,
+			num_images,
+			view_type
+		);
+		swapchain = new_swapchain.get();
+		image = new_swapchain.image;
+		color_image_views = new_swapchain.color_image_views;
+		framebuffer = new_swapchain.framebuffer;
+		framebuffer_image_views = new_swapchain.framebuffer_image_views;
+	}
 
-    // getters
+	// getters
 
-    uint32_t get_width() const { return extent.width; }
+	uint32_t get_width() const { return extent.width; }
 
-    uint32_t get_height() const { return extent.height; }
+	uint32_t get_height() const { return extent.height; }
 
-    VkExtent2D get_extent() const { return extent; }
+	VkExtent2D get_extent() const { return extent; }
 
-    VkSwapchainKHR get() const { return swapchain; }
+	VkSwapchainKHR get() const { return swapchain; }
 
-    VkImageView get_color_image_view(uint32_t index) const {
-        if (index < color_image_views.size()) {
-            return color_image_views[index];
-        }
-        else {
-            Log::error("Invalid index for color image view: ", index);
-            return VK_NULL_HANDLE;
-        }
-    }
+	VkImageView get_color_image_view(uint32_t index) const {
+		if (index < color_image_views.size()) {
+			return color_image_views[index];
+		}
+		else {
+			Log::error("Invalid index for color image view: ", index);
+			return VK_NULL_HANDLE;
+		}
+	}
 
-    VkImageView get_framebuffer_image_view(uint32_t index) const {
-        if (index < framebuffer_image_views.size()) {
-            return framebuffer_image_views[index];
-        }
-        else {
-            Log::error("Invalid index for framebuffer image view: ", index);
-            return VK_NULL_HANDLE;
-        }
-    }
+	VkImageView get_framebuffer_image_view(uint32_t index) const {
+		if (index < framebuffer_image_views.size()) {
+			return framebuffer_image_views[index];
+		}
+		else {
+			Log::error("Invalid index for framebuffer image view: ", index);
+			return VK_NULL_HANDLE;
+		}
+	}
 
-    VkFramebuffer get_framebuffer(uint32_t index) const {
-        if (index < framebuffer.size()) {
-            return framebuffer[index];
-        }
-        else {
-            Log::error("Invalid index for framebuffer: ", index);
-            return VK_NULL_HANDLE;
-        }
-    }
+	VkFramebuffer get_framebuffer(uint32_t index) const {
+		if (index < framebuffer.size()) {
+			return framebuffer[index];
+		}
+		else {
+			Log::error("Invalid index for framebuffer: ", index);
+			return VK_NULL_HANDLE;
+		}
+	}
 
-    VkImage get_image(uint32_t index) const {
-        if (index < image.size()) {
-            return image[index];
-        }
-        else {
-            Log::error("Invalid index for image: ", index);
-            return VK_NULL_HANDLE;
-        }
-    }
+	VkImage get_image(uint32_t index) const {
+		if (index < image.size()) {
+			return image[index];
+		}
+		else {
+			Log::error("Invalid index for image: ", index);
+			return VK_NULL_HANDLE;
+		}
+	}
 
-    VkImage get_current_image() const { return image[current_image_index]; }
+	VkImage get_current_image() const { return image[current_image_index]; }
 
-    uint32_t get_current_image_index() const { return current_image_index; }
+	uint32_t get_current_image_index() const { return current_image_index; }
 
-    uint32_t get_image_count() const { return num_images; }
+	uint32_t get_image_count() const { return num_images; }
 
-    // destructor
-    ~Swapchain() {
-        destroy();
-    }
+	// destructor
+	~Swapchain() {
+		destroy();
+	}
 
-    void destroy() {
-        if (swapchain != nullptr) {
-            vkDestroySwapchainKHR(logical, swapchain, nullptr);
-            swapchain = nullptr;
-        }
-        for (uint32_t i = 0; i < num_images; i++) {
-            vkDestroyImageView(logical, color_image_views[i], nullptr);
-            vkDestroyFramebuffer(logical, framebuffer[i], nullptr);
-        }
-        color_image_views.clear();
-        framebuffer_image_views.clear();
-        framebuffer.clear();
-        image.clear();
-        num_images = 0;
-        Log::info("Swapchain destroyed.");
-    }
+	void destroy() {
+		if (swapchain != nullptr) {
+			vkDestroySwapchainKHR(logical, swapchain, nullptr);
+			swapchain = nullptr;
+		}
+		for (uint32_t i = 0; i < num_images; i++) {
+			vkDestroyImageView(logical, color_image_views[i], nullptr);
+			vkDestroyFramebuffer(logical, framebuffer[i], nullptr);
+		}
+		color_image_views.clear();
+		framebuffer_image_views.clear();
+		framebuffer.clear();
+		image.clear();
+		num_images = 0;
+		Log::info("Swapchain destroyed.");
+	}
 
 protected:
-    uint32_t num_images = 0;
-    std::vector<VkImage> image;
-    std::vector<VkImageView> color_image_views;
-    std::vector<VkImageView> framebuffer_image_views;
-    std::vector<VkFramebuffer> framebuffer;
-    VkSwapchainKHR swapchain = nullptr;
-    VkSurfaceCapabilitiesKHR surface_capabilities;
-    VkExtent2D extent = {1920, 1080};
-    SurfaceFormat* surface_format;
-    VkImageUsageFlags usage;
-    VkColorSpaceKHR color_space;
-    Device* device;
-    RenderPass* renderpass;
-    Surface* surface;
-    VkDevice logical = nullptr;
-    uint32_t current_image_index = 0;
-    VkImageViewType view_type;
+	uint32_t num_images = 0;
+	std::vector<VkImage> image;
+	std::vector<VkImageView> color_image_views;
+	std::vector<VkImageView> framebuffer_image_views;
+	std::vector<VkFramebuffer> framebuffer;
+	VkSwapchainKHR swapchain = nullptr;
+	VkSurfaceCapabilitiesKHR surface_capabilities;
+	VkExtent2D extent = { 1920, 1080 };
+	SurfaceFormat* surface_format;
+	VkImageUsageFlags usage;
+	VkColorSpaceKHR color_space;
+	Device* device;
+	RenderPass* renderpass;
+	Surface* surface;
+	VkDevice logical = nullptr;
+	uint32_t current_image_index = 0;
+	VkImageViewType view_type;
 };
 
 class CommandPool {
 public:
-    // constructor
-    CommandPool() = delete;
-    CommandPool(const Device& device, QueueFamily usage) {
-        this->logical = device.get_logical();
+	// constructor
+	CommandPool() = delete;
+	CommandPool(const Device& device, QueueFamily usage) {
+		this->logical = device.get_logical();
 
-        // setup command pool
-        VkCommandPoolCreateInfo create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        if (usage == QueueFamily::GRAPHICS_QUEUE) {
-            create_info.queueFamilyIndex = device.get_graphics_queue_family_index();
-        }
-        else if (usage == QueueFamily::COMPUTE_QUEUE) {
-            create_info.queueFamilyIndex = device.get_compute_queue_family_index();
-        }
-        else if (usage == QueueFamily::TRANSFER_QUEUE) {
-            create_info.queueFamilyIndex = device.get_transfer_queue_family_index();
-        }
-        else {
-            Log::error("in CommandPool constructor: invalid QueueFamily argument!");
-        }
-        VkResult result = vkCreateCommandPool(logical, &create_info, nullptr, &pool);
-        if (result == VK_SUCCESS) {
-            Log::info("command pool created (handle: ", pool, ")");
-        }
-        else {
-            Log::error("failed to create command pool (VkResult=", result, ")");
-        }
-    }
+		// setup command pool
+		VkCommandPoolCreateInfo create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+		if (usage == QueueFamily::GRAPHICS_QUEUE) {
+			create_info.queueFamilyIndex = device.get_graphics_queue_family_index();
+		}
+		else if (usage == QueueFamily::COMPUTE_QUEUE) {
+			create_info.queueFamilyIndex = device.get_compute_queue_family_index();
+		}
+		else if (usage == QueueFamily::TRANSFER_QUEUE) {
+			create_info.queueFamilyIndex = device.get_transfer_queue_family_index();
+		}
+		else {
+			Log::error("in CommandPool constructor: invalid QueueFamily argument!");
+		}
+		VkResult result = vkCreateCommandPool(logical, &create_info, nullptr, &pool);
+		if (result == VK_SUCCESS) {
+			Log::info("command pool created (handle: ", pool, ")");
+		}
+		else {
+			Log::error("failed to create command pool (VkResult=", result, ")");
+		}
+	}
 
-    void destroy() {
-        if (pool != nullptr) {
-            // destroy command pool
-            Log::info("CommandPool destructor: destroying command pool with handle ", pool);
-            vkDestroyCommandPool(logical, pool, nullptr);
-            pool = nullptr;
-        }
-    }
+	void destroy() {
+		if (pool != nullptr) {
+			// destroy command pool
+			Log::info("CommandPool destructor: destroying command pool with handle ", pool);
+			vkDestroyCommandPool(logical, pool, nullptr);
+			pool = nullptr;
+		}
+	}
 
-    ~CommandPool() {
-        destroy();
-    }
+	~CommandPool() {
+		destroy();
+	}
 
-    void trim() const {
-        vkTrimCommandPool(logical, pool, NULL);
-    }
+	void trim() const {
+		vkTrimCommandPool(logical, pool, NULL);
+	}
 
-    VkResult reset(VkCommandPoolResetFlags flags = VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) const {
-        return vkResetCommandPool(logical, pool, flags);
-    }
+	VkResult reset(VkCommandPoolResetFlags flags = VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) const {
+		return vkResetCommandPool(logical, pool, flags);
+	}
 
-    VkCommandPool get() const { return pool; }
+	VkCommandPool get() const { return pool; }
 private:
-    VkCommandPool pool = nullptr;
-    VkDevice logical = nullptr;
+	VkCommandPool pool = nullptr;
+	VkDevice logical = nullptr;
 };
 
 class VertexDescriptions {
 public:
-    VertexDescriptions() {}
+	VertexDescriptions() {}
 
-    ~VertexDescriptions() {}
+	~VertexDescriptions() {}
 
-    void add_attribute(uint32_t location, uint32_t binding, VkFormat format, uint32_t offset = 0) {
-        uint32_t id = static_cast<uint32_t>(attribute_descriptions.size());
-        attribute_descriptions.resize(id + 1);
-        attribute_descriptions[id].binding = binding;
-        attribute_descriptions[id].location = location;
-        attribute_descriptions[id].format = format;
-        attribute_descriptions[id].offset = offset;
-    }
+	void add_attribute(uint32_t location, uint32_t binding, VkFormat format, uint32_t offset = 0) {
+		uint32_t id = static_cast<uint32_t>(attribute_descriptions.size());
+		attribute_descriptions.resize(id + 1);
+		attribute_descriptions[id].binding = binding;
+		attribute_descriptions[id].location = location;
+		attribute_descriptions[id].format = format;
+		attribute_descriptions[id].offset = offset;
+	}
 
-    // adds a binding to the vertex descriptions and returns the index of the new binding
-    uint32_t add_binding(uint32_t stride, VkVertexInputRate input_rate = VK_VERTEX_INPUT_RATE_VERTEX) {
-        uint32_t id = static_cast<uint32_t>(binding_descriptions.size());
-        binding_descriptions.resize(id + 1);
-        binding_descriptions[id].binding = id;
-        binding_descriptions[id].inputRate = input_rate;
-        binding_descriptions[id].stride = stride;
-        return id;
-    }
+	// adds a binding to the vertex descriptions and returns the index of the new binding
+	uint32_t add_binding(uint32_t stride, VkVertexInputRate input_rate = VK_VERTEX_INPUT_RATE_VERTEX) {
+		uint32_t id = static_cast<uint32_t>(binding_descriptions.size());
+		binding_descriptions.resize(id + 1);
+		binding_descriptions[id].binding = id;
+		binding_descriptions[id].inputRate = input_rate;
+		binding_descriptions[id].stride = stride;
+		return id;
+	}
 
-    // getters
-    const std::vector<VkVertexInputAttributeDescription>& get_attribute_descriptions() const { return attribute_descriptions; }
-    const std::vector<VkVertexInputBindingDescription>& get_input_bindings() const { return binding_descriptions; }
+	// getters
+	const std::vector<VkVertexInputAttributeDescription>& get_attribute_descriptions() const { return attribute_descriptions; }
+	const std::vector<VkVertexInputBindingDescription>& get_input_bindings() const { return binding_descriptions; }
 
 protected:
-    std::vector<VkVertexInputAttributeDescription> attribute_descriptions = {};
-    std::vector<VkVertexInputBindingDescription> binding_descriptions = {};
+	std::vector<VkVertexInputAttributeDescription> attribute_descriptions = {};
+	std::vector<VkVertexInputBindingDescription> binding_descriptions = {};
 };
 
 class ShaderModule {
 public:
-    // constructor
-    ShaderModule() = delete;
+	// constructor
+	ShaderModule() = delete;
 
-    // constructor with binary data
-    ShaderModule(const Device& device, const unsigned char* binary, size_t size_bytes) {
-        this->logical = device.get_logical();
-        VkShaderModuleCreateInfo shader_module_create_info = {};
-        shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        shader_module_create_info.codeSize = size_bytes;
-        shader_module_create_info.pCode = reinterpret_cast<const uint32_t*>(binary);
+	// constructor with binary data
+	ShaderModule(const Device& device, const unsigned char* binary, size_t size_bytes) {
+		this->logical = device.get_logical();
+		VkShaderModuleCreateInfo shader_module_create_info = {};
+		shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		shader_module_create_info.codeSize = size_bytes;
+		shader_module_create_info.pCode = reinterpret_cast<const uint32_t*>(binary);
 
-        // free old resource first in case a previous module exists
-        if (module != nullptr) {
-            Log::info("destroying previous shader module");
-            vkDestroyShaderModule(logical, module, nullptr);
-        }
+		// free old resource first in case a previous module exists
+		if (module != nullptr) {
+			Log::info("destroying previous shader module");
+			vkDestroyShaderModule(logical, module, nullptr);
+		}
 
-        // allocate new module
-        VkResult result = vkCreateShaderModule(logical, &shader_module_create_info, nullptr, &module);
-        if (result == VK_SUCCESS) {
-            Log::debug("new shader module successfully created (handle: ", module, ")");
-        }
-        else {
-            Log::error("failed to create shader module (VkResult = ", result, ")");
-        }
-    }
+		// allocate new module
+		VkResult result = vkCreateShaderModule(logical, &shader_module_create_info, nullptr, &module);
+		if (result == VK_SUCCESS) {
+			Log::debug("new shader module successfully created (handle: ", module, ")");
+		}
+		else {
+			Log::error("failed to create shader module (VkResult = ", result, ")");
+		}
+	}
 
-    // constructor with folder & filename as string literals
-    ShaderModule(Device& device, const char* foldername, const char* filename) {
-        ShaderModule(device, std::string(foldername), std::string(filename));
-    }
+	// constructor with folder & filename as string literals
+	ShaderModule(Device& device, const char* foldername, const char* filename) {
+		ShaderModule(device, std::string(foldername), std::string(filename));
+	}
 
-    // constructor with folder & filename as std::string
-    ShaderModule(Device& device, const std::string& foldername, const std::string& filename) {
-        this->logical = device.get_logical();
+	// constructor with folder & filename as std::string
+	ShaderModule(Device& device, const std::string& foldername, const std::string& filename) {
+		this->logical = device.get_logical();
 
-        std::string file_path;
-        if (foldername.back() != '/') {
-            file_path = foldername + '/' + filename;
-        }
-        else {
-            file_path = foldername + filename;
-        }
-        std::string file_path = foldername + filename;
-        long file_size = 0;
-        FILE* file = nullptr;
-        errno_t err = fopen_s(&file, file_path.c_str(), "rb");
-        if (err != 0) {
-            // Handle the error (e.g., log it or throw an exception)
-            Log::error("Failed to open shader file: ", file_path);
-        }
-        else {
-            Log::debug("reading shader file: ", file_path.c_str());
-            fseek(file, 0, SEEK_END);
-            file_size = ftell(file);
-            fseek(file, 0, SEEK_SET);
-            uint8_t* buffer = new uint8_t[file_size];
-            fread(buffer, 1, file_size, file);
+		std::string file_path;
+		if (foldername.back() != '/') {
+			file_path = foldername + '/' + filename;
+		}
+		else {
+			file_path = foldername + filename;
+		}
+		long file_size = 0;
+		FILE* file = nullptr;
+		errno_t err = fopen_s(&file, file_path.c_str(), "rb");
+		if (err != 0) {
+			// Handle the error (e.g., log it or throw an exception)
+			Log::error("Failed to open shader file: ", file_path);
+		}
+		else {
+			Log::debug("reading shader file: ", file_path.c_str());
+			fseek(file, 0, SEEK_END);
+			file_size = ftell(file);
+			fseek(file, 0, SEEK_SET);
+			uint8_t* buffer = new uint8_t[file_size];
+			fread(buffer, 1, file_size, file);
 
-            VkShaderModuleCreateInfo shader_module_create_info = {};
-            shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-            shader_module_create_info.codeSize = file_size;
-            shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(buffer);
+			VkShaderModuleCreateInfo shader_module_create_info = {};
+			shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+			shader_module_create_info.codeSize = file_size;
+			shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(buffer);
 
-            // free old resource first in case a previous module exists
-            if (module != nullptr) {
-                Log::info("destroying previous shader module");
-                vkDestroyShaderModule(logical, module, nullptr);
-            }
+			// free old resource first in case a previous module exists
+			if (module != nullptr) {
+				Log::info("destroying previous shader module");
+				vkDestroyShaderModule(logical, module, nullptr);
+			}
 
-            // allocate new module
-            VkResult result = vkCreateShaderModule(logical, &shader_module_create_info, nullptr, &module);
-            if (result == VK_SUCCESS) {
-                Log::debug("new shader module successfully created (handle: ", module, ")");
-            }
-            else {
-                Log::error("failed to create shader module (VkResult = ", result, ")");
-            }
-            delete[] buffer;
-            fclose(file);
-        }
-    }
+			// allocate new module
+			VkResult result = vkCreateShaderModule(logical, &shader_module_create_info, nullptr, &module);
+			if (result == VK_SUCCESS) {
+				Log::debug("new shader module successfully created (handle: ", module, ")");
+			}
+			else {
+				Log::error("failed to create shader module (VkResult = ", result, ")");
+			}
+			delete[] buffer;
+			fclose(file);
+		}
+	}
 
-    // move constructor
-    ShaderModule(ShaderModule&& other) noexcept : module(std::exchange(other.module, nullptr)), logical(std::exchange(other.logical, nullptr)) {
-        if (module != nullptr) {
-            Log::info("shader module moved (handle: ", module, ")");
-        }
-    }
+	// move constructor
+	ShaderModule(ShaderModule&& other) noexcept : module(std::exchange(other.module, nullptr)), logical(std::exchange(other.logical, nullptr)) {
+		if (module != nullptr) {
+			Log::info("shader module moved (handle: ", module, ")");
+		}
+	}
 
-    // move assignment
-    ShaderModule& operator=(ShaderModule&& other) noexcept {
-        if (this != &other) {
-            if (module != nullptr) {
-                Log::info("move assignment operation: destroying previous shader module (handle: ", module, ")");
-                vkDestroyShaderModule(logical, module, nullptr);
-                module = nullptr;
-            }
-            module = std::exchange(other.module, nullptr);
-            logical = std::exchange(other.logical, nullptr);
-            if (module != nullptr) {
-                Log::info("shader module moved to 'this' (handle: ", module, ")");
-            }
-        }
-        return *this;
-    }
+	// move assignment
+	ShaderModule& operator=(ShaderModule&& other) noexcept {
+		if (this != &other) {
+			if (module != nullptr) {
+				Log::info("move assignment operation: destroying previous shader module (handle: ", module, ")");
+				vkDestroyShaderModule(logical, module, nullptr);
+				module = nullptr;
+			}
+			module = std::exchange(other.module, nullptr);
+			logical = std::exchange(other.logical, nullptr);
+			if (module != nullptr) {
+				Log::info("shader module moved to 'this' (handle: ", module, ")");
+			}
+		}
+		return *this;
+	}
 
-    // Deleted copy constructor and assignment
-    ShaderModule(const ShaderModule&) = delete;
-    ShaderModule& operator=(const ShaderModule&) = delete;
+	// Deleted copy constructor and assignment
+	ShaderModule(const ShaderModule&) = delete;
+	ShaderModule& operator=(const ShaderModule&) = delete;
 
-    // getters
-    const VkShaderModule& get() const { return module; }
+	// getters
+	const VkShaderModule& get() const { return module; }
 
-    // destructor
-    ~ShaderModule() {
-        if (module != nullptr) {
-            vkDestroyShaderModule(logical, module, nullptr);
-        }
-    }
+	// destructor
+	~ShaderModule() {
+		if (module != nullptr) {
+			vkDestroyShaderModule(logical, module, nullptr);
+		}
+	}
 private:
-    VkShaderModule module = nullptr;
-    VkDevice logical = nullptr;
+	VkShaderModule module = nullptr;
+	VkDevice logical = nullptr;
 };
 
 class PushConstants {
 public:
-    PushConstants() {
-        range.size = 0;
-        range.offset = 0;
-        range.stageFlags = VK_SHADER_STAGE_ALL;
-        data = new uint32_t[min_capacity / 4];
-    }
+	PushConstants() {
+		range.size = 0;
+		range.offset = 0;
+		range.stageFlags = VK_SHADER_STAGE_ALL;
+		data = new uint32_t[min_capacity / 4];
+	}
 
-    template<typename T>
-    PushConstants(std::vector<T>& values) {
-        PushConstants();            // call default constructor
-        add_values(values);
-    }
+	template<typename T>
+	PushConstants(std::vector<T>& values) {
+		range.size = 0;
+		range.offset = 0;
+		range.stageFlags = VK_SHADER_STAGE_ALL;
+		data = new uint32_t[min_capacity / 4];
+		add_values(values);
+	}
 
-    template<typename... Args>
-    PushConstants(Args... args) {
-        PushConstants();            // call default constructor
-        (add_values(args), ...);    // fold expression to call the add_values method for each argument
-    }
+	template<typename... Args>
+	PushConstants(Args... args) {
+		range.size = 0;
+		range.offset = 0;
+		range.stageFlags = VK_SHADER_STAGE_ALL;
+		data = new uint32_t[min_capacity / 4];
+		(add_values(args), ...);    // fold expression to call the add_values method for each argument
+	}
 
-    ~PushConstants() {
-        if (data != nullptr) {
-            delete[] data;
-        }
-    }
+	~PushConstants() {
+		if (data != nullptr) {
+			delete[] data;
+			data = nullptr;
+		}
+	}
 
-    // add a new value to the end of the push constants range;
-    // the size of data type T must(!) be a multiple of 4;
-    // returns the memory location offset of the new value within the push constants range
-    template<typename T>
-    uint32_t add_values(T value) {
+	// add a new value to the end of the push constants range;
+	// the size of data type T must(!) be a multiple of 4;
+	// returns the memory location offset of the new value within the push constants range
+	template<typename T>
+	uint32_t add_values(T value) {
 
-        // update range size
-        if (sizeof(T) % 4) {
-            Log::warning("in method PushConstants::add_value(T value): sizeof(T) must be a multiple of 4");
-        }
-        size_t old_size = range.size;
-        range.size += 4 * ceil(0.25 * sizeof(T));
+		// update range size
+		if (sizeof(T) % 4) {
+			Log::warning("in method PushConstants::add_value(T value): sizeof(T) must be a multiple of 4");
+		}
+		size_t old_size = range.size;
+		range.size += 4 * ceil(0.25 * sizeof(T));
 
-        // allocate memory (if existing capacity is insufficient) and copy previous data to new allocation
-        if (capacity < range.size) {
-            capacity = size_t(std::max(float_t(min_capacity), float_t(4 * ceil(0.25 * range.size * (1.0f + reserve)))));
-            uint32_t* new_allocation = new uint32_t[capacity / 4];
-            memcpy(new_allocation, data, old_size);
-            delete[] data;
-            data = new_allocation;
-        }
+		// allocate memory (if existing capacity is insufficient) and copy previous data to new allocation
+		if (capacity < range.size) {
+			capacity = size_t(std::max(float_t(min_capacity), float_t(4 * ceil(0.25 * range.size * (1.0f + reserve)))));
+			uint32_t* new_allocation = new uint32_t[capacity / 4];
+			memcpy(new_allocation, data, old_size);
+			delete[] data;
+			data = new_allocation;
+		}
 
-        // copy value to the end of the data array
-        memcpy(data + old_size / 4, &value, sizeof(T));
-        return old_size;
-    }
+		// copy value to the end of the data array
+		memcpy(data + old_size / 4, &value, sizeof(T));
+		return old_size;
+	}
 
-    // add a new value at the specified offset position of the push constants range;
-    // overwrites the existing value at that position;
-    // the size of data type T must(!) be a multiple of 4;
-    // use this method with caution, as it may lead to undefined behavior if the offset is not aligned correctly
-    // or if data type T is different from the previously added data type (which may lead to data corruption)
-    template<typename T>
-    void add_values(T value, size_t offset) {
-        // validate offset
-        if (offset > range.size) {
-            Log::error("in method PushConstants::add_value(T value, size_t offset): offset exceeds current push constant range size");
-            return;
-        }
-        else if (offset % 4) {
-            Log::warning("in method PushConstants::add_value(T value, size_t offset): offset must be a multiple of 4. Data will likely be corrupted!");
-        }
-        else if (offset == range.size) {
-            add_values(value);
-            return;
-        }
+	// add a new value at the specified offset position of the push constants range;
+	// overwrites the existing value at that position;
+	// the size of data type T must(!) be a multiple of 4;
+	// use this method with caution, as it may lead to undefined behavior if the offset (in bytes!) is not aligned correctly
+	// or if data type T is different from the previously added data type (which may lead to data corruption)
+	template<typename T>
+	void add_values(T value, size_t offset) {
+		// validate offset
+		if (offset > range.size) {
+			Log::error("in method PushConstants::add_value(T value, size_t offset): offset exceeds current push constant range size");
+			return;
+		}
+		else if (offset % 4) {
+			Log::warning("in method PushConstants::add_value(T value, size_t offset): offset must be a multiple of 4. Data will likely be corrupted!");
+		}
+		else if (offset == range.size) {
+			add_values(value);
+			return;
+		}
 
-        // validate size of data type T
-        if (sizeof(T) % 4) {
-            Log::warning("in method PushConstants::add_value(T value): sizeof(T) must be a multiple of 4");
-        }
+		// validate size of data type T
+		if (sizeof(T) % 4) {
+			Log::warning("in method PushConstants::add_value(T value): sizeof(T) must be a multiple of 4");
+		}
 
-        // copy value at the specified offset position
-        memcpy(data + offset / 4, &value, sizeof(T));
-    }
+		// copy value at the specified offset position
+		memcpy(data + offset / 4, &value, sizeof(T));
+	}
 
-    // add multiple new values to the push constants range as a std::initializer_list;
-    // the size of data type T must(!) be a multiple of 4;
-    // returns the memory location byte offset of the new values within the push constants range
-    template<typename T>
-    uint32_t add_values(std::initializer_list<T> values) {
-        size_t current_offset = range.size;
-        for (T i : values) {
-            current_offset = this->add_values(i);
-        }
-        return current_offset;
-    }
+	// add multiple new values to the push constants range as a std::initializer_list;
+	// the size of data type T must(!) be a multiple of 4;
+	// returns the memory location byte offset of the new values within the push constants range
+	template<typename T>
+	uint32_t add_values(std::initializer_list<T> values) {
+		size_t current_offset = range.size;
+		for (T i : values) {
+			current_offset = this->add_values(i);
+		}
+		return current_offset;
+	}
 
-    // add multiple new values to the push constants range as a std::vector<T>;
-    // the size of data type T must(!) be a multiple of 4;
-    // returns the memory location byte offset of the new values within the push constants range
-    template<typename T>
-    uint32_t add_values(const std::vector<T>& new_data) {
-        size_t current_offset = range.size;
-        for (T i : new_data) {
-            current_offset = this->add_values(i);
-        }
-        return current_offset;
-    }
+	// add multiple new values to the push constants range as a std::vector<T>;
+	// the size of data type T must(!) be a multiple of 4;
+	// returns the memory location byte offset of the new values within the push constants range
+	template<typename T>
+	uint32_t add_values(const std::vector<T>& new_data) {
+		size_t current_offset = range.size;
+		for (T i : new_data) {
+			current_offset = this->add_values(i);
+		}
+		return current_offset;
+	}
 
-    // getters
-    const uint32_t* get_data() const { return data; }
-    const VkPushConstantRange& get_range() const { return range; }
-    size_t get_size() const { return range.size; }
-    size_t get_total_capacity() const { return capacity; } // = total size of the occupied push constants range in bytes
-    size_t get_free_capacity() const { return capacity - range.size; } // = free space in bytes without reallocation
+	// getters
+	const uint32_t* get_data() const { return data; }
+	const VkPushConstantRange& get_range() const { return range; }
+	size_t get_size() const { return range.size; }
+	size_t get_total_capacity() const { return capacity; } // = total size of the occupied push constants range in bytes
+	size_t get_free_capacity() const { return capacity - range.size; } // = free space in bytes without reallocation
 
 protected:
-    static constexpr float_t reserve = 0.5;    // reserve space for future growth (>=50% of current size)
-    static constexpr size_t min_capacity = 32; // min capacity in bytes (should be a multiple of 4)
-    uint32_t* data = nullptr;
-    size_t capacity = min_capacity;
-    VkPushConstantRange range;
+	static constexpr float_t reserve = 0.5;    // reserve space for future growth (>=50% of current size)
+	static constexpr size_t min_capacity = 32; // min capacity in bytes (should be a multiple of 4)
+	uint32_t* data = nullptr;
+	size_t capacity = min_capacity;
+	VkPushConstantRange range;
 };
 
 // buffer class for vertex data, index data, storage data, uniform data, etc.
 template<typename T>
 class Buffer {
 public:
-    Buffer() = delete;  // non-parametric buffer construction not allowed;
-                        // all buffers must be created with a specific size and usage
+	Buffer() = delete;  // non-parametric buffer construction not allowed;
+	// all buffers must be created with a specific size and usage
 
-    Buffer(const Device& device, BufferUsage usage, uint32_t elements, VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
-        this->logical = device.get_logical();
-        this->physical = device.get_physical();
-        this->memory_property_flags = memory_property_flags;
-        this->elements = elements;
-        this->size_bytes = this->elements * sizeof(T);
+	Buffer(Device& device, BufferUsage usage, uint32_t elements, VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
+		this->logical = device.get_logical();
+		this->physical = device.get_physical();
+		this->memory_property_flags = memory_property_flags;
+		this->elements = elements;
+		this->size_bytes = this->elements * sizeof(T);
 
-        is_device_local_only = (memory_property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) && !(memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-        is_host_visible = memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+		is_device_local_only = (memory_property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) && !(memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+		is_host_visible = memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 
-        // translate BufferUsage enum argument
-        VkBufferUsageFlags vk_buffer_usage;
-        switch (usage) {
-            case BufferUsage::VERTEX:   vk_buffer_usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-            case BufferUsage::INDEX:    vk_buffer_usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-            case BufferUsage::STORAGE:  vk_buffer_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-            case BufferUsage::UNIFORM:  vk_buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-            case BufferUsage::TRANSFER: vk_buffer_usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-            default: Log::error("in method Buffer::Buffer(): invalid BufferUsage argument: ", usage);
-        }
+		// translate BufferUsage enum argument
+		VkBufferUsageFlags vk_buffer_usage;
+		switch (usage) {
+		case BufferUsage::VERTEX_BUFFER:   vk_buffer_usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; break;
+		case BufferUsage::INDEX_BUFFER:    vk_buffer_usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT; break;
+		case BufferUsage::STORAGE_BUFFER:  vk_buffer_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; break;
+		case BufferUsage::UNIFORM_BUFFER:  vk_buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT; break;
+		case BufferUsage::TRANSFER_BUFFER: vk_buffer_usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT; break;
+		default: Log::error("in method Buffer::Buffer(): invalid BufferUsage argument: ", usage);
+		}
 
-        // create buffer
-        VkBufferCreateInfo buffer_create_info = {};
-        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buffer_create_info.size = size_bytes;
-        buffer_create_info.usage = vk_buffer_usage;
-        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // Assuming exclusive access for simplicity
+		// create buffer
+		VkBufferCreateInfo buffer_create_info = {};
+		buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		buffer_create_info.size = size_bytes;
+		buffer_create_info.usage = vk_buffer_usage;
+		buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // Assuming exclusive access for simplicity
 
-        VkResult result = vkCreateBuffer(logical, &buffer_create_info, nullptr, &buffer);
-        if (result == VK_SUCCESS) {
-            Log::info("data buffer successfully created (handle: ", buffer, ")");
-        }
-        else {
-            Log::error("failed to create data buffer, VkResult=", result);
-        }
+		VkResult result = vkCreateBuffer(logical, &buffer_create_info, nullptr, &buffer);
+		if (result == VK_SUCCESS) {
+			Log::info("data buffer successfully created (handle: ", buffer, ")");
+		}
+		else {
+			Log::error("failed to create data buffer, VkResult=", result);
+		}
 
-        // get buffer memory requirements
-        VkMemoryRequirements memory_requirements;
-        vkGetBufferMemoryRequirements(logical, buffer, &memory_requirements);
+		// get buffer memory requirements
+		VkMemoryRequirements memory_requirements;
+		vkGetBufferMemoryRequirements(logical, buffer, &memory_requirements);
 
-        // find suitable memory type index
-        uint32_t type_index = UINT32_MAX;
+		// find suitable memory type index
+		uint32_t type_index = UINT32_MAX;
+		Log::info("in Buffer::Buffer() constructor: searching for buffer memory types (requested: ", memory_property_flags, ")");
+		const auto& mem_properties = device.get_memory_properties();
+		for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+			Log::debug("memory type ", i, ": ", mem_properties.memoryTypes[i].propertyFlags);
+			if ((memory_requirements.memoryTypeBits & (1 << i)) && (mem_properties.memoryTypes[i].propertyFlags & memory_property_flags) == memory_property_flags) {
+				type_index = i;
+				Log::info("[SUCCESS]");
+			}
+		}
+		if (type_index == UINT32_MAX) {
+			Log::warning("in Buffer::Buffer() constructor:: no suitable memory type found");
+		}
 
-        VkPhysicalDeviceMemoryProperties device_memory_properties = device.get_memory_properties();
+		// allocate memory
+		VkMemoryAllocateInfo allocate_info = {};
+		allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocate_info.allocationSize = memory_requirements.size;
+		allocate_info.memoryTypeIndex = type_index;
+		result = vkAllocateMemory(logical, &allocate_info, nullptr, &memory);
+		if (result != VK_SUCCESS) {
+			Log::error("in Buffer::Buffer() constructor: failed to allocate buffer memory, VkResult=", result);
+		}
 
-        Log::info("in Buffer::Buffer() constructor: searching for buffer memory types (requested: ", memory_property_flags, ")");
-        for (uint32_t i = 0; i < device_memory_properties.memoryTypeCount; i++) {
-            Log::debug("memory type ", i, ": ", device_memory_properties.memoryTypes[i].propertyFlags);
-            if ((memory_requirements.memoryTypeBits & (1 << i)) && (device_memory_properties.memoryTypes[i].propertyFlags & memory_property_flags) == memory_properties) {
-                type_index = i;
-                Log::info("[SUCCESS]");
-            }
-        }
-        if (type_index == UINT32_MAX) {
-            Log::warning("in Buffer::Buffer() constructor:: no suitable memory type found");
-        }
-
-        // allocate memory
-        VkMemoryAllocateInfo allocate_info = {};
-        allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocate_info.allocationSize = memory_requirements.size;
-        allocate_info.memoryTypeIndex = type_index;
-        result = vkAllocateMemory(logical, &allocate_info, nullptr, &memory);
-        if (result != VK_SUCCESS) {
-            Log::error("in Buffer::Buffer() constructor: failed to allocate buffer memory, VkResult=", result);
-        }
-
-        // bind memory to buffer
-        result = vkBindBufferMemory(logical, buffer, memory, 0);
-        if (result != VK_SUCCESS) {
-            Log::error("in Buffer::Buffer() constructor: failed to bind buffer memory, VkResult=", result);
-        }
-    }
+		// bind memory to buffer
+		result = vkBindBufferMemory(logical, buffer, memory, 0);
+		if (result != VK_SUCCESS) {
+			Log::error("in Buffer::Buffer() constructor: failed to bind buffer memory, VkResult=", result);
+		}
+	}
 
 
-    // copy constructor
-    Buffer(const Buffer<T>& other) {
-        this->logical = other.logical;
-        this->physical = other.physical;
-        this->elements = other.elements;
-        this->size_bytes = other.size_bytes;
-        this->buffer = other.buffer;
-        this->memory = other.memory;
-        this->is_device_local_only = other.is_device_local_only;
-        this->is_host_visible = other.is_host_visible;
-        this->memory_property_flags = other.memory_property_flags;
-        if (buffer != VK_NULL_HANDLE) {
-            Log::debug("buffer copied, handle: ", buffer);
-        }
-    }
+	// copy constructor
+	Buffer(const Buffer<T>& other) {
+		this->logical = other.logical;
+		this->physical = other.physical;
+		this->elements = other.elements;
+		this->size_bytes = other.size_bytes;
+		this->buffer = other.buffer;
+		this->memory = other.memory;
+		this->is_device_local_only = other.is_device_local_only;
+		this->is_host_visible = other.is_host_visible;
+		this->memory_property_flags = other.memory_property_flags;
+		if (buffer != VK_NULL_HANDLE) {
+			Log::debug("buffer copied, handle: ", buffer);
+		}
+	}
 
-    // copy assignment
-    Buffer& operator=(const Buffer<T>& other) {
-        if (this != &other) {
-            // release existing resources owned by 'this' object
-            if (buffer != VK_NULL_HANDLE) {
-                vkFreeMemory(logical, memory, nullptr);
-                memory = VK_NULL_HANDLE;
-                vkDestroyBuffer(logical, buffer, nullptr);
-                buffer = VK_NULL_HANDLE;
-            }
-            // copy the data from 'other' to 'this'
-            this->logical = other.logical;
-            this->physical = other.physical;
-            this->elements = other.elements;
-            this->size_bytes = other.size_bytes;
-            this->buffer = other.buffer;
-            this->memory = other.memory;
-            this->is_device_local_only = other.is_device_local_only;
-            this->is_host_visible = other.is_host_visible;
-            this->memory_property_flags = other.memory_property_flags;
-            if (buffer != VK_NULL_HANDLE) {
-                Log::debug("buffer copied, handle: ", buffer);
-            }
-        }
-        return *this;
-    }
+	// copy assignment
+	Buffer& operator=(const Buffer<T>& other) {
+		if (this != &other) {
+			// release existing resources owned by 'this' object
+			if (buffer != VK_NULL_HANDLE) {
+				vkFreeMemory(logical, memory, nullptr);
+				memory = VK_NULL_HANDLE;
+				vkDestroyBuffer(logical, buffer, nullptr);
+				buffer = VK_NULL_HANDLE;
+			}
+			// copy the data from 'other' to 'this'
+			this->logical = other.logical;
+			this->physical = other.physical;
+			this->elements = other.elements;
+			this->size_bytes = other.size_bytes;
+			this->buffer = other.buffer;
+			this->memory = other.memory;
+			this->is_device_local_only = other.is_device_local_only;
+			this->is_host_visible = other.is_host_visible;
+			this->memory_property_flags = other.memory_property_flags;
+			if (buffer != VK_NULL_HANDLE) {
+				Log::debug("buffer copied, handle: ", buffer);
+			}
+		}
+		return *this;
+	}
 
-    // move constructor
-    Buffer(Buffer<T>&& other) noexcept
-        : buffer(other.buffer),
-        memory(other.memory),
-        elements(other.elements),
-        logical(other.logical),
-        physical(other.physical),
-        memory_flags(other.memory_flags),
-        size_bytes(other.size_bytes),
-        is_device_local_only(other.is_device_local_only),
-        is_host_visible(other.is_host_visible),
-        memory_property_flags(other.memory_property_flags) {
-        // Invalidate the source object ('other') so its destructor doesn't release the resources
-        other.buffer = VK_NULL_HANDLE;
-        other.memory = VK_NULL_HANDLE;
-        other.elements = 0;
-        other.size_bytes = 0;
+	// move constructor
+	Buffer(Buffer<T>&& other) noexcept
+		: buffer(other.buffer),
+		memory(other.memory),
+		elements(other.elements),
+		logical(other.logical),
+		physical(other.physical),
+		size_bytes(other.size_bytes),
+		is_device_local_only(other.is_device_local_only),
+		is_host_visible(other.is_host_visible),
+		memory_property_flags(other.memory_property_flags) {
+		// Invalidate the source object ('other') so its destructor doesn't release the resources
+		delete other.buffer;
+		other.elements = 0;
+		other.size_bytes = 0;
 
-        if (buffer != VK_NULL_HANDLE) {
-            Log::info("Buffer moved (new owner), handle: ", buffer);
-        }
-    }
+		if (buffer != VK_NULL_HANDLE) {
+			Log::info("Buffer moved (new owner), handle: ", buffer);
+		}
+	}
 
-    // move assignment
-    Buffer& operator=(Buffer<T>&& other) noexcept {
-        if (this != &other) { // Prevent self-assignment
-            // 1. Release existing resources owned by 'this' object
-            cleanup(); // Call a helper or duplicate destructor logic
+	// move assignment
+	Buffer& operator=(Buffer<T>&& other) noexcept {
+		if (this != &other) { // Prevent self-assignment
+			// 1. Release existing resources owned by 'this' object
+			if (memory != VK_NULL_HANDLE && memory != VkDeviceMemory(0xdddddddddddddddd)) {
+				Log::debug("in Buffer<T> move assignment: freeing previous buffer memory (memory handle: ", memory, ")");
+				vkFreeMemory(logical, memory, nullptr);
+			}
+			if (buffer != VK_NULL_HANDLE && buffer != VkBuffer(0xdddddddddddddddd)) {
+				Log::debug("in Buffer<T> move assignment: destroying previous buffer (buffer handle: ", buffer, ")");
+				vkDestroyBuffer(logical, buffer, nullptr);
+			}
 
-            // 2. Transfer ownership of resources from 'other' to 'this'
-            buffer = other.buffer;
-            memory = other.memory;
-            elements = other.elements;
-            logical = other.logical;       // Transfer device handles
-            physical = other.physical;
-            size_bytes = other.size_bytes;
-            is_device_local_only = other.is_device_local_only;
-            is_host_visible = other.is_host_visible;
-            memory_property_flags = other.memory_property_flags;
+			// 2. Transfer ownership of resources from 'other' to 'this'
+			buffer = other.buffer;
+			memory = other.memory;
+			elements = other.elements;
+			logical = other.logical;       // Transfer device handles
+			physical = other.physical;
+			size_bytes = other.size_bytes;
+			is_device_local_only = other.is_device_local_only;
+			is_host_visible = other.is_host_visible;
+			memory_property_flags = other.memory_property_flags;
 
-            // 3. Invalidate the source object ('other')
-            other.buffer = VK_NULL_HANDLE;
-            other.memory = VK_NULL_HANDLE;
-            other.elements = 0;
-            other.size_bytes = 0;
+			// 3. Invalidate the source object ('other')
+			delete other.buffer;
+			other.elements = 0;
+			other.size_bytes = 0;
 
-            if (buffer != VK_NULL_HANDLE) {
-                Log::info("Buffer move assigned (new owner), handle: ", buffer);
-            }
-        }
-        return *this;
-    }
+			if (buffer != VK_NULL_HANDLE) {
+				Log::info("Buffer move assigned (new owner), handle: ", buffer);
+			}
+		}
+		return *this;
+	}
 
-    // copy data elements from a std::vector to a host visible buffer
-    // (set copied elements to 0 to copy all)
-    void write(const std::vector<T>& source_vector, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0) {
-        if (!is_host_visible) {
-            Log::error("Buffer::write() called on non-host-visible buffer");
-        }
-        uint32_t vector_elements = source_vector.size();
-        size_t vector_size_bytes;
-        if (copied_elements == 0) {
-            vector_size_bytes = (vector_elements - source_offset_elements) * sizeof(T);
-        }
-        else {
-            vector_size_bytes = copied_elements * sizeof(T);
-        }
-        VkDeviceSize target_offset_bytes = target_offset_elements * sizeof(T);
-        uint64_t source_offset_bytes = source_offset_elements * sizeof(T);
-        if (target_offset_bytes + vector_size_bytes > this->size_bytes) {
-            Log::warning("Buffer::write attempting to write past buffer bounds. Clipping copy region size to fit.");
-            vector_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
-        }
-        if (vector_size_bytes == 0) {
-            Log::debug("in Buffer<T>::write(): requested copy region has size ", vector_size_bytes, " bytes, i.e.nothing to copy");
-            return;
-        }
-        void* data;
-        vkMapMemory(logical, memory, target_offset_bytes, vector_size_bytes, VkMemoryMapFlags(0), &data);
-        memcpy(data, source_vector.data() + source_offset_bytes, vector_size_bytes);
-        vkUnmapMemory(logical, memory);
-    }
+	// copy data elements from a std::vector to a host visible buffer
+	// (set copied elements to 0 to copy all)
+	void write(const std::vector<T>& source_vector, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0) {
+		if (!is_host_visible) {
+			Log::error("Buffer::write() called on non-host-visible buffer");
+		}
+		uint32_t vector_elements = source_vector.size();
+		uint64_t vector_size_bytes;
+		if (copied_elements == 0) {
+			vector_size_bytes = (vector_elements - source_offset_elements) * sizeof(T);
+		}
+		else {
+			vector_size_bytes = copied_elements * sizeof(T);
+		}
+		VkDeviceSize target_offset_bytes = target_offset_elements * sizeof(T);
+		if (target_offset_bytes + vector_size_bytes > this->size_bytes) {
+			Log::warning("Buffer::write attempting to write past buffer bounds. Clipping copy region size to fit.");
+			vector_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
+		}
+		if (vector_size_bytes == 0) {
+			Log::debug("in Buffer<T>::write(): requested copy region has size ", vector_size_bytes, " bytes, i.e.nothing to copy");
+			return;
+		}
+		void* data;
+		vkMapMemory(logical, memory, target_offset_bytes, vector_size_bytes, VkMemoryMapFlags(0), &data);
+		memcpy(data, source_vector.data() + source_offset_elements, vector_size_bytes);
+		vkUnmapMemory(logical, memory);
+	}
 
-    // copy data elements from a std::array to a host visible buffer
-    void write(const T* source_array, uint32_t copied_elements, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0) {
-        if (!is_host_visible) {
-            Log::error("Buffer::write() called on non-host-visible buffer");
-        }
-        size_t array_size_bytes = copied_elements * sizeof(T);
-        VkDeviceSize target_offset_bytes = target_offset_elements * sizeof(T);
-        uint64_t source_offset_bytes = source_offset_elements * sizeof(T);
-        if (target_offset_bytes + array_size_bytes > this->size_bytes) {
-            Log::warning("Buffer::write attempting to write past buffer bounds. Clipping copy region size to fit.");
-            array_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
-        }
-        if (array_size_bytes <= 0) {
-            Log::debug("in Buffer<T>::write(): requested copy region has size ", array_size_bytes, " bytes, i.e.nothing to copy");
-            return;
-        }
-        void* data;
-        vkMapMemory(logical, memory, target_offset_bytes, array_size_bytes, VkMemoryMapFlags(0), &data);
-        memcpy(data, source_array + source_offset_bytes, array_size_bytes);
-        vkUnmapMemory(logical, memory);
-    }
+	// copy data elements from a std::array to a host visible buffer
+	void write(const T* source_array, uint32_t copied_elements, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0) {
+		if (!is_host_visible) {
+			Log::error("Buffer::write() called on non-host-visible buffer");
+		}
+		size_t array_size_bytes = copied_elements * sizeof(T);
+		VkDeviceSize target_offset_bytes = target_offset_elements * sizeof(T);
+		if (target_offset_bytes + array_size_bytes > this->size_bytes) {
+			Log::warning("Buffer::write attempting to write past buffer bounds. Clipping copy region size to fit.");
+			array_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
+		}
+		if (array_size_bytes <= 0) {
+			Log::debug("in Buffer<T>::write(): requested copy region has size ", array_size_bytes, " bytes, i.e.nothing to copy");
+			return;
+		}
+		void* data;
+		vkMapMemory(logical, memory, target_offset_bytes, array_size_bytes, VkMemoryMapFlags(0), &data);
+		memcpy(data, source_array + source_offset_elements, array_size_bytes);
+		vkUnmapMemory(logical, memory);
+	}
 
-    // copy data elements from a std::initializer_list to a host visible buffer
-    void write(const std::initializer_list<T> list, uint32_t target_offset_elements = 0) {
-        if (!is_host_visible) {
-            Log::error("Buffer::write() called on non-host-visible buffer");
-        }
-        size_t list_size_bytes = list.size() * sizeof(T);
-        VkDeviceSize target_offset_bytes = target_offset_elements * sizeof(T);
-        if (target_offset_bytes + list_size_bytes > this->size_bytes) {
-            Log::warning("Buffer::write attempting to write past buffer bounds. Clipping copy region size to fit.");
-            list_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
-        }
-        if (list_size_bytes <= 0) {
-            Log::debug("in Buffer<T>::write(): requested copy region has size ", array_size_bytes, " bytes, i.e.nothing to copy");
-            return;
-        }
-        void* data;
-        vkMapMemory(logical, memory, target_offset_bytes, list_size_bytes, VkMemoryMapFlags(0), &data);
-        memcpy(data, list.begin(), list_size_bytes);
-        vkUnmapMemory(logical, memory);
-    }
+	// copy data elements from a std::initializer_list to a host visible buffer
+	void write(const std::initializer_list<T> list, uint32_t target_offset_elements = 0) {
+		if (!is_host_visible) {
+			Log::error("Buffer::write() called on non-host-visible buffer");
+		}
+		size_t list_size_bytes = list.size() * sizeof(T);
+		VkDeviceSize target_offset_bytes = target_offset_elements * sizeof(T);
+		if (target_offset_bytes + list_size_bytes > this->size_bytes) {
+			Log::warning("Buffer::write attempting to write past buffer bounds. Clipping copy region size to fit.");
+			list_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
+		}
+		if (list_size_bytes <= 0) {
+			Log::debug("in Buffer<T>::write(): requested copy region has size ", list_size_bytes, " bytes, i.e.nothing to copy");
+			return;
+		}
+		void* data;
+		vkMapMemory(logical, memory, target_offset_bytes, list_size_bytes, VkMemoryMapFlags(0), &data);
+		memcpy(data, list.begin(), list_size_bytes);
+		vkUnmapMemory(logical, memory);
+	}
 
-    // copy data elements from one host visible buffer to another
-    // (set copied elements to 0 to copy all);
-    // the source buffer must be host visible;
-    // both buffers must be of the same type
-    void write(const Buffer<T>& sourcebuffer, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0) {
-        if (!is_host_visible) {
-            Log::error("Buffer::write() called on non-host-visible buffer");
-        }
-        size_t source_size_bytes;
-        if (copied_elements == 0) {
-            source_size_bytes = (sourcebuffer.get_elements() - source_offset_elements) * sizeof(T);
-        }
-        else {
-            source_size_bytes = copied_elements * sizeof(T);
-        }
-        VkDeviceSize target_offset_bytes = target_offset_elements * sizeof(T);
-        VkDeviceSize source_offset_bytes = source_offset_elements * sizeof(T);
-        if (target_offset_bytes + source_size_bytes > this->size_bytes) {
-            Log::warning("Buffer::write() attempting to write past buffer bounds. Clipping copy region size to fit.");
-            source_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
-        }
-        if (source_size_bytes == 0) {
-            Log::debug("in Buffer<T>::write(): requested copy region has size 0, i.e. nothing to copy");
-            return;
-        }
-        void* source = nullptr;
-        void* target = nullptr;
-        vkMapMemory(logical, sourcebuffer.memory, source_offset_bytes, source_size_bytes, VkMemoryMapFlags(0), &source);
-        vkMapMemory(logical, this->memory, target_offset_bytes, source_size_bytes, VkMemoryMapFlags(0), &target);
-        memcpy(target, source, source_size_bytes);
-        vkUnmapMemory(logical, this->memory);
-        vkUnmapMemory(logical, sourcebuffer.memory);
-    }
+	// copy data elements from one host visible buffer to another
+	// (set copied elements to 0 to copy all);
+	// the source buffer must be host visible;
+	// both buffers must be of the same type
+	void write(const Buffer<T>& sourcebuffer, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0) {
+		if (!is_host_visible) {
+			Log::error("Buffer::write() called on non-host-visible buffer");
+		}
+		size_t source_size_bytes;
+		if (copied_elements == 0) {
+			source_size_bytes = (sourcebuffer.get_elements() - source_offset_elements) * sizeof(T);
+		}
+		else {
+			source_size_bytes = copied_elements * sizeof(T);
+		}
+		VkDeviceSize target_offset_bytes = target_offset_elements * sizeof(T);
+		VkDeviceSize source_offset_bytes = source_offset_elements * sizeof(T);
+		if (target_offset_bytes + source_size_bytes > this->size_bytes) {
+			Log::warning("Buffer::write() attempting to write past buffer bounds. Clipping copy region size to fit.");
+			source_size_bytes = (this->size_bytes > target_offset_bytes) ? this->size_bytes - target_offset_bytes : 0;
+		}
+		if (source_size_bytes == 0) {
+			Log::debug("in Buffer<T>::write(): requested copy region has size 0, i.e. nothing to copy");
+			return;
+		}
+		void* source = nullptr;
+		void* target = nullptr;
+		vkMapMemory(logical, sourcebuffer.memory, source_offset_bytes, source_size_bytes, VkMemoryMapFlags(0), &source);
+		vkMapMemory(logical, this->memory, target_offset_bytes, source_size_bytes, VkMemoryMapFlags(0), &target);
+		memcpy(target, source, source_size_bytes);
+		vkUnmapMemory(logical, this->memory);
+		vkUnmapMemory(logical, sourcebuffer.memory);
+	}
 
-    // returns a continous data sequence from a host visible data buffer as a std::vector<T>
-    // (set read_elements to 0 to read all)
-    std::vector<T> read(uint32_t read_elements = 0, uint32_t source_offset_elements = 0) {
-        if (!is_host_visible) {
-            Log::error("Buffer<T>::read() called on non-host-visible buffer");
-        }
-        uint32_t source_elements;
-        if (read_elements == 0) {
-            source_elements = this->elements - source_offset_elements;
+	// returns a continous data sequence from a host visible data buffer as a std::vector<T>
+	// (set read_elements to 0 to read all)
+	std::vector<T> read(uint32_t read_elements = 0, uint32_t source_offset_elements = 0) {
+		if (!is_host_visible) {
+			Log::error("Buffer<T>::read() called on non-host-visible buffer");
+		}
+		uint32_t source_elements;
+		if (read_elements == 0) {
+			source_elements = this->elements - source_offset_elements;
 
-        }
-        else {
-            source_elements = read_elements;
-        }
-        if (source_offset_elements + source_elements > this->elements) {
-            Log::warning("Buffer::read() attempting to read past buffer bounds). Clipping read region size to fit.");
-            source_elements = (this->elements > source_offset_elements) ? this->elements - source_offset_elements : 0;
-        }
-        VkDeviceSize source_size_bytes = source_elements * sizeof(T);
-        VkDeviceSize source_offset_bytes = source_offset_elements * sizeof(T);
-        std::vector<T> result(source_elements);
-        if (source_size_bytes == 0) {
-            Log::debug("in Buffer<T>::read(): requested region has size 0; returning an empty vector");
-            return result;
-        }
-        void* data;
-        vkMapMemory(logical, memory, source_offset_bytes, source_size_bytes, VkMemoryMapFlags(0), &data);
-        memcpy(result.data(), data, source_size_bytes);
-        vkUnmapMemory(logical, memory);
-        return result;
-    }
+		}
+		else {
+			source_elements = read_elements;
+		}
+		if (source_offset_elements + source_elements > this->elements) {
+			Log::warning("Buffer::read() attempting to read past buffer bounds). Clipping read region size to fit.");
+			source_elements = (this->elements > source_offset_elements) ? this->elements - source_offset_elements : 0;
+		}
+		VkDeviceSize source_size_bytes = source_elements * sizeof(T);
+		VkDeviceSize source_offset_bytes = source_offset_elements * sizeof(T);
+		std::vector<T> result(source_elements);
+		if (source_size_bytes == 0) {
+			Log::debug("in Buffer<T>::read(): requested region has size 0; returning an empty vector");
+			return result;
+		}
+		void* data;
+		vkMapMemory(logical, memory, source_offset_bytes, source_size_bytes, VkMemoryMapFlags(0), &data);
+		memcpy(result.data(), data, source_size_bytes);
+		vkUnmapMemory(logical, memory);
+		return result;
+	}
 
-    // returns a single element from a host visible data buffer
-    T read_element(uint32_t element_index) const {
-        if (!is_host_visible) {
-            Log::error("Buffer::get(uint32_t element_index) called on non-host-visible buffer");
-        }
-        if (element_index >= this->elements) {
-            Log::error("in method Buffer::get(): element index ", element_index, " is out of bounds (allowed indices: 0-", this->elements - 1, ")");
-        }
-        void* data = nullptr;
-        T element = static_cast<T>(0);
-        VkResult result = vkMapMemory(logical, memory, element_index * sizeof(T), sizeof(T), VkMemoryMapFlags(0), &data);
-        if (result != VK_SUCCESS) {
-            Log::error("in method Buffer<T>::get(uint32_t element_index): failed to map buffer memory (VkResult = ", result, ")");
-        }
-        memcpy(&element, data, sizeof(T));
-        vkUnmapMemory(logical, memory);
-        return element;
-    }
+	// returns a single element from a host visible data buffer
+	T read_element(uint32_t element_index) const {
+		if (!is_host_visible) {
+			Log::error("Buffer::get(uint32_t element_index) called on non-host-visible buffer");
+		}
+		if (element_index >= this->elements) {
+			Log::error("in method Buffer::get(): element index ", element_index, " is out of bounds (allowed indices: 0-", this->elements - 1, ")");
+		}
+		void* data = nullptr;
+		T element = static_cast<T>(0);
+		VkResult result = vkMapMemory(logical, memory, element_index * sizeof(T), sizeof(T), VkMemoryMapFlags(0), &data);
+		if (result != VK_SUCCESS) {
+			Log::error("in method Buffer<T>::get(uint32_t element_index): failed to map buffer memory (VkResult = ", result, ")");
+		}
+		memcpy(&element, data, sizeof(T));
+		vkUnmapMemory(logical, memory);
+		return element;
+	}
 
-    // assigns a single element of a host visible data buffer
-    void write_element(uint32_t element_index, T value) {
-        if (!is_host_visible()) {
-            Log::error("method Buffer<T>::set() called on non-host-visible buffer.");
-        }
-        if (element_index >= this->elements) {
-            Log::error("in method Buffer::set(): element index ", element_index, " is out of bounds (allowed indices: 0-", this->elements - 1, ")");
-        }
-        void* data = nullptr;
-        VkResult result = vkMapMemory(logical, memory, element_index * sizeof(T), sizeof(T), VkMemoryMapFlags(0), &data);
-        if (result != VK_SUCCESS) {
-            Log::error("in method Buffer<T>::set(uint32_t element_index, T value): failed to map buffer memory (VkResult = ", result, ")");
-        }
-        memcpy(data, &value, sizeof(T));
-        vkUnmapMemory(logical, memory);
-    }
+	// assigns a single element of a host visible data buffer
+	void write_element(uint32_t element_index, T value) {
+		if (!is_host_visible) {
+			Log::error("method Buffer<T>::set() called on non-host-visible buffer.");
+		}
+		if (element_index >= this->elements) {
+			Log::error("in method Buffer::set(): element index ", element_index, " is out of bounds (allowed indices: 0-", this->elements - 1, ")");
+		}
+		void* data = nullptr;
+		VkResult result = vkMapMemory(logical, memory, element_index * sizeof(T), sizeof(T), VkMemoryMapFlags(0), &data);
+		if (result != VK_SUCCESS) {
+			Log::error("in method Buffer<T>::set(uint32_t element_index, T value): failed to map buffer memory (VkResult = ", result, ")");
+		}
+		memcpy(data, &value, sizeof(T));
+		vkUnmapMemory(logical, memory);
+	}
 
-    // assigns the same value to continous sequence of buffer elements
-    // (set write_elements to 0 to assign all)
-    void set_all(T value, uint32_t offset_elements = 0, uint32_t write_elements = 0) {
-        if (!is_host_visible()) {
-            Log::error("method Buffer<T>::set_all() called on non-host-visible buffer.");
-        }
-        size_t element_size = sizeof(T);
-        if (offset_elements >= this->elements) {
-            Log::error("in method Buffer::set_all(): invalid offset argument; value is ", offset_elements, " but the buffer only has ",
-                this->elements, " elements, i.e. the max allowed offset argument is ", this->elements - 1);
-        }
-        if (write_elements > this->elements - offset_elements) {
-            Log::error("in method Buffer::set_all(): invalid write_elements argument; value is ", write_elements, " for a buffer of ",
-                this->elements, " elements, i.e. only ", this->elements - offset_elements, " elements can be written beyond the desired offset of ", offset_elements, " elements)");
-        }
-        VkDeviceSize offset_bytes = offset_elements * element_size;
-        VkDeviceSize write_bytes = write_elements == 0 ? (this->elements - offset_elements) * element_size : write_elements * element_size;
-        void* data;
-        vkMapMemory(logical, memory, offset_bytes, write_bytes, VkMemoryMapFlags(0), &data);
-        for (size_t offset = 0; offset < write_bytes; offset += element_size) {
-            memcpy((T*)data + offset, &value, element_size);
-        }
-        vkUnmapMemory(logical, memory);
-    }
+	// assigns the same value to continous sequence of buffer elements
+	// (set write_elements to 0 to assign all)
+	void set_all(T value, uint32_t offset_elements = 0, uint32_t write_elements = 0) {
+		if (!is_host_visible) {
+			Log::error("method Buffer<T>::set_all() called on non-host-visible buffer.");
+		}
+		size_t element_size = sizeof(T);
+		if (offset_elements >= this->elements) {
+			Log::error("in method Buffer::set_all(): invalid offset argument; value is ", offset_elements, " but the buffer only has ",
+				this->elements, " elements, i.e. the max allowed offset argument is ", this->elements - 1);
+		}
+		if (write_elements > this->elements - offset_elements) {
+			Log::error("in method Buffer::set_all(): invalid write_elements argument; value is ", write_elements, " for a buffer of ",
+				this->elements, " elements, i.e. only ", this->elements - offset_elements, " elements can be written beyond the desired offset of ", offset_elements, " elements)");
+		}
+		VkDeviceSize offset_bytes = offset_elements * element_size;
+		VkDeviceSize write_bytes = write_elements == 0 ? (this->elements - offset_elements) * element_size : write_elements * element_size;
+		void* data;
+		vkMapMemory(logical, memory, offset_bytes, write_bytes, VkMemoryMapFlags(0), &data);
+		for (size_t offset = 0; offset < write_bytes; offset += element_size) {
+			memcpy((T*)data + offset, &value, element_size);
+		}
+		vkUnmapMemory(logical, memory);
+	}
 
-    // getters
-    uint32_t get_elements() const { return this->elements; }
-    uint64_t get_size_bytes() const { return size_bytes; }
-    VkDeviceMemory get_memory() const { return memory; }
-    VkBuffer get() const { return buffer; }
-    VkMemoryPropertyFlags get_memory_flags() const { return memory_flags; }
+	// getters
+	uint32_t get_elements() const { return this->elements; }
+	uint64_t get_size_bytes() const { return size_bytes; }
+	VkDeviceMemory get_memory() const { return memory; }
+	VkBuffer get() const { return buffer; }
+	VkMemoryPropertyFlags get_memory_property_flags() const { return memory_property_flags; }
 
-    // destructor
-    ~Buffer() {
-        if (buffer != VK_NULL_HANDLE) {
-            Log::info("executing Buffer destructor (buffer handle: ", buffer, ")");
-            vkFreeMemory(logical, memory, nullptr);
-            memory = VK_NULL_HANDLE;
-            vkDestroyBuffer(logical, buffer, nullptr);
-            buffer = VK_NULL_HANDLE;
-        }
-    }
+	// destructor
+	~Buffer() {
+		if (memory != VK_NULL_HANDLE && memory != VkDeviceMemory(0xdddddddddddddddd)) {
+			Log::debug("in Buffer<T> destructor: freeing buffer memory (memory handle: ", memory, ")");
+			vkFreeMemory(logical, memory, nullptr);
+			memory = VK_NULL_HANDLE;
+		}
+		if (buffer != VK_NULL_HANDLE && buffer != VkBuffer(0xdddddddddddddddd)) {
+			Log::debug("in Buffer<T> destructor: destroying buffer (buffer handle: ", buffer, ")");
+			vkDestroyBuffer(logical, buffer, nullptr);
+			buffer = VK_NULL_HANDLE;
+		}
+	}
 
 protected:
-    VkBuffer buffer = nullptr;
-    VkDeviceMemory memory = nullptr;
-    uint32_t elements = 0;
-    VkDevice logical = nullptr;
-    VkPhysicalDevice physical = nullptr;
-    VkMemoryPropertyFlags memory_property_flags = 0;
-    uint64_t size_bytes = 0;
-    bool is_device_local_only = false;
-    bool is_host_visible = false;
+	VkBuffer buffer = nullptr;
+	VkDeviceMemory memory = nullptr;
+	uint32_t elements = 0;
+	VkDevice logical = nullptr;
+	VkPhysicalDevice physical = nullptr;
+	VkMemoryPropertyFlags memory_property_flags = 0;
+	uint64_t size_bytes = 0;
+	bool is_device_local_only = false;
+	bool is_host_visible = false;
 };
 
 // Sampler class for texture sampling
 class Sampler {
 public:
-    Sampler() = delete;
-    Sampler(
-        Device& device,
-        VkFilter magFilter = VK_FILTER_LINEAR,
-        VkFilter minFilter = VK_FILTER_LINEAR,
-        VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        VkBool32 anisotropyEnable = VK_TRUE,
-        float maxAnisotropy = 16.0f
-    ) : logical(device.get_logical()) {
-        sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        sampler_create_info.pNext = nullptr;
-        sampler_create_info.magFilter = magFilter;
-        sampler_create_info.minFilter = minFilter;
-        sampler_create_info.addressModeU = addressMode;
-        sampler_create_info.addressModeV = addressMode;
-        sampler_create_info.addressModeW = addressMode;
-        sampler_create_info.anisotropyEnable = anisotropyEnable;
-        sampler_create_info.maxAnisotropy = maxAnisotropy;
-        sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-        sampler_create_info.unnormalizedCoordinates = VK_FALSE;
-        sampler_create_info.compareEnable = VK_FALSE;
-        sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
-        sampler_create_info.mipmapMode = mipmapMode;
+	Sampler() = delete;
+	Sampler(
+		Device& device,
+		VkFilter magFilter = VK_FILTER_LINEAR,
+		VkFilter minFilter = VK_FILTER_LINEAR,
+		VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		VkBool32 anisotropyEnable = VK_TRUE,
+		float maxAnisotropy = 16.0f
+	) : logical(device.get_logical()) {
+		sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		sampler_create_info.pNext = nullptr;
+		sampler_create_info.magFilter = magFilter;
+		sampler_create_info.minFilter = minFilter;
+		sampler_create_info.addressModeU = addressMode;
+		sampler_create_info.addressModeV = addressMode;
+		sampler_create_info.addressModeW = addressMode;
+		sampler_create_info.anisotropyEnable = anisotropyEnable;
+		sampler_create_info.maxAnisotropy = maxAnisotropy;
+		sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+		sampler_create_info.compareEnable = VK_FALSE;
+		sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
+		sampler_create_info.mipmapMode = mipmapMode;
 
-        if (vkCreateSampler(logical, &sampler_create_info, nullptr, &sampler) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create texture sampler!");
-        }
-    }
-    ~Sampler() {
-        if (sampler != nullptr) {
-            vkDestroySampler(logical, sampler, nullptr);
-            Log::info("destroyed image sampler (handle: ", sampler, ")");
-            sampler = nullptr;
-        }
-    }
-    const VkSampler& get() const { return sampler; }
+		if (vkCreateSampler(logical, &sampler_create_info, nullptr, &sampler) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create texture sampler!");
+		}
+	}
+	~Sampler() {
+		if (sampler != nullptr) {
+			vkDestroySampler(logical, sampler, nullptr);
+			Log::info("destroyed image sampler (handle: ", sampler, ")");
+			sampler = nullptr;
+		}
+	}
+	const VkSampler& get() const { return sampler; }
 protected:
-    VkSampler sampler = nullptr;
-    VkDevice logical = nullptr;
-    VkSamplerCreateInfo sampler_create_info = {};
+	VkSampler sampler = nullptr;
+	VkDevice logical = nullptr;
+	VkSamplerCreateInfo sampler_create_info = {};
 };
 
 // DescriptorSets hold binding information for shader resources
 class DescriptorSet {
-    friend class DescriptorPool;
+	friend class DescriptorPool;
 public:
-    // constructor
-    DescriptorSet() = delete;
-    DescriptorSet(const Device& device) {
-        this->logical = device.get_logical();
-    }
+	// constructor
+	DescriptorSet() = delete;
+	DescriptorSet(const Device& device) {
+		this->logical = device.get_logical();
+	}
 
-    // move constructor
-    DescriptorSet(DescriptorSet&& other) noexcept
-        : logical(std::exchange(other.logical, nullptr)),
-        layout(std::exchange(other.layout, nullptr)),
-        set(std::exchange(other.set, nullptr)),
-        layout_finalized(other.layout_finalized),
-        layout_bindings(std::move(other.layout_bindings)),
-        image_bindings(std::move(other.image_bindings)) {}
+	// move constructor
+	DescriptorSet(DescriptorSet&& other) noexcept
+		: logical(std::exchange(other.logical, nullptr)),
+		layout(std::exchange(other.layout, nullptr)),
+		set(std::exchange(other.set, nullptr)),
+		layout_finalized(other.layout_finalized),
+		layout_bindings(std::move(other.layout_bindings)),
+		image_bindings(std::move(other.image_bindings)) {
+	}
 
-    // move assignment
-    DescriptorSet& operator=(DescriptorSet&& other) noexcept {
-        if (this != &other) {
-            logical = std::exchange(other.logical, nullptr);
-            layout = std::exchange(other.layout, nullptr);
-            set = std::exchange(other.set, nullptr);
-            layout_finalized = other.layout_finalized;
-            layout_bindings = std::move(other.layout_bindings);
-            image_bindings = std::move(other.image_bindings);
-        }
-        return *this;
-    }
+	// move assignment
+	DescriptorSet& operator=(DescriptorSet&& other) noexcept {
+		if (this != &other) {
+			logical = std::exchange(other.logical, nullptr);
+			layout = std::exchange(other.layout, nullptr);
+			set = std::exchange(other.set, nullptr);
+			layout_finalized = other.layout_finalized;
+			layout_bindings = std::move(other.layout_bindings);
+			image_bindings = std::move(other.image_bindings);
+		}
+		return *this;
+	}
 
-    // deleted copy constructor and assignment
-    DescriptorSet(const DescriptorSet&) = delete;
-    DescriptorSet& operator=(const DescriptorSet&) = delete;
+	// deleted copy constructor and assignment
+	DescriptorSet(const DescriptorSet&) = delete;
+	DescriptorSet& operator=(const DescriptorSet&) = delete;
 
-    // finalizes the descriptor set layout and creates the descriptor set
-    void finalize_layout() {
-        layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layout_create_info.pNext = NULL;
-        layout_create_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-        layout_create_info.pBindings = layout_bindings.data();
-        layout_create_info.bindingCount = static_cast<uint32_t>(layout_bindings.size());
-        VkResult result = vkCreateDescriptorSetLayout(logical, &layout_create_info, nullptr, &layout);
-        if (result == VK_SUCCESS) {
-            Log::info("descriptor set layout created (", layout_bindings.size(), " bindings, layout handle : ", layout, ")");
-        }
-        else {
-            Log::error("in method DescriptorPool::allocate_set(): failed to finalize descriptor set layout (VkResult ", result, ")");
-        }
-        layout_finalized = true;
-    }
+	// finalizes the descriptor set layout and creates the descriptor set
+	void finalize_layout() {
+		layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layout_create_info.pNext = NULL;
+		layout_create_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+		layout_create_info.pBindings = layout_bindings.data();
+		layout_create_info.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+		VkResult result = vkCreateDescriptorSetLayout(logical, &layout_create_info, nullptr, &layout);
+		if (result == VK_SUCCESS) {
+			Log::info("descriptor set layout created (", layout_bindings.size(), " bindings, layout handle : ", layout, ")");
+		}
+		else {
+			Log::error("in method DescriptorPool::allocate_set(): failed to finalize descriptor set layout (VkResult ", result, ")");
+		}
+		layout_finalized = true;
+	}
 
-    // binds a buffer to the next available binding index and returns this index
-    template<typename T>
-    uint32_t bind_buffer(const Buffer<T>& buffer, DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL) {
-        uint32_t binding_index = layout_bindings.size();
-        layout_bindings.resize(binding_index + 1);
-        layout_create_info.bindingCount = binding_index + 1;
+	// binds a buffer to the next available binding index and returns this index
+	template<typename T>
+	uint32_t bind_buffer(const Buffer<T>& buffer, DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL) {
+		uint32_t binding_index = layout_bindings.size();
+		layout_bindings.resize(binding_index + 1);
+		layout_create_info.bindingCount = binding_index + 1;
 
-        layout_bindings[binding_index] = {};
-        layout_bindings[binding_index].binding = binding_index;
-        layout_bindings[binding_index].descriptorType = get_descriptor_type(type);
-        layout_bindings[binding_index].descriptorCount = 1;
-        layout_bindings[binding_index].stageFlags = shader_stage_flags;
-        layout_bindings[binding_index].pImmutableSamplers = nullptr;
+		layout_bindings[binding_index] = {};
+		layout_bindings[binding_index].binding = binding_index;
+		layout_bindings[binding_index].descriptorType = get_descriptor_type(type);
+		layout_bindings[binding_index].descriptorCount = 1;
+		layout_bindings[binding_index].stageFlags = shader_stage_flags;
+		layout_bindings[binding_index].pImmutableSamplers = nullptr;
 
-        Log::debug("binding buffer ", buffer.get(), " to descriptor set (handle: ", set, ") at binding index ", binding_index);
+		Log::debug("binding buffer ", buffer.get(), " to descriptor set (handle: ", set, ") at binding index ", binding_index);
 
-        // recreate the descriptor set layout if it has previously been finalized
-        if (layout_finalized) {
-            if (layout != nullptr) {
-                vkDestroyDescriptorSetLayout(logical, layout, nullptr);
-                layout = nullptr;
-            }
-            Log::info("in method DescriptorSet::bind_buffer(): the descriptor set layout has already been finalized and needs to be recreated");
-            finalize_layout();
-        }
-        return binding_index;
-    }
+		// store the buffer information for updating the descriptor set later
+		BufferBindingInfo buffer_binding = {};
+		buffer_binding.binding_index = binding_index;
+		buffer_binding.buffer = buffer.get();
+		buffer_binding.offset = 0;
+		buffer_binding.range = VK_WHOLE_SIZE;
+		buffer_binding.descriptor_type = get_descriptor_type(type);
+		buffer_bindings.push_back(buffer_binding);
 
-    // replaces the buffer at the specified binding index with a new one
-    template<typename T>
-    void replace_buffer(const Buffer<T>& new_buffer, uint32_t target_binding_index, DescriptorType type) {
-        if (target_binding_index >= layout_bindings.size()) {
-            Log::warning("in method DescriptorSet::replace_buffer(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
-        }
-        VkDescriptorBufferInfo buffer_info = {};
-        buffer_info.buffer = new_buffer.get();
-        buffer_info.offset = 0;
-        buffer_info.range = VK_WHOLE_SIZE;
+		// recreate the descriptor set layout if it has previously been finalized
+		if (layout_finalized) {
+			if (layout != nullptr) {
+				vkDestroyDescriptorSetLayout(logical, layout, nullptr);
+				layout = nullptr;
+			}
+			Log::info("in method DescriptorSet::bind_buffer(): the descriptor set layout has already been finalized and needs to be recreated");
+			finalize_layout();
+		}
 
-        VkWriteDescriptorSet descriptor_write = {};
-        descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor_write.pNext = NULL;
-        descriptor_write.dstSet = set;
-        descriptor_write.dstBinding = target_binding_index;
-        descriptor_write.dstArrayElement = 0;
-        descriptor_write.descriptorCount = 1;
-        descriptor_write.descriptorType = get_descriptor_type(type);
-        descriptor_write.pImageInfo = NULL;
-        descriptor_write.pTexelBufferView = NULL;
-        descriptor_write.pBufferInfo = &buffer_info;
+		return binding_index;
+	}
 
-        vkUpdateDescriptorSets(logical, 1, &descriptor_write, 0, nullptr);
-    }
+	// replaces the buffer at the specified binding index with a new one
+	template<typename T>
+	void replace_buffer(const Buffer<T>& new_buffer, uint32_t target_binding_index, DescriptorType type) {
+		if (target_binding_index >= layout_bindings.size()) {
+			Log::warning("in method DescriptorSet::replace_buffer(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
+		}
+		else {
+			Log::debug("replacing buffer at binding index ", target_binding_index, " with new buffer ", new_buffer.get(), " in descriptor set (handle: ", set, ")");
+		}
+		VkDescriptorBufferInfo buffer_info = {};
+		buffer_info.buffer = new_buffer.get();
+		buffer_info.offset = 0;
+		buffer_info.range = VK_WHOLE_SIZE;
 
-    // binds an image view to the next available binding index and returns this index;
-    // make sure to apply method DescriptorSet::update() after binding all images
-    uint32_t bind_image(const ImageView& image_view, DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL, const Sampler& sampler) {
+		VkWriteDescriptorSet descriptor_write = {};
+		descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptor_write.pNext = NULL;
+		descriptor_write.dstSet = set;
+		descriptor_write.dstBinding = target_binding_index;
+		descriptor_write.dstArrayElement = 0;
+		descriptor_write.descriptorCount = 1;
+		descriptor_write.descriptorType = get_descriptor_type(type);
+		descriptor_write.pImageInfo = NULL;
+		descriptor_write.pTexelBufferView = NULL;
+		descriptor_write.pBufferInfo = &buffer_info;
 
-        uint32_t binding_index = static_cast<uint32_t>(layout_bindings.size());
-        layout_bindings.resize(binding_index + 1);
-        layout_create_info.bindingCount = binding_index + 1;
+		vkUpdateDescriptorSets(logical, 1, &descriptor_write, 0, nullptr);
+	}
 
-        layout_bindings[binding_index] = {};
-        layout_bindings[binding_index].binding = binding_index;
-        layout_bindings[binding_index].descriptorType = get_descriptor_type(type);
-        layout_bindings[binding_index].descriptorCount = 1;
-        layout_bindings[binding_index].stageFlags = shader_stage_flags;
-        layout_bindings[binding_index].pImmutableSamplers = nullptr;
+	// binds an image view to the next available binding index and returns this index;
+	// make sure to apply method DescriptorSet::update() after binding all images
+	uint32_t bind_image(const ImageView& image_view, DescriptorType type, const Sampler& sampler, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL) {
 
-        Log::debug("binding image view ", image_view.get(), " to descriptor set (handle: ", set, ") at binding index ", binding_index);
+		uint32_t binding_index = static_cast<uint32_t>(layout_bindings.size());
+		layout_bindings.resize(binding_index + 1);
+		layout_create_info.bindingCount = binding_index + 1;
 
-        // Store the image view and sampler for updating the descriptor set later
-        ImageBindingInfo image_binding = {}; // = custom struct, not part of the Vulkan API
-        image_binding.binding_index = binding_index;
-        image_binding.image_view = image_view.get();
-        image_binding.sampler = sampler.get();
-        image_binding.descriptor_type = get_descriptor_type(type);
-        image_bindings.push_back(image_binding);
+		layout_bindings[binding_index] = {};
+		layout_bindings[binding_index].binding = binding_index;
+		layout_bindings[binding_index].descriptorType = get_descriptor_type(type);
+		layout_bindings[binding_index].descriptorCount = 1;
+		layout_bindings[binding_index].stageFlags = shader_stage_flags;
+		layout_bindings[binding_index].pImmutableSamplers = nullptr;
 
-        // recreate the descriptor set layout if it has previously been finalized
-        if (layout_finalized) {
-            if (layout != nullptr) {
-                vkDestroyDescriptorSetLayout(logical, layout, nullptr);
-                layout = nullptr;
-            }
-            Log::info("in method DescriptorSet::bind_buffer(): the descriptor set layout has already been finalized and needs to be recreated");
-            finalize_layout();
-            update();
-        }
-        return binding_index;
-    }
+		Log::debug("binding image view ", image_view.get(), " to descriptor set (handle: ", set, ") at binding index ", binding_index);
 
-    // replaces the image view at the specified binding index with a new one
-    void replace_image(const ImageView& new_image_view, VkImageLayout image_layout, uint32_t target_binding_index, DescriptorType type, const std::optional<Sampler>& sampler = std::nullopt) {
-        if (target_binding_index >= layout_bindings.size()) {
-            Log::warning("in method DescriptorSet::replace_image(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
-            return;
-        }
+		// Store the image view and sampler for updating the descriptor set later
+		ImageBindingInfo image_binding = {}; // = custom struct, not part of the Vulkan API
+		image_binding.binding_index = binding_index;
+		image_binding.image_view = image_view.get();
+		image_binding.sampler = sampler.get();
+		image_binding.descriptor_type = get_descriptor_type(type);
+		image_bindings.push_back(image_binding);
 
-        VkDescriptorImageInfo image_info = {};
+		// recreate the descriptor set layout if it has previously been finalized
+		if (layout_finalized) {
+			if (layout != nullptr) {
+				vkDestroyDescriptorSetLayout(logical, layout, nullptr);
+				layout = nullptr;
+			}
+			Log::info("in method DescriptorSet::bind_buffer(): the descriptor set layout has already been finalized and needs to be recreated");
+			finalize_layout();
+		}
+		return binding_index;
+	}
 
-        // validate descriptor type
-        if (type == DescriptorType::SAMPLED_IMAGE_DESCRIPTOR || type == DescriptorType::COMBINED_IMAGE_SAMPLER_DESCRIPTOR) {
-            if (!sampler.has_value()) {
-                Log::error("in method DescriptorSet::replace_image(): sampler is required for SAMPLED_IMAGE or COMBINED_IMAGE_SAMPLER");
-                return;
-            }
-            image_info.sampler = sampler.value().get();
-        }
-        else if (type == DescriptorType::STORAGE_BUFFER_DESCRIPTOR || type == DescriptorType::UNIFORM_BUFFER_DESCRIPTOR) {
-            Log::error("in method DescriptorSet::replace_image(): invalid descriptor type for image view binding: ", type,
-                "; must be SAMPLED_IMAGE(", DescriptorType::SAMPLED_IMAGE_DESCRIPTOR, ") or STORAGE_IMAGE(", DescriptorType::STORAGE_IMAGE_DESCRIPTOR,
-                ") or COMBINED_IMAGE_SAMPLER(", DescriptorType::COMBINED_IMAGE_SAMPLER_DESCRIPTOR, ")");
-        }
-        else {
-            // note: for STORAGE_IMAGE, the sampler is not used
-            image_info.sampler = VK_NULL_HANDLE;
-        }
-        // validate target binding index
-        if (target_binding_index >= layout_bindings.size()) {
-            Log::warning("in method DescriptorSet::replace_image(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
-            return;
-        }
+	// replaces the image view at the specified binding index with a new one
+	void replace_image(const ImageView& new_image_view, VkImageLayout image_layout, uint32_t target_binding_index, DescriptorType type, const std::optional<Sampler>& sampler = std::nullopt) {
+		if (target_binding_index >= layout_bindings.size()) {
+			Log::warning("in method DescriptorSet::replace_image(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
+			return;
+		}
 
-        image_info.imageView = new_image_view.get();
-        image_info.imageLayout = image_layout; // e.g. VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		VkDescriptorImageInfo image_info = {};
 
-        VkWriteDescriptorSet descriptor_write = {};
-        descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor_write.pNext = nullptr;
-        descriptor_write.dstSet = set;
-        descriptor_write.dstBinding = target_binding_index;
-        descriptor_write.dstArrayElement = 0;
-        descriptor_write.descriptorCount = 1;
-        descriptor_write.descriptorType = get_descriptor_type(type);
-        descriptor_write.pImageInfo = &image_info;
-        descriptor_write.pTexelBufferView = nullptr;
-        descriptor_write.pBufferInfo = nullptr;
+		// validate descriptor type
+		if (type == DescriptorType::SAMPLED_IMAGE_DESCRIPTOR || type == DescriptorType::COMBINED_IMAGE_SAMPLER_DESCRIPTOR) {
+			if (!sampler.has_value()) {
+				Log::error("in method DescriptorSet::replace_image(): sampler is required for SAMPLED_IMAGE or COMBINED_IMAGE_SAMPLER");
+				return;
+			}
+			image_info.sampler = sampler.value().get();
+		}
+		else if (type == DescriptorType::STORAGE_BUFFER_DESCRIPTOR || type == DescriptorType::UNIFORM_BUFFER_DESCRIPTOR) {
+			Log::error("in method DescriptorSet::replace_image(): invalid descriptor type for image view binding: ", type,
+				"; must be SAMPLED_IMAGE(", DescriptorType::SAMPLED_IMAGE_DESCRIPTOR, ") or STORAGE_IMAGE(", DescriptorType::STORAGE_IMAGE_DESCRIPTOR,
+				") or COMBINED_IMAGE_SAMPLER(", DescriptorType::COMBINED_IMAGE_SAMPLER_DESCRIPTOR, ")");
+		}
+		else {
+			// note: for STORAGE_IMAGE, the sampler is not used
+			image_info.sampler = VK_NULL_HANDLE;
+		}
+		// validate target binding index
+		if (target_binding_index >= layout_bindings.size()) {
+			Log::warning("in method DescriptorSet::replace_image(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
+			return;
+		}
 
-        vkUpdateDescriptorSets(logical, 1, &descriptor_write, 0, nullptr);
+		image_info.imageView = new_image_view.get();
+		image_info.imageLayout = image_layout; // e.g. VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 
-        // Update the stored image binding info if it exists
-        for (auto& binding_info : image_bindings) {
-            if (binding_info.binding_index == target_binding_index) {
-                binding_info.image_view = new_image_view.get();
-                binding_info.sampler = sampler ? sampler->get() : VK_NULL_HANDLE;
-                binding_info.descriptor_type = get_descriptor_type(type);
-                break;
-            }
-        }
-    }
+		VkWriteDescriptorSet descriptor_write = {};
+		descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptor_write.pNext = nullptr;
+		descriptor_write.dstSet = set;
+		descriptor_write.dstBinding = target_binding_index;
+		descriptor_write.dstArrayElement = 0;
+		descriptor_write.descriptorCount = 1;
+		descriptor_write.descriptorType = get_descriptor_type(type);
+		descriptor_write.pImageInfo = &image_info;
+		descriptor_write.pTexelBufferView = nullptr;
+		descriptor_write.pBufferInfo = nullptr;
 
-    // updates the descriptor set with the current image bindings
-    void update() {
-        std::vector<VkWriteDescriptorSet> descriptor_writes;
-        std::vector<VkDescriptorImageInfo> image_infos;
+		vkUpdateDescriptorSets(logical, 1, &descriptor_write, 0, nullptr);
 
-        for (const auto& binding_info : image_bindings) {
-            VkDescriptorImageInfo image_info{};
-            if (binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
-                image_info.sampler = binding_info.sampler;
-            }
-            image_info.imageView = binding_info.image_view;
-            image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            image_infos.push_back(image_info);
+		// Update the stored image binding info if it exists
+		for (auto& binding_info : image_bindings) {
+			if (binding_info.binding_index == target_binding_index) {
+				binding_info.image_view = new_image_view.get();
+				binding_info.sampler = sampler ? sampler->get() : VK_NULL_HANDLE;
+				binding_info.descriptor_type = get_descriptor_type(type);
+				break;
+			}
+		}
+	}
 
-            VkWriteDescriptorSet descriptor_write{};
-            descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptor_write.dstSet = set;
-            descriptor_write.dstBinding = binding_info.binding_index;
-            descriptor_write.dstArrayElement = 0;
-            descriptor_write.descriptorCount = 1;
-            descriptor_write.descriptorType = binding_info.descriptor_type;
-            descriptor_write.pImageInfo = &image_infos.back();
-            descriptor_write.pBufferInfo = nullptr;
-            descriptor_write.pTexelBufferView = nullptr;
-            descriptor_writes.push_back(descriptor_write);
-        }
+	// updates the descriptor set with the current image bindings
+	void update() {
+		if (set == VK_NULL_HANDLE) {
+			// This can happen if update() is called before allocation.
+			Log::warning("in method DescriptorSet::update(): descriptor set handle is null (this can e.g. happen if update() is called before set allocation to a descriptor pool, skipping vkUpdateDescriptorSets call.");
+			return;
+		}
+		std::vector<VkWriteDescriptorSet> descriptor_writes;
+		std::vector<VkDescriptorImageInfo> image_infos;
+		std::vector<VkDescriptorBufferInfo> buffer_infos;
 
-        vkUpdateDescriptorSets(logical, static_cast<uint32_t>(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
-    }
+		// pre-allocation
+		image_infos.reserve(image_bindings.size());
+		buffer_infos.reserve(buffer_bindings.size());
 
-    // getters
-    VkDescriptorSet get() const { return set; }
-    const VkDescriptorSet* get_ptr() const { return &set; }
-    const VkDescriptorSetLayout& get_layout() const { return layout; }
+		// process image bindings
+		for (const auto& binding_info : image_bindings) {
+			VkDescriptorImageInfo image_info{};
+			if (binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+				image_info.sampler = binding_info.sampler;
+			}
+			image_info.imageView = binding_info.image_view;
+			image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // TODO: or make this configurable
+			image_infos.push_back(image_info);
 
-    // destructor
-    ~DescriptorSet() {
-        if (layout != nullptr) {
-            vkDestroyDescriptorSetLayout(logical, layout, nullptr);
-            layout = nullptr;
-        }
-    }
+			VkWriteDescriptorSet descriptor_write{};
+			descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptor_write.dstSet = set;
+			descriptor_write.dstBinding = binding_info.binding_index;
+			descriptor_write.dstArrayElement = 0;
+			descriptor_write.descriptorCount = 1;
+			descriptor_write.descriptorType = binding_info.descriptor_type;
+			descriptor_write.pImageInfo = &image_infos.back();
+			descriptor_write.pBufferInfo = nullptr;
+			descriptor_write.pTexelBufferView = nullptr;
+			descriptor_writes.push_back(descriptor_write);
+		}
+
+		// process buffer bindings
+		for (const auto& binding_info : buffer_bindings) {
+			VkDescriptorBufferInfo buffer_info{};
+			buffer_info.buffer = binding_info.buffer;
+			buffer_info.offset = binding_info.offset;
+			buffer_info.range = binding_info.range;
+			buffer_infos.push_back(buffer_info); // Store it
+
+			VkWriteDescriptorSet descriptor_write{};
+			descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptor_write.dstSet = set; // Use the actual allocated set handle
+			descriptor_write.dstBinding = binding_info.binding_index;
+			descriptor_write.dstArrayElement = 0; // Assuming not an array
+			descriptor_write.descriptorCount = 1;  // Assuming single buffer
+			descriptor_write.descriptorType = binding_info.descriptor_type;
+			descriptor_write.pBufferInfo = &buffer_infos.back(); // Point to the stored info
+			descriptor_write.pImageInfo = nullptr;
+			descriptor_write.pTexelBufferView = nullptr;
+			descriptor_writes.push_back(descriptor_write);
+		}
+
+		// Perform the update if there's anything to write
+		if (!descriptor_writes.empty()) {
+			vkUpdateDescriptorSets(logical, static_cast<uint32_t>(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
+			Log::debug("DescriptorSet::update() called vkUpdateDescriptorSets for set ", set, " with ", descriptor_writes.size(), " writes.");
+		}
+		else {
+			Log::debug("DescriptorSet::update() called for set ", set, ", but no bindings needed updating.");
+		}
+	}
+
+	// getters
+	VkDescriptorSet get() const { return set; }
+	const VkDescriptorSet* get_ptr() const { return &set; }
+	const VkDescriptorSetLayout& get_layout() const { return layout; }
+
+	// destructor
+	~DescriptorSet() {
+		if (layout != nullptr) {
+			Log::debug("destroying descriptor set layout (handle: ", layout, ")");
+			vkDestroyDescriptorSetLayout(logical, layout, nullptr);
+			layout = nullptr;
+			Log::info("[DESCRIPTORSET LAYOUT DESTROYED]");
+		}
+	}
 
 protected:
-    struct ImageBindingInfo {
-        uint32_t binding_index;
-        VkImageView image_view;
-        VkSampler sampler;
-        VkDescriptorType descriptor_type;
-    };
+	struct ImageBindingInfo {
+		uint32_t binding_index;
+		VkImageView image_view;
+		VkSampler sampler;
+		VkDescriptorType descriptor_type;
+	};
 
-    VkDescriptorType get_descriptor_type(DescriptorType type) const {
-        switch (type) {
-            case DescriptorType::STORAGE_BUFFER_DESCRIPTOR: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            case DescriptorType::UNIFORM_BUFFER_DESCRIPTOR: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            case DescriptorType::SAMPLED_IMAGE_DESCRIPTOR:  return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-            case DescriptorType::STORAGE_IMAGE_DESCRIPTOR:  return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            case DescriptorType::COMBINED_IMAGE_SAMPLER_DESCRIPTOR: return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            default: Log::error("Invalid descriptor type."); return VK_DESCRIPTOR_TYPE_MAX_ENUM;
-        }
-    }
+	struct BufferBindingInfo {
+		uint32_t binding_index;
+		VkBuffer buffer;
+		VkDeviceSize offset; // Usually 0
+		VkDeviceSize range;  // Usually VK_WHOLE_SIZE
+		VkDescriptorType descriptor_type;
+	};
 
-    VkDevice logical = nullptr;
-    VkDescriptorSetLayoutCreateInfo layout_create_info = {};
-    std::vector<VkDescriptorSetLayoutBinding> layout_bindings;
-    std::vector<ImageBindingInfo> image_bindings;
-    VkDescriptorSet set = nullptr;
-    VkDescriptorSetLayout layout = nullptr;
-    bool layout_finalized = false;
+	VkDescriptorType get_descriptor_type(DescriptorType type) const {
+		switch (type) {
+		case DescriptorType::STORAGE_BUFFER_DESCRIPTOR: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		case DescriptorType::UNIFORM_BUFFER_DESCRIPTOR: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		case DescriptorType::SAMPLED_IMAGE_DESCRIPTOR:  return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		case DescriptorType::STORAGE_IMAGE_DESCRIPTOR:  return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		case DescriptorType::COMBINED_IMAGE_SAMPLER_DESCRIPTOR: return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		default: Log::error("Invalid descriptor type."); return VK_DESCRIPTOR_TYPE_MAX_ENUM;
+		}
+	}
+
+	VkDevice logical = nullptr;
+	VkDescriptorSetLayoutCreateInfo layout_create_info = {};
+	std::vector<VkDescriptorSetLayoutBinding> layout_bindings;
+	std::vector<ImageBindingInfo> image_bindings;
+	std::vector<BufferBindingInfo> buffer_bindings;
+	VkDescriptorSet set = nullptr;
+	VkDescriptorSetLayout layout = nullptr;
+	bool layout_finalized = false;
 };
 
 // DescriptorPool manages descriptor sets and their memory allocation
 class DescriptorPool {
-    friend class DescriptorSet;
+	friend class DescriptorSet;
 public:
-    // constructor
-    DescriptorPool() = delete;
-    DescriptorPool(const Device& device, const uint32_t max_sets = 20, const std::vector<VkDescriptorPoolSize>& pool_sizes = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20}}) {
-        this->logical = device.get_logical();
-        this->max_sets = max_sets;
+	// constructor
+	DescriptorPool() = delete;
+	DescriptorPool(const Device& device, const uint32_t max_sets = 20, const std::vector<VkDescriptorPoolSize>& pool_sizes = { {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20} }) {
+		this->logical = device.get_logical();
+		this->max_sets = max_sets;
 
-        // setup create info
-        VkDescriptorPoolCreateInfo create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        create_info.maxSets = max_sets;
-        create_info.pPoolSizes = pool_sizes.data();
-        create_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
-        create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        create_info.pNext = NULL;
+		// setup create info
+		VkDescriptorPoolCreateInfo create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		create_info.maxSets = max_sets;
+		create_info.pPoolSizes = pool_sizes.data();
+		create_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
+		create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+		create_info.pNext = NULL;
 
-        // Create the descriptor pool
-        VkResult result = vkCreateDescriptorPool(logical, &create_info, nullptr, &pool);
-        if (result == VK_SUCCESS) {
-            Log::debug("successfully created descriptor pool (handle: ", pool, ")");
-        }
-        else {
-            Log::error("failed to create descriptor pool (VkResult =  ", result, ")");
-        }
-    }
+		// Create the descriptor pool
+		VkResult result = vkCreateDescriptorPool(logical, &create_info, nullptr, &pool);
+		if (result == VK_SUCCESS) {
+			Log::debug("successfully created descriptor pool (handle: ", pool, ")");
+		}
+		else {
+			Log::error("failed to create descriptor pool (VkResult =  ", result, ")");
+		}
+	}
 
-    // destructor
-    ~DescriptorPool() {
-        if (pool != nullptr) {
-            release_sets();
-            vkDestroyDescriptorPool(logical, pool, nullptr);
-            pool = nullptr;
-        }
-    }
+	// destructor
+	~DescriptorPool() {
+		if (pool != nullptr) {
+			Log::debug("destroying descriptor pool (handle: ", pool, ")");
+			release_all_sets();
+			vkDestroyDescriptorPool(logical, pool, nullptr);
+			pool = nullptr;
+			Log::info("[DESCRIPTOR POOL DESTROYED]");
+		}
+	}
 
-    // move constructor
-    DescriptorPool(DescriptorPool&& other) noexcept
-        : pool(std::exchange(other.pool, nullptr)),
-        logical(std::exchange(other.logical, nullptr)),
-        sets(std::move(other.sets)),
-        max_sets(other.max_sets) {
-        if (pool != nullptr) {
-            Log::info("descriptor pool moved (handle: ", pool, ")");
-        }
-    }
+	// move constructor
+	DescriptorPool(DescriptorPool&& other) noexcept
+		: pool(std::exchange(other.pool, nullptr)),
+		logical(std::exchange(other.logical, nullptr)),
+		sets(std::move(other.sets)),
+		max_sets(other.max_sets) {
+		if (pool != nullptr) {
+			Log::info("descriptor pool moved (handle: ", pool, ")");
+		}
+	}
 
-    // move assignment
-    DescriptorPool& operator=(DescriptorPool&& other) noexcept {
-        if (this != &other) {
-            if (pool != nullptr) {
-                Log::info("move assignment operation: destroying previous descriptor pool (handle: ", pool, ")");
-                vkDestroyDescriptorPool(logical, pool, nullptr);
-                pool = nullptr;
-            }
-            pool = std::exchange(other.pool, nullptr);
-            logical = std::exchange(other.logical, nullptr);
-            sets = std::move(other.sets);
-            max_sets = other.max_sets;
-            if (pool != nullptr) {
-                Log::info("descriptor pool moved to 'this' (handle: ", pool, ")");
-            }
-        }
-        return *this;
-    }
+	// move assignment
+	DescriptorPool& operator=(DescriptorPool&& other) noexcept {
+		if (this != &other) {
+			if (pool != nullptr) {
+				Log::info("move assignment operation: destroying previous descriptor pool (handle: ", pool, ")");
+				vkDestroyDescriptorPool(logical, pool, nullptr);
+				pool = nullptr;
+			}
+			pool = std::exchange(other.pool, nullptr);
+			logical = std::exchange(other.logical, nullptr);
+			sets = std::move(other.sets);
+			max_sets = other.max_sets;
+			if (pool != nullptr) {
+				Log::info("descriptor pool moved to 'this' (handle: ", pool, ")");
+			}
+		}
+		return *this;
+	}
 
-    // deleted copy constructor and assignment
-    DescriptorPool(const DescriptorPool&) = delete;
-    DescriptorPool& operator=(const DescriptorPool&) = delete;
+	// deleted copy constructor and assignment
+	DescriptorPool(const DescriptorPool&) = delete;
+	DescriptorPool& operator=(const DescriptorPool&) = delete;
 
-    // getters
-    VkDescriptorPool get() const { return pool; }
-    const std::vector<VkDescriptorSet>& get_sets() const { return sets; }
-    uint32_t get_max_sets() const { return max_sets; }
-    uint32_t get_current_sets_count() const { return uint32_t(sets.size()); }
+	// getters
+	VkDescriptorPool get() const { return pool; }
+	const std::vector<VkDescriptorSet>& get_sets() const { return sets; }
+	uint32_t get_max_sets() const { return max_sets; }
+	uint32_t get_current_sets_count() const { return uint32_t(sets.size()); }
 
-    // releases all descriptor sets from the pool
-    void release_sets() {
-        if (sets.empty()) { return; }
-        VkResult result = vkFreeDescriptorSets(logical, pool, sets.size(), sets.data());
-        if (result == VK_SUCCESS) {
-            Log::debug("all descriptor sets removed from pool, memory allocation freed");
-        }
-        else {
-            Log::warning("failed to remove descriptor sets from pool (VkResult = ", result, ")");
-        }
-        sets.clear();
-    }
+	// releases all descriptor sets from the pool
+	void release_all_sets() {
+		if (sets.empty()) { return; }
+		VkResult result = vkFreeDescriptorSets(logical, pool, sets.size(), sets.data());
+		if (result == VK_SUCCESS) {
+			Log::debug("all descriptor sets removed from pool, memory allocation freed");
+		}
+		else {
+			Log::warning("failed to remove descriptor sets from pool (VkResult = ", result, ")");
+		}
+		sets.clear();
+	}
 
-    // allocates a new descriptor set to the pool and returns its index
-    uint32_t allocate_set(DescriptorSet& descriptor_set) {
-        if (sets.size() >= max_sets) {
-            Log::error("in method DescriptorPool::allocate_set(): max number of sets for this pool is ", max_sets, " (as defined by the pool constructor) and has been reached; no more descriptor sets can be added");
-        }
-        if (!descriptor_set.layout_finalized) {
-            Log::info("in method DescriptorPool::allocate_set(): descriptor set layout has not been finalized yet; finalizing now");
-            descriptor_set.finalize_layout();
-        }
-        VkDescriptorSetAllocateInfo allocate_info = {};
-        allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocate_info.descriptorPool = pool;
-        allocate_info.descriptorSetCount = 1;
-        allocate_info.pSetLayouts = &descriptor_set.layout;
-        VkResult result = vkAllocateDescriptorSets(logical, &allocate_info, &descriptor_set.set);
-        if (result != VK_SUCCESS) {
-            Log::error("failed to allocate descriptor set (VkResult ", result, ")");
-        }
-        uint32_t index = static_cast<uint32_t>(sets.size());
-        Log::debug("adding new descriptor set (set index = ", index, ") to descriptor pool (pool handle: ", pool, ")");
-        sets.push_back(descriptor_set.set);
-        return index;
-    }
+	// releases a single descriptor sets from the pool
+	void release_set(const DescriptorSet& set) {
+		if (sets.empty()) { return; }
+
+		// remove from VkDescriptorSet vector of the pool
+		for (uint32_t i = 0; i < sets.size(); i++) {
+			if (sets[i] == set.get()) {
+				sets.erase(sets.begin() + i);
+			}
+		}
+
+		// free set
+		VkResult result = vkFreeDescriptorSets(logical, pool, 1, set.get_ptr());
+		if (result == VK_SUCCESS) {
+			Log::debug("descriptor set removed from pool, memory allocation freed");
+		}
+		else {
+			Log::warning("failed to remove descriptor set from pool (VkResult = ", result, ")");
+		}
+	}
+
+	// allocates a new descriptor set to the pool and returns its index
+	uint32_t allocate_set(DescriptorSet& descriptor_set) {
+		if (sets.size() >= max_sets) {
+			Log::error("in method DescriptorPool::allocate_set(): max number of sets for this pool is ", max_sets, " (as defined by the pool constructor) and has been reached; no more descriptor sets can be added");
+		}
+		if (!descriptor_set.layout_finalized) {
+			Log::info("in method DescriptorPool::allocate_set(): descriptor set layout has not been finalized yet; finalizing now");
+			descriptor_set.finalize_layout();
+		}
+		VkDescriptorSetAllocateInfo allocate_info = {};
+		allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocate_info.descriptorPool = pool;
+		allocate_info.descriptorSetCount = 1;
+		allocate_info.pSetLayouts = &descriptor_set.layout;
+		VkResult result = vkAllocateDescriptorSets(logical, &allocate_info, &descriptor_set.set);
+		if (result != VK_SUCCESS) {
+			Log::error("failed to allocate descriptor set (VkResult ", result, ")");
+		}
+		uint32_t index = static_cast<uint32_t>(sets.size());
+		Log::debug("adding new descriptor set (set index = ", index, ") to descriptor pool (pool handle: ", pool, ")");
+		sets.push_back(descriptor_set.set);
+		descriptor_set.update();
+		return index;
+	}
 
 private:
-    VkDescriptorPool pool = nullptr;
-    VkDevice logical = nullptr;
-    std::vector<VkDescriptorSet> sets;
-    uint32_t max_sets = 0;
+	VkDescriptorPool pool = nullptr;
+	VkDevice logical = nullptr;
+	std::vector<VkDescriptorSet> sets;
+	uint32_t max_sets = 0;
 };
 
 
 
 class GraphicsPipeline {
 public:
-    // constructor
-    GraphicsPipeline() = delete;
-    GraphicsPipeline(
-        const Device& device,
-        const RenderPass& renderpass,
-        uint32_t subpass_index,
-        const Swapchain& swapchain,
-        const ShaderModule& vertex_shader_module,
-        const std::optional<ShaderModule>& fragment_shader_module = std::nullopt,
-        const std::optional<ShaderModule>& hull_shader_module = std::nullopt,
-        const std::optional<ShaderModule>& domain_shader_module = std::nullopt,
-        uint32_t tessellation_patch_control_points = 3,
-        const std::optional<VertexDescriptions>& vertex_descriptions = std::nullopt,
-        const std::optional<PushConstants>& push_constants = std::nullopt,
-        const std::optional<DescriptorSet>& descriptor_set = std::nullopt,
-        VkPipelineDepthStencilStateCreateFlagBits depth_stencil_flags = VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_DEPTH_ACCESS_BIT_EXT,
-        bool color_blend = false,
-        const std::optional<std::vector<VkDynamicState>>& dynamic_states = std::nullopt
-    ) {
-        this->logical = device.get_logical();
+	// constructor
+	GraphicsPipeline() = delete;
+	GraphicsPipeline(
+		const Device& device,
+		const RenderPass& renderpass,
+		uint32_t subpass_index,
+		const Swapchain& swapchain,
+		const ShaderModule& vertex_shader_module,
+		const std::optional<ShaderModule>& fragment_shader_module = std::nullopt,
+		const std::optional<ShaderModule>& hull_shader_module = std::nullopt,
+		const std::optional<ShaderModule>& domain_shader_module = std::nullopt,
+		uint32_t tessellation_patch_control_points = 3,
+		const std::optional<VertexDescriptions>& vertex_descriptions = std::nullopt,
+		const std::optional<PushConstants>& push_constants = std::nullopt,
+		const std::optional<DescriptorSet>& descriptor_set = std::nullopt,
+		VkPipelineDepthStencilStateCreateFlagBits depth_stencil_flags = VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_DEPTH_ACCESS_BIT_EXT,
+		bool color_blend = false,
+		const std::optional<std::vector<VkDynamicState>>& dynamic_states = std::nullopt
+	) {
+		this->logical = device.get_logical();
 
-        VkGraphicsPipelineCreateInfo pipeline_create_info = {};
-        pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		VkGraphicsPipelineCreateInfo pipeline_create_info = {};
+		pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 
-        // setup vertex shader stage
-        std::vector<VkPipelineShaderStageCreateInfo> shader_stage_create_info;
-        if (vertex_shader_module.get() != nullptr) {
-            uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
-            shader_stage_create_info.push_back({});
-            shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-            shader_stage_create_info[i].stage = VK_SHADER_STAGE_VERTEX_BIT;
-            shader_stage_create_info[i].module = vertex_shader_module.get();
-            shader_stage_create_info[i].pName = "main";
-        }
+		// setup vertex shader stage
+		std::vector<VkPipelineShaderStageCreateInfo> shader_stage_create_info;
+		if (vertex_shader_module.get() != nullptr) {
+			uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
+			shader_stage_create_info.push_back({});
+			shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			shader_stage_create_info[i].stage = VK_SHADER_STAGE_VERTEX_BIT;
+			shader_stage_create_info[i].module = vertex_shader_module.get();
+			shader_stage_create_info[i].pName = "main";
+		}
 
-        // setup fragement shader stage
-        if (fragment_shader_module.has_value() && fragment_shader_module.value().get() != nullptr) {
-            uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
-            shader_stage_create_info.push_back({});
-            shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-            shader_stage_create_info[i].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-            shader_stage_create_info[i].module = fragment_shader_module.value().get();
-            shader_stage_create_info[i].pName = "main";
-        }
+		// setup fragement shader stage
+		if (fragment_shader_module.has_value() && fragment_shader_module.value().get() != nullptr) {
+			uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
+			shader_stage_create_info.push_back({});
+			shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			shader_stage_create_info[i].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+			shader_stage_create_info[i].module = fragment_shader_module.value().get();
+			shader_stage_create_info[i].pName = "main";
+		}
 
-        // add shader stage infos to pipeline create info
-        pipeline_create_info.stageCount = static_cast<uint32_t>(shader_stage_create_info.size());
-        pipeline_create_info.pStages = shader_stage_create_info.data();
+		// add shader stage infos to pipeline create info
+		pipeline_create_info.stageCount = static_cast<uint32_t>(shader_stage_create_info.size());
+		pipeline_create_info.pStages = shader_stage_create_info.data();
 
-        // setup tesselation stage
-        VkPipelineTessellationStateCreateInfo tessellation_state_create_info = {};
-        if (hull_shader_module.has_value() && domain_shader_module.has_value()) {
-            if (hull_shader_module.value().get() != nullptr) {
-                uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
-                shader_stage_create_info.push_back({});
-                shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-                shader_stage_create_info[i].stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-                shader_stage_create_info[i].module = hull_shader_module.value().get();
-                shader_stage_create_info[i].pName = "main";
-            }
+		// setup tesselation stage
+		VkPipelineTessellationStateCreateInfo tessellation_state_create_info = {};
+		if (hull_shader_module.has_value() && domain_shader_module.has_value()) {
+			if (hull_shader_module.value().get() != nullptr) {
+				uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
+				shader_stage_create_info.push_back({});
+				shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+				shader_stage_create_info[i].stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+				shader_stage_create_info[i].module = hull_shader_module.value().get();
+				shader_stage_create_info[i].pName = "main";
+			}
 
-            if (fragment_shader_module.has_value() && fragment_shader_module.value().get() != nullptr) {
-                uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
-                shader_stage_create_info.push_back({});
-                shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-                shader_stage_create_info[i].stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-                shader_stage_create_info[i].module = domain_shader_module.value().get();
-                shader_stage_create_info[i].pName = "main";
-            }
+			if (fragment_shader_module.has_value() && fragment_shader_module.value().get() != nullptr) {
+				uint32_t i = static_cast<uint32_t>(shader_stage_create_info.size());
+				shader_stage_create_info.push_back({});
+				shader_stage_create_info[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+				shader_stage_create_info[i].stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+				shader_stage_create_info[i].module = domain_shader_module.value().get();
+				shader_stage_create_info[i].pName = "main";
+			}
 
-            tessellation_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
-            tessellation_state_create_info.pNext = nullptr;
-            tessellation_state_create_info.flags = 0; // reserved for future use
-            tessellation_state_create_info.patchControlPoints = tessellation_patch_control_points;
+			tessellation_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
+			tessellation_state_create_info.pNext = nullptr;
+			tessellation_state_create_info.flags = 0; // reserved for future use
+			tessellation_state_create_info.patchControlPoints = tessellation_patch_control_points;
 
-            pipeline_create_info.pTessellationState = &tessellation_state_create_info;
-        }
-        else {
-            pipeline_create_info.pTessellationState = nullptr;
-        }
+			pipeline_create_info.pTessellationState = &tessellation_state_create_info;
+		}
+		else {
+			pipeline_create_info.pTessellationState = nullptr;
+		}
 
-        // setup vertex input state
-        VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {};
-        if (vertex_descriptions.has_value()) {
-            vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-            vertex_input_state_create_info.vertexBindingDescriptionCount = uint32_t(vertex_descriptions.value().get_input_bindings().size());
-            vertex_input_state_create_info.pVertexBindingDescriptions = vertex_descriptions.value().get_input_bindings().data();
-            vertex_input_state_create_info.vertexAttributeDescriptionCount = uint32_t(vertex_descriptions.value().get_attribute_descriptions().size());
-            vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_descriptions.value().get_attribute_descriptions().data();
+		// setup vertex input state
+		VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {};
+		if (vertex_descriptions.has_value()) {
+			vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+			vertex_input_state_create_info.vertexBindingDescriptionCount = uint32_t(vertex_descriptions.value().get_input_bindings().size());
+			vertex_input_state_create_info.pVertexBindingDescriptions = vertex_descriptions.value().get_input_bindings().data();
+			vertex_input_state_create_info.vertexAttributeDescriptionCount = uint32_t(vertex_descriptions.value().get_attribute_descriptions().size());
+			vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_descriptions.value().get_attribute_descriptions().data();
 
-            pipeline_create_info.pVertexInputState = &vertex_input_state_create_info;
-        }
-        else {
-            pipeline_create_info.pVertexInputState = nullptr;
-        }
+			pipeline_create_info.pVertexInputState = &vertex_input_state_create_info;
+		}
+		else {
+			pipeline_create_info.pVertexInputState = nullptr;
+		}
 
-        // setup input assembly state
-        VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {};
-        input_assembly_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        input_assembly_state_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		// setup input assembly state
+		VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {};
+		input_assembly_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		input_assembly_state_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
-        pipeline_create_info.pInputAssemblyState = &input_assembly_state_create_info;
+		pipeline_create_info.pInputAssemblyState = &input_assembly_state_create_info;
 
-        // setup viewport
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = (float)swapchain.get_width();
-        viewport.height = (float)swapchain.get_height();
+		// setup viewport
+		viewport.x = 0.0f;
+		viewport.y = 0.0f;
+		viewport.width = (float)swapchain.get_width();
+		viewport.height = (float)swapchain.get_height();
 
-        // setup viewport state
-        VkPipelineViewportStateCreateInfo viewport_state_create_info = {};
-        viewport_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewport_state_create_info.viewportCount = 1;
-        viewport_state_create_info.pViewports = &viewport;
-        viewport_state_create_info.scissorCount = 1;
-        VkRect2D scissor = {{0, 0}, {viewport.width, viewport.height}};
-        viewport_state_create_info.pScissors = &scissor;
+		// setup viewport state
+		VkPipelineViewportStateCreateInfo viewport_state_create_info = {};
+		viewport_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		viewport_state_create_info.viewportCount = 1;
+		viewport_state_create_info.pViewports = &viewport;
+		viewport_state_create_info.scissorCount = 1;
+		VkRect2D scissor = { {0, 0}, {viewport.width, viewport.height} };
+		viewport_state_create_info.pScissors = &scissor;
 
-        pipeline_create_info.pViewportState = &viewport_state_create_info;
+		pipeline_create_info.pViewportState = &viewport_state_create_info;
 
-        // setup rasterization state
-        VkPipelineRasterizationStateCreateInfo rasterization_state_create_info = {};
-        rasterization_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        rasterization_state_create_info.pNext = nullptr;
-        rasterization_state_create_info.flags = 0; // reserved for future use
-        rasterization_state_create_info.depthClampEnable = VK_FALSE;
-        rasterization_state_create_info.rasterizerDiscardEnable = VK_TRUE;
-        rasterization_state_create_info.polygonMode = VK_POLYGON_MODE_FILL;
-        rasterization_state_create_info.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
-        rasterization_state_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        rasterization_state_create_info.depthBiasEnable = VK_FALSE;
-        /*
-        rasterization_state_create_info.depthBiasConstantFactor =
-        rasterization_state_create_info.depthBiasClamp =
-        rasterization_state_create_info.depthBiasSlopeFactor =
-        */
-        rasterization_state_create_info.lineWidth = 1.0f;
+		// setup rasterization state
+		VkPipelineRasterizationStateCreateInfo rasterization_state_create_info = {};
+		rasterization_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		rasterization_state_create_info.pNext = nullptr;
+		rasterization_state_create_info.flags = 0; // reserved for future use
+		rasterization_state_create_info.depthClampEnable = VK_FALSE;
+		rasterization_state_create_info.rasterizerDiscardEnable = VK_TRUE;
+		rasterization_state_create_info.polygonMode = VK_POLYGON_MODE_FILL;
+		rasterization_state_create_info.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
+		rasterization_state_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+		rasterization_state_create_info.depthBiasEnable = VK_FALSE;
+		/*
+		rasterization_state_create_info.depthBiasConstantFactor =
+		rasterization_state_create_info.depthBiasClamp =
+		rasterization_state_create_info.depthBiasSlopeFactor =
+		*/
+		rasterization_state_create_info.lineWidth = 1.0f;
 
-        pipeline_create_info.pRasterizationState = &rasterization_state_create_info;
+		pipeline_create_info.pRasterizationState = &rasterization_state_create_info;
 
-        // setup pipeline layout
-        VkPipelineLayoutCreateInfo layout_create_info = {};
-        layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		// setup pipeline layout
+		VkPipelineLayoutCreateInfo layout_create_info = {};
+		layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
-        layout_create_info.setLayoutCount = descriptor_set.has_value() ? 1 : 0;
-        layout_create_info.pSetLayouts = descriptor_set.has_value() ? &descriptor_set.value().get_layout() : nullptr;
+		layout_create_info.setLayoutCount = descriptor_set.has_value() ? 1 : 0;
+		layout_create_info.pSetLayouts = descriptor_set.has_value() ? &descriptor_set.value().get_layout() : nullptr;
 
-        layout_create_info.pushConstantRangeCount = push_constants.has_value() ? 1 : 0;
-        layout_create_info.pPushConstantRanges = push_constants.has_value() ? &push_constants.value().get_range() : nullptr;
+		layout_create_info.pushConstantRangeCount = push_constants.has_value() ? 1 : 0;
+		layout_create_info.pPushConstantRanges = push_constants.has_value() ? &push_constants.value().get_range() : nullptr;
 
-        VkResult result = vkCreatePipelineLayout(logical, &layout_create_info, nullptr, &layout);
-        if (result == VK_SUCCESS) {
-            Log::info("created pipeline layout for graphics pipeline (handle: ", layout, ")");
-            pipeline_create_info.layout = layout;
-        }
-        else {
-            Log::error("failed to create graphics pipeline layout (VkResult=", result, ")");
-        }
+		VkResult result = vkCreatePipelineLayout(logical, &layout_create_info, nullptr, &layout);
+		if (result == VK_SUCCESS) {
+			Log::info("created pipeline layout for graphics pipeline (handle: ", layout, ")");
+			pipeline_create_info.layout = layout;
+		}
+		else {
+			Log::error("failed to create graphics pipeline layout (VkResult=", result, ")");
+		}
 
-        // setup multisample state
-        VkPipelineMultisampleStateCreateInfo multisample_state_create_info = {};
-        multisample_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multisample_state_create_info.rasterizationSamples = static_cast<VkSampleCountFlagBits>(renderpass.get_multisample_count());
-        pipeline_create_info.pMultisampleState = &multisample_state_create_info;
+		// setup multisample state
+		VkPipelineMultisampleStateCreateInfo multisample_state_create_info = {};
+		multisample_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		multisample_state_create_info.rasterizationSamples = static_cast<VkSampleCountFlagBits>(renderpass.get_multisample_count());
+		pipeline_create_info.pMultisampleState = &multisample_state_create_info;
 
-        // setup color blend state
-        VkPipelineColorBlendStateCreateInfo color_blend_state_create_info = {};
-        VkPipelineColorBlendAttachmentState color_blend_attachment_state = {};
-        if (color_blend) {
-            color_blend_attachment_state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-            color_blend_attachment_state.blendEnable = color_blend;
+		// setup color blend state
+		VkPipelineColorBlendStateCreateInfo color_blend_state_create_info = {};
+		VkPipelineColorBlendAttachmentState color_blend_attachment_state = {};
+		if (color_blend) {
+			color_blend_attachment_state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+			color_blend_attachment_state.blendEnable = color_blend;
 
-            color_blend_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-            color_blend_state_create_info.attachmentCount = 1;
-            color_blend_state_create_info.pAttachments = &color_blend_attachment_state;
+			color_blend_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+			color_blend_state_create_info.attachmentCount = 1;
+			color_blend_state_create_info.pAttachments = &color_blend_attachment_state;
 
-            pipeline_create_info.pColorBlendState = &color_blend_state_create_info;
-        }
-        else {
-            pipeline_create_info.pColorBlendState = nullptr;
-        }
+			pipeline_create_info.pColorBlendState = &color_blend_state_create_info;
+		}
+		else {
+			pipeline_create_info.pColorBlendState = nullptr;
+		}
 
-        // setup depth-stencil state
-        VkPipelineDepthStencilStateCreateInfo depth_stencil_state_create_info = {};
-        if (renderpass.has_depth_stencil()) {
-            depth_stencil_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-            depth_stencil_state_create_info.pNext = nullptr;
-            depth_stencil_state_create_info.flags = depth_stencil_flags;
-            depth_stencil_state_create_info.depthTestEnable = VK_FALSE;
-            depth_stencil_state_create_info.depthWriteEnable = VK_FALSE;
-            /*
-            depth_stencil_state_create_info.depthCompareOp =
-            depth_stencil_state_create_info.depthBoundsTestEnable =
-            depth_stencil_state_create_info.stencilTestEnable =
-            depth_stencil_state_create_info.front =
-            depth_stencil_state_create_info.back =
-            depth_stencil_state_create_info.minDepthBounds =
-            depth_stencil_state_create_info.maxDepthBounds =
-            */
-            pipeline_create_info.pDepthStencilState = &depth_stencil_state_create_info;
-        }
-        else {
-            pipeline_create_info.pDepthStencilState = nullptr;
-        }
+		// setup depth-stencil state
+		VkPipelineDepthStencilStateCreateInfo depth_stencil_state_create_info = {};
+		if (renderpass.has_depth_stencil()) {
+			depth_stencil_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+			depth_stencil_state_create_info.pNext = nullptr;
+			depth_stencil_state_create_info.flags = depth_stencil_flags;
+			depth_stencil_state_create_info.depthTestEnable = VK_FALSE;
+			depth_stencil_state_create_info.depthWriteEnable = VK_FALSE;
+			/*
+			depth_stencil_state_create_info.depthCompareOp =
+			depth_stencil_state_create_info.depthBoundsTestEnable =
+			depth_stencil_state_create_info.stencilTestEnable =
+			depth_stencil_state_create_info.front =
+			depth_stencil_state_create_info.back =
+			depth_stencil_state_create_info.minDepthBounds =
+			depth_stencil_state_create_info.maxDepthBounds =
+			*/
+			pipeline_create_info.pDepthStencilState = &depth_stencil_state_create_info;
+		}
+		else {
+			pipeline_create_info.pDepthStencilState = nullptr;
+		}
 
-        // setup dynamic states
-        VkPipelineDynamicStateCreateInfo dynamic_state_create_info = {};
-        if (dynamic_states.has_value()) {
-            dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-            dynamic_state_create_info.pNext = nullptr;
-            dynamic_state_create_info.flags = 0;
-            dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.value().size());
-            dynamic_state_create_info.pDynamicStates = dynamic_states.value().data();
+		// setup dynamic states
+		VkPipelineDynamicStateCreateInfo dynamic_state_create_info = {};
+		if (dynamic_states.has_value()) {
+			dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+			dynamic_state_create_info.pNext = nullptr;
+			dynamic_state_create_info.flags = 0;
+			dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.value().size());
+			dynamic_state_create_info.pDynamicStates = dynamic_states.value().data();
 
-            pipeline_create_info.pDynamicState = &dynamic_state_create_info;
-        }
-        else {
-            pipeline_create_info.pDynamicState = nullptr;
-        }
+			pipeline_create_info.pDynamicState = &dynamic_state_create_info;
+		}
+		else {
+			pipeline_create_info.pDynamicState = nullptr;
+		}
 
-        // finalize graphics pipeline
-        pipeline_create_info.renderPass = renderpass.get();
-        pipeline_create_info.subpass = renderpass.get_subpass_count() > 0 ? subpass_index : 0;
-        result = vkCreateGraphicsPipelines(logical, 0, 1, &pipeline_create_info, nullptr, &pipeline);
-        if (result == VK_SUCCESS) {
-            Log::info("graphics pipeline successfully created");
-        }
-        else {
-            Log::error("failed to create graphics pipeline (VkResult=", result, ")");
-        }
-    }
+		// finalize graphics pipeline
+		pipeline_create_info.renderPass = renderpass.get();
+		pipeline_create_info.subpass = renderpass.get_subpass_count() > 0 ? subpass_index : 0;
+		result = vkCreateGraphicsPipelines(logical, 0, 1, &pipeline_create_info, nullptr, &pipeline);
+		if (result == VK_SUCCESS) {
+			Log::info("graphics pipeline successfully created");
+		}
+		else {
+			Log::error("failed to create graphics pipeline (VkResult=", result, ")");
+		}
+	}
 
-    // getters
-    VkPipeline get() const { return pipeline; }
-    VkPipelineLayout get_layout() const { return layout; }
-    const VkViewport& get_viewport() const { return viewport; }
+	// getters
+	VkPipeline get() const { return pipeline; }
+	VkPipelineLayout get_layout() const { return layout; }
+	const VkViewport& get_viewport() const { return viewport; }
 
-    // destructor
-    ~GraphicsPipeline() {
-        Log::info("destroying graphics pipeline");
-        vkDestroyPipeline(logical, pipeline, nullptr);
-        vkDestroyPipelineLayout(logical, layout, nullptr);
-    }
+	// destructor
+	~GraphicsPipeline() {
+		Log::info("destroying graphics pipeline");
+		vkDestroyPipeline(logical, pipeline, nullptr);
+		vkDestroyPipelineLayout(logical, layout, nullptr);
+	}
 
 protected:
-    VkPipeline pipeline = nullptr;
-    VkPipelineLayout layout = nullptr;
-    VkDevice logical = nullptr;
-    VkViewport viewport = {};
+	VkPipeline pipeline = nullptr;
+	VkPipelineLayout layout = nullptr;
+	VkDevice logical = nullptr;
+	VkViewport viewport = {};
 };
 
 class ComputePipeline {
 public:
-    // constructor
-    ComputePipeline() = delete;
-    ComputePipeline(
-        const Device& device,
-        const ShaderModule& compute_shader_module,
-        PushConstants& push_constants,
-        DescriptorSet& descriptor_set,
-        uint32_t workgroup_size_x,
-        uint32_t workgroup_size_y = 1,
-        uint32_t workgroup_size_z = 1
-    ) {
-        this->logical = device.get_logical();
-        this->set = &descriptor_set;
-        this->constants = &push_constants;
-        this->workgroup_size_x = workgroup_size_x;
-        this->workgroup_size_y = workgroup_size_y;
-        this->workgroup_size_z = workgroup_size_z;
+	// constructor
+	ComputePipeline() = delete;
+	ComputePipeline(
+		const Device& device,
+		const ShaderModule& compute_shader_module,
+		PushConstants& push_constants,
+		DescriptorSet& descriptor_set,
+		uint32_t workgroup_size_x,
+		uint32_t workgroup_size_y = 1,
+		uint32_t workgroup_size_z = 1
+	) {
+		this->logical = device.get_logical();
+		this->set = &descriptor_set;
+		this->constants = &push_constants;
+		this->workgroup_size_x = workgroup_size_x;
+		this->workgroup_size_y = workgroup_size_y;
+		this->workgroup_size_z = workgroup_size_z;
 
-        // setup specialization constants for the workgroup dimensions
-        std::vector<uint32_t> specialization_data = {workgroup_size_x, workgroup_size_y, workgroup_size_z};
-        std::vector<VkSpecializationMapEntry> specialization_map_entries;
+		// setup specialization constants for the workgroup dimensions
+		std::vector<uint32_t> specialization_data = { workgroup_size_x, workgroup_size_y, workgroup_size_z };
+		std::vector<VkSpecializationMapEntry> specialization_map_entries;
 
-        VkSpecializationMapEntry workgroup_x_entry = {};
-        workgroup_x_entry.constantID = 0; // for the GLSL shader: local_size_x_id = 0
-        workgroup_x_entry.offset = 0;
-        workgroup_x_entry.size = sizeof(uint32_t);
-        specialization_map_entries.push_back(workgroup_x_entry);
+		VkSpecializationMapEntry workgroup_x_entry = {};
+		workgroup_x_entry.constantID = 0; // for the GLSL shader: local_size_x_id = 0
+		workgroup_x_entry.offset = 0;
+		workgroup_x_entry.size = sizeof(uint32_t);
+		specialization_map_entries.push_back(workgroup_x_entry);
 
-        VkSpecializationMapEntry workgroup_y_entry = {};
-        workgroup_y_entry.constantID = 1; // for the GLSL shader: local_size_y_id = 1
-        workgroup_y_entry.offset = static_cast<uint32_t>(sizeof(uint32_t));
-        workgroup_y_entry.size = sizeof(uint32_t);
-        specialization_map_entries.push_back(workgroup_y_entry);
+		VkSpecializationMapEntry workgroup_y_entry = {};
+		workgroup_y_entry.constantID = 1; // for the GLSL shader: local_size_y_id = 1
+		workgroup_y_entry.offset = static_cast<uint32_t>(sizeof(uint32_t));
+		workgroup_y_entry.size = sizeof(uint32_t);
+		specialization_map_entries.push_back(workgroup_y_entry);
 
-        VkSpecializationMapEntry workgroup_z_entry = {};
-        workgroup_z_entry.constantID = 2; // for the GLSL shader: local_size_z_id = 2
-        workgroup_z_entry.offset = static_cast<uint32_t>(2 * sizeof(uint32_t));
-        workgroup_z_entry.size = sizeof(uint32_t);
-        specialization_map_entries.push_back(workgroup_z_entry);
+		VkSpecializationMapEntry workgroup_z_entry = {};
+		workgroup_z_entry.constantID = 2; // for the GLSL shader: local_size_z_id = 2
+		workgroup_z_entry.offset = static_cast<uint32_t>(2 * sizeof(uint32_t));
+		workgroup_z_entry.size = sizeof(uint32_t);
+		specialization_map_entries.push_back(workgroup_z_entry);
 
-        VkSpecializationInfo specialization_info = {};
-        specialization_info.mapEntryCount = 3;
-        specialization_info.pMapEntries = specialization_map_entries.data();
-        specialization_info.dataSize = 3 * sizeof(uint32_t);
-        specialization_info.pData = specialization_data.data();
+		VkSpecializationInfo specialization_info = {};
+		specialization_info.mapEntryCount = 3;
+		specialization_info.pMapEntries = specialization_map_entries.data();
+		specialization_info.dataSize = 3 * sizeof(uint32_t);
+		specialization_info.pData = specialization_data.data();
 
-        // setup pipeline layout        
-        VkPipelineLayoutCreateInfo layout_create_info = {};
-        layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        layout_create_info.setLayoutCount = 1; // = number of descriptor sets
-        layout_create_info.pSetLayouts = &descriptor_set.get_layout();
-        if (push_constants.get_data() == nullptr) { // check for empty PushConstants object
-            layout_create_info.pushConstantRangeCount = 0;
-            layout_create_info.pPushConstantRanges = NULL;
-        }
-        else {
-            layout_create_info.pushConstantRangeCount = 1;
-            layout_create_info.pPushConstantRanges = &push_constants.get_range();
-        }
-        layout_create_info.pNext = NULL;
-        VkResult result = vkCreatePipelineLayout(logical, &layout_create_info, nullptr, &layout);
-        if (result == VK_SUCCESS) {
-            Log::info("created pipeline layout for compute pipeline (handle: ", layout, ")");
-        }
-        else {
-            Log::error("failed to create compute pipeline layout (VkResult=", result, ")");
-        }
+		// setup pipeline layout        
+		VkPipelineLayoutCreateInfo layout_create_info = {};
+		layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		layout_create_info.setLayoutCount = 1; // = number of descriptor sets
+		layout_create_info.pSetLayouts = &descriptor_set.get_layout();
+		if (push_constants.get_data() == nullptr) { // check for empty PushConstants object
+			layout_create_info.pushConstantRangeCount = 0;
+			layout_create_info.pPushConstantRanges = NULL;
+		}
+		else {
+			layout_create_info.pushConstantRangeCount = 1;
+			layout_create_info.pPushConstantRanges = &push_constants.get_range();
+		}
+		layout_create_info.pNext = NULL;
+		VkResult result = vkCreatePipelineLayout(logical, &layout_create_info, nullptr, &layout);
+		if (result == VK_SUCCESS) {
+			Log::info("created pipeline layout for compute pipeline (handle: ", layout, ")");
+		}
+		else {
+			Log::error("failed to create compute pipeline layout (VkResult=", result, ")");
+		}
 
-        // setup shader stage
-        VkPipelineShaderStageCreateInfo shader_stage_create_info = {};
-        shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        shader_stage_create_info.pNext = NULL;
-        shader_stage_create_info.flags = NULL;
-        shader_stage_create_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        shader_stage_create_info.module = compute_shader_module.get();
-        shader_stage_create_info.pName = "main";
-        shader_stage_create_info.pSpecializationInfo = &specialization_info;
+		// setup shader stage
+		VkPipelineShaderStageCreateInfo shader_stage_create_info = {};
+		shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		shader_stage_create_info.pNext = NULL;
+		shader_stage_create_info.flags = NULL;
+		shader_stage_create_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+		shader_stage_create_info.module = compute_shader_module.get();
+		shader_stage_create_info.pName = "main";
+		shader_stage_create_info.pSpecializationInfo = &specialization_info;
 
-        // finalize compute pipeline
-        VkComputePipelineCreateInfo pipeline_create_info = {};
-        pipeline_create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-        pipeline_create_info.pNext = NULL;
-        pipeline_create_info.flags = NULL;
-        pipeline_create_info.stage = shader_stage_create_info;
-        pipeline_create_info.layout = layout;
-        pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
-        result = vkCreateComputePipelines(device.get_logical(), VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &pipeline);
-        if (result == VK_SUCCESS) {
-            Log::info("compute pipeline successfully created (handle: ", pipeline, ")");
-        }
-        else {
-            Log::error("failed to create compute pipeline (VkResult=", result, ")");
-        }
-    }
+		// finalize compute pipeline
+		VkComputePipelineCreateInfo pipeline_create_info = {};
+		pipeline_create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		pipeline_create_info.pNext = NULL;
+		pipeline_create_info.flags = NULL;
+		pipeline_create_info.stage = shader_stage_create_info;
+		pipeline_create_info.layout = layout;
+		pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
+		result = vkCreateComputePipelines(device.get_logical(), VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &pipeline);
+		if (result == VK_SUCCESS) {
+			Log::info("compute pipeline successfully created (handle: ", pipeline, ")");
+		}
+		else {
+			Log::error("failed to create compute pipeline (VkResult=", result, ")");
+		}
+	}
 
-    ~ComputePipeline() {
-        if (pipeline != nullptr) {
-            Log::info("destroying compute pipeline");
-            vkDestroyPipeline(logical, pipeline, nullptr);
-            pipeline = nullptr;
-        }
-        if (layout != nullptr) {
-            Log::info("destroying pipeline layout");
-            vkDestroyPipelineLayout(logical, layout, nullptr);
-            layout = nullptr;
-        }
-    }
+	~ComputePipeline() {
+		if (pipeline != nullptr) {
+			Log::info("destroying compute pipeline");
+			vkDestroyPipeline(logical, pipeline, nullptr);
+			pipeline = nullptr;
+		}
+		if (layout != nullptr) {
+			Log::info("destroying pipeline layout");
+			vkDestroyPipelineLayout(logical, layout, nullptr);
+			layout = nullptr;
+		}
+	}
 
-    // getters
-    VkPipeline get() const { return pipeline; }
+	// getters
+	VkPipeline get() const { return pipeline; }
 
-    VkPipelineLayout get_layout() const { return layout; }
+	VkPipelineLayout get_layout() const { return layout; }
 
-    DescriptorSet* get_set() const { return set; }
+	DescriptorSet* get_set() const { return set; }
 
-    PushConstants* get_constants() { return constants; }
+	PushConstants* get_constants() { return constants; }
 
-    uint32_t get_workgroup_size_x() const { return workgroup_size_x; }
-    uint32_t get_workgroup_size_y() const { return workgroup_size_y; }
-    uint32_t get_workgroup_size_z() const { return workgroup_size_z; }
+	uint32_t get_workgroup_size_x() const { return workgroup_size_x; }
+	uint32_t get_workgroup_size_y() const { return workgroup_size_y; }
+	uint32_t get_workgroup_size_z() const { return workgroup_size_z; }
 
 private:
-    VkPipeline pipeline = nullptr;
-    VkPipelineLayout layout = nullptr;
-    VkDevice logical = nullptr;
-    DescriptorSet* set = nullptr;
-    PushConstants* constants = nullptr;
-    uint32_t workgroup_size_x = 0;
-    uint32_t workgroup_size_y = 0;
-    uint32_t workgroup_size_z = 0;
+	VkPipeline pipeline = nullptr;
+	VkPipelineLayout layout = nullptr;
+	VkDevice logical = nullptr;
+	DescriptorSet* set = nullptr;
+	PushConstants* constants = nullptr;
+	uint32_t workgroup_size_x = 0;
+	uint32_t workgroup_size_y = 0;
+	uint32_t workgroup_size_z = 0;
 
 };
 
 // generic memory barrier for synchronization between different stages of the pipeline
 class DeviceMemoryBarrier {
 public:
-    // constructor
-    DeviceMemoryBarrier() = delete;
-    DeviceMemoryBarrier(
-        VkPipelineStageFlags2 source_stage_flags,
-        VkAccessFlags2 source_access_flags,
-        VkPipelineStageFlags2 target_stage_flags,
-        VkAccessFlags2 target_access_flags
-    ) {
-        memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        memory_barrier.pNext = nullptr;
-        memory_barrier.srcStageMask = source_stage_flags;
-        memory_barrier.srcAccessMask = source_access_flags;
-        memory_barrier.dstStageMask = target_stage_flags;
-        memory_barrier.dstAccessMask = target_access_flags;
-    }
-    // destructor
-    ~DeviceMemoryBarrier() {}
-    const VkMemoryBarrier2& get() const { return memory_barrier; }
+	// constructor
+	DeviceMemoryBarrier() = delete;
+	DeviceMemoryBarrier(
+		VkPipelineStageFlags2 source_stage_flags,
+		VkAccessFlags2 source_access_flags,
+		VkPipelineStageFlags2 target_stage_flags,
+		VkAccessFlags2 target_access_flags
+	) {
+		memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+		memory_barrier.pNext = nullptr;
+		memory_barrier.srcStageMask = source_stage_flags;
+		memory_barrier.srcAccessMask = source_access_flags;
+		memory_barrier.dstStageMask = target_stage_flags;
+		memory_barrier.dstAccessMask = target_access_flags;
+	}
+	// destructor
+	~DeviceMemoryBarrier() {}
+	const VkMemoryBarrier2& get() const { return memory_barrier; }
 protected:
-    VkMemoryBarrier2 memory_barrier = {};
+	VkMemoryBarrier2 memory_barrier = {};
 };
 
 // buffer memory barrier for synchronization between different stages of the pipeline
 template<typename T>
 class BufferMemoryBarrier {
 public:
-    // constructor
-    BufferMemoryBarrier() = delete;
-    BufferMemoryBarrier(
-        Buffer<T>& buffer,
-        VkPipelineStageFlags2 source_stage_flags,
-        VkAccessFlags2 source_access_flags,
-        VkPipelineStageFlags2 target_stage_flags,
-        VkAccessFlags2 target_access_flags,
-        uint32_t source_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
-        uint32_t target_queue_family_index = VK_QUEUE_FAMILY_IGNORED
-    ) {
-        buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-        buffer_memory_barrier.pNext = nullptr;
-        buffer_memory_barrier.srcStageMask = source_stage_flags;
-        buffer_memory_barrier.srcAccessMask = source_access_flags;
-        buffer_memory_barrier.dstStageMask = target_stage_flags;
-        buffer_memory_barrier.dstAccessMask = target_access_flags;
-        buffer_memory_barrier.srcQueueFamilyIndex = source_queue_family_index;
-        buffer_memory_barrier.dstQueueFamilyIndex = target_queue_family_index;
-        buffer_memory_barrier.buffer = buffer.get();
-        buffer_memory_barrier.offset = 0;
-        buffer_memory_barrier.size = VK_WHOLE_SIZE;
-    }
-    // destructor
-    ~BufferMemoryBarrier() {}
-    const VkBufferMemoryBarrier2& get() const { return buffer_memory_barrier; }
+	// constructor
+	BufferMemoryBarrier() = delete;
+	BufferMemoryBarrier(
+		Buffer<T>& buffer,
+		VkPipelineStageFlags2 source_stage_flags,
+		VkAccessFlags2 source_access_flags,
+		VkPipelineStageFlags2 target_stage_flags,
+		VkAccessFlags2 target_access_flags,
+		uint32_t source_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
+		uint32_t target_queue_family_index = VK_QUEUE_FAMILY_IGNORED
+	) {
+		buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+		buffer_memory_barrier.pNext = nullptr;
+		buffer_memory_barrier.srcStageMask = source_stage_flags;
+		buffer_memory_barrier.srcAccessMask = source_access_flags;
+		buffer_memory_barrier.dstStageMask = target_stage_flags;
+		buffer_memory_barrier.dstAccessMask = target_access_flags;
+		buffer_memory_barrier.srcQueueFamilyIndex = source_queue_family_index;
+		buffer_memory_barrier.dstQueueFamilyIndex = target_queue_family_index;
+		buffer_memory_barrier.buffer = buffer.get();
+		buffer_memory_barrier.offset = 0;
+		buffer_memory_barrier.size = VK_WHOLE_SIZE;
+	}
+	// destructor
+	~BufferMemoryBarrier() {}
+	const VkBufferMemoryBarrier2& get() const { return buffer_memory_barrier; }
 protected:
-    VkBufferMemoryBarrier2 buffer_memory_barrier = {};
+	VkBufferMemoryBarrier2 buffer_memory_barrier = {};
 };
 
 // image memory barrier for synchronization between different stages of the pipeline
 class ImageMemoryBarrier {
 public:
-    // constructor
-    ImageMemoryBarrier() = delete;
-    ImageMemoryBarrier(
-        VkImage image,
-        VkImageSubresourceRange subresource_range,
-        VkPipelineStageFlags2 source_stage_flags,
-        VkAccessFlags2 source_access_flags,
-        VkPipelineStageFlags2 target_stage_flags,
-        VkAccessFlags2 target_access_flags,
-        VkImageLayout old_layout,
-        VkImageLayout new_layout,
-        uint32_t source_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
-        uint32_t target_queue_family_index = VK_QUEUE_FAMILY_IGNORED
-    ) {
-        image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        image_memory_barrier.pNext = nullptr;
-        image_memory_barrier.srcStageMask = source_stage_flags;
-        image_memory_barrier.srcAccessMask = source_access_flags;
-        image_memory_barrier.dstStageMask = target_stage_flags;
-        image_memory_barrier.dstAccessMask = target_access_flags;
-        image_memory_barrier.oldLayout = old_layout;
-        image_memory_barrier.newLayout = new_layout;
-        image_memory_barrier.srcQueueFamilyIndex = source_queue_family_index;
-        image_memory_barrier.dstQueueFamilyIndex = target_queue_family_index;
-        image_memory_barrier.image = image;
-        image_memory_barrier.subresourceRange = subresource_range;
-    }
-    // destructor
-    ~ImageMemoryBarrier() {}
-    const VkImageMemoryBarrier2& get() const { return image_memory_barrier; }
+	// constructor
+	ImageMemoryBarrier() = delete;
+	ImageMemoryBarrier(
+		VkImage image,
+		VkImageSubresourceRange subresource_range,
+		VkPipelineStageFlags2 source_stage_flags,
+		VkAccessFlags2 source_access_flags,
+		VkPipelineStageFlags2 target_stage_flags,
+		VkAccessFlags2 target_access_flags,
+		VkImageLayout old_layout,
+		VkImageLayout new_layout,
+		uint32_t source_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
+		uint32_t target_queue_family_index = VK_QUEUE_FAMILY_IGNORED
+	) {
+		image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+		image_memory_barrier.pNext = nullptr;
+		image_memory_barrier.srcStageMask = source_stage_flags;
+		image_memory_barrier.srcAccessMask = source_access_flags;
+		image_memory_barrier.dstStageMask = target_stage_flags;
+		image_memory_barrier.dstAccessMask = target_access_flags;
+		image_memory_barrier.oldLayout = old_layout;
+		image_memory_barrier.newLayout = new_layout;
+		image_memory_barrier.srcQueueFamilyIndex = source_queue_family_index;
+		image_memory_barrier.dstQueueFamilyIndex = target_queue_family_index;
+		image_memory_barrier.image = image;
+		image_memory_barrier.subresourceRange = subresource_range;
+	}
+	// destructor
+	~ImageMemoryBarrier() {}
+	const VkImageMemoryBarrier2& get() const { return image_memory_barrier; }
 protected:
-    VkImageMemoryBarrier2 image_memory_barrier = {};
+	VkImageMemoryBarrier2 image_memory_barrier = {};
 };
 
 // command buffer for recording commands;
 // used for graphics, compute and transfer operations
 class CommandBuffer {
 public:
-    // constructor
-    CommandBuffer() = delete;
-    CommandBuffer(Device& device, QueueFamily usage, const CommandPool& pool) {
-        this->device = &device;
-        this->logical = device.get_logical();
-        this->graphics_queue = this->device->get_graphics_queue();
-        this->compute_queue = this->device->get_compute_queue();
-        this->transfer_queue = this->device->get_transfer_queue();
-        this->usage = usage;
-        this->pool = pool.get();
+	// constructor
+	CommandBuffer() = delete;
+	CommandBuffer(Device& device, QueueFamily usage, const CommandPool& pool) {
+		this->device = &device;
+		this->logical = device.get_logical();
+		this->graphics_queue = this->device->get_graphics_queue();
+		this->compute_queue = this->device->get_compute_queue();
+		this->transfer_queue = this->device->get_transfer_queue();
+		this->usage = usage;
+		this->pool = pool.get();
 
-        // set pipeline bind point according to command pool QueueFamily setting
-        if (usage == QueueFamily::GRAPHICS_QUEUE) {
-            bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        }
-        else if (usage == QueueFamily::COMPUTE_QUEUE) {
-            bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
-        }
-        else if (usage == QueueFamily::TRANSFER_QUEUE) {
-            // do nothing (reason: transfer operations don't use pipelines)
-        }
-        else {
-            Log::error("in CommandBuffer constructor: invalid QueueFamily argument!");
-        }
+		// set pipeline bind point according to command pool QueueFamily setting
+		if (usage == QueueFamily::GRAPHICS_QUEUE) {
+			bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		}
+		else if (usage == QueueFamily::COMPUTE_QUEUE) {
+			bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
+		}
+		else if (usage == QueueFamily::TRANSFER_QUEUE) {
+			// do nothing (reason: transfer operations don't use pipelines)
+		}
+		else {
+			Log::error("in CommandBuffer constructor: invalid QueueFamily argument!");
+		}
 
-        // destroy any previous command buffer
-        if (buffer != nullptr) {
-            vkFreeCommandBuffers(logical, this->pool, 1, &buffer);
-            buffer = nullptr;
-            Log::info("[OLD COMMAND BUFFER DESTROYED]");
-        }
+		// destroy any previous command buffer
+		if (buffer != nullptr) {
+			vkFreeCommandBuffers(logical, this->pool, 1, &buffer);
+			buffer = nullptr;
+			Log::info("[OLD COMMAND BUFFER DESTROYED]");
+		}
 
-        // setup command buffer
-        allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocate_info.commandPool = pool.get();
-        allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocate_info.commandBufferCount = 1;
-        VkResult result = vkAllocateCommandBuffers(logical, &allocate_info, &buffer);
-        if (result == VK_SUCCESS) {
-            Log::info("successfully allocated command buffer (handle: ", buffer, ")");
-        }
-        else {
-            Log::warning("in CommandBuffer constructor: memory allocation failed (VkResult=", result, ")!");
-        }
+		// setup command buffer
+		allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocate_info.commandPool = pool.get();
+		allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocate_info.commandBufferCount = 1;
+		VkResult result = vkAllocateCommandBuffers(logical, &allocate_info, &buffer);
+		if (result == VK_SUCCESS) {
+			Log::info("successfully allocated command buffer (handle: ", buffer, ")");
+		}
+		else {
+			Log::warning("in CommandBuffer constructor: memory allocation failed (VkResult=", result, ")!");
+		}
 
-        begin_recording();
-    }
+		begin_recording();
+	}
 
-    // move constructor
-    CommandBuffer(CommandBuffer&& other) noexcept : buffer(std::exchange(other.buffer, nullptr)), logical(std::exchange(other.logical, nullptr)), device(std::exchange(other.device, nullptr)), graphics_queue(std::exchange(other.graphics_queue, nullptr)), compute_queue(std::exchange(other.compute_queue, nullptr)), transfer_queue(std::exchange(other.transfer_queue, nullptr)), pool(std::exchange(other.pool, nullptr)), usage(other.usage), bind_point(other.bind_point), workgroup_size_x(other.workgroup_size_x), workgroup_size_y(other.workgroup_size_y), workgroup_size_z(other.workgroup_size_z) {}
+	// move constructor
+	CommandBuffer(CommandBuffer&& other) noexcept : buffer(std::exchange(other.buffer, nullptr)), logical(std::exchange(other.logical, nullptr)), device(std::exchange(other.device, nullptr)), graphics_queue(std::exchange(other.graphics_queue, nullptr)), compute_queue(std::exchange(other.compute_queue, nullptr)), transfer_queue(std::exchange(other.transfer_queue, nullptr)), pool(std::exchange(other.pool, nullptr)), usage(other.usage), bind_point(other.bind_point), workgroup_size_x(other.workgroup_size_x), workgroup_size_y(other.workgroup_size_y), workgroup_size_z(other.workgroup_size_z) {}
 
-    // move assignment
-    CommandBuffer& operator=(CommandBuffer&& other) noexcept {
-        if (this != &other) {
-            logical = std::exchange(other.logical, nullptr);
-            buffer = std::exchange(other.buffer, nullptr);
-            device = std::exchange(other.device, nullptr);
-            graphics_queue = std::exchange(other.graphics_queue, nullptr);
-            compute_queue = std::exchange(other.compute_queue, nullptr);
-            transfer_queue = std::exchange(other.transfer_queue, nullptr);
-            pool = std::exchange(other.pool, nullptr);
-            usage = other.usage;
-            bind_point = other.bind_point;
-            workgroup_size_x = other.workgroup_size_x;
-            workgroup_size_y = other.workgroup_size_y;
-            workgroup_size_z = other.workgroup_size_z;
-        }
-        return *this;
-    }
+	// move assignment
+	CommandBuffer& operator=(CommandBuffer&& other) noexcept {
+		if (this != &other) {
+			logical = std::exchange(other.logical, nullptr);
+			buffer = std::exchange(other.buffer, nullptr);
+			device = std::exchange(other.device, nullptr);
+			graphics_queue = std::exchange(other.graphics_queue, nullptr);
+			compute_queue = std::exchange(other.compute_queue, nullptr);
+			transfer_queue = std::exchange(other.transfer_queue, nullptr);
+			pool = std::exchange(other.pool, nullptr);
+			usage = other.usage;
+			bind_point = other.bind_point;
+			workgroup_size_x = other.workgroup_size_x;
+			workgroup_size_y = other.workgroup_size_y;
+			workgroup_size_z = other.workgroup_size_z;
+		}
+		return *this;
+	}
 
-    // copy constructor & copy assignment (deleted; copying command buffers is not allowed)
-    CommandBuffer(const CommandBuffer&) = delete;
-    CommandBuffer& operator=(const CommandBuffer&) = delete;
+	// copy constructor & copy assignment (deleted; copying command buffers is not allowed)
+	CommandBuffer(const CommandBuffer&) = delete;
+	CommandBuffer& operator=(const CommandBuffer&) = delete;
 
-    // destructor
-    ~CommandBuffer() {
-        if (buffer != nullptr) {
-            vkFreeCommandBuffers(logical, pool, 1, &buffer);
-            Log::info("[COMMAND BUFFER DESTROYED]");
-            buffer = nullptr;
-        }
-    }
+	// destructor
+	~CommandBuffer() {
+		if (buffer != nullptr) {
+			vkFreeCommandBuffers(logical, pool, 1, &buffer);
+			Log::info("[COMMAND BUFFER DESTROYED]");
+			buffer = nullptr;
+		}
+	}
 
-    void reset(VkCommandBufferResetFlags flags = VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT) {
-        VkResult result = vkResetCommandBuffer(buffer, flags);
-        if (result == VK_SUCCESS) {
-            Log::debug("successfully reset command buffer");
-        }
-        else {
-            Log::warning("failed to reset command buffer (handle: ", buffer, ", VkResult = ", result, ")");
-        }
-        begin_recording();
-    }
+	void reset(VkCommandBufferResetFlags flags = VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT) {
+		VkResult result = vkResetCommandBuffer(buffer, flags);
+		if (result == VK_SUCCESS) {
+			Log::debug("successfully reset command buffer");
+		}
+		else {
+			Log::warning("failed to reset command buffer (handle: ", buffer, ", VkResult = ", result, ")");
+		}
+		begin_recording();
+	}
 
-    // set event on command buffer
-    Event set_event(
-        const std::optional<std::vector<VkMemoryBarrier2>>& device_memory_barriers,
-        const std::optional<std::vector<VkBufferMemoryBarrier2>>& buffer_memory_barriers,
-        const std::optional<std::vector<VkImageMemoryBarrier2>>& image_memory_barriers,
-        VkDependencyFlags flags) const {
-        Event event = Event(*device);
-        event.get_dependency_info_ptr()->sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        event.get_dependency_info_ptr()->pNext = NULL;
-        event.get_dependency_info_ptr()->dependencyFlags = flags;
-        event.get_dependency_info_ptr()->memoryBarrierCount = device_memory_barriers.has_value() ? static_cast<uint32_t>(device_memory_barriers.value().size()) : 0;
-        event.get_dependency_info_ptr()->pMemoryBarriers = device_memory_barriers.has_value() ? device_memory_barriers.value().data() : nullptr;
-        event.get_dependency_info_ptr()->bufferMemoryBarrierCount = buffer_memory_barriers.has_value() ? static_cast<uint32_t>(buffer_memory_barriers.value().size()) : 0;
-        event.get_dependency_info_ptr()->pBufferMemoryBarriers = buffer_memory_barriers.has_value() ? buffer_memory_barriers.value().data() : nullptr;
-        event.get_dependency_info_ptr()->imageMemoryBarrierCount = image_memory_barriers.has_value() ? static_cast<uint32_t>(image_memory_barriers.value().size()) : 0;
-        event.get_dependency_info_ptr()->pImageMemoryBarriers = image_memory_barriers.has_value() ? image_memory_barriers.value().data() : nullptr;
-        vkCmdSetEvent2(this->buffer, event.get(), &event.get_dependency_info());
-        return event;
-    }
+	// set event on command buffer
+	Event set_event(
+		const std::optional<std::vector<VkMemoryBarrier2>>& device_memory_barriers,
+		const std::optional<std::vector<VkBufferMemoryBarrier2>>& buffer_memory_barriers,
+		const std::optional<std::vector<VkImageMemoryBarrier2>>& image_memory_barriers,
+		VkDependencyFlags flags) const {
+		Event event = Event(*device);
+		event.get_dependency_info_ptr()->sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		event.get_dependency_info_ptr()->pNext = NULL;
+		event.get_dependency_info_ptr()->dependencyFlags = flags;
+		event.get_dependency_info_ptr()->memoryBarrierCount = device_memory_barriers.has_value() ? static_cast<uint32_t>(device_memory_barriers.value().size()) : 0;
+		event.get_dependency_info_ptr()->pMemoryBarriers = device_memory_barriers.has_value() ? device_memory_barriers.value().data() : nullptr;
+		event.get_dependency_info_ptr()->bufferMemoryBarrierCount = buffer_memory_barriers.has_value() ? static_cast<uint32_t>(buffer_memory_barriers.value().size()) : 0;
+		event.get_dependency_info_ptr()->pBufferMemoryBarriers = buffer_memory_barriers.has_value() ? buffer_memory_barriers.value().data() : nullptr;
+		event.get_dependency_info_ptr()->imageMemoryBarrierCount = image_memory_barriers.has_value() ? static_cast<uint32_t>(image_memory_barriers.value().size()) : 0;
+		event.get_dependency_info_ptr()->pImageMemoryBarriers = image_memory_barriers.has_value() ? image_memory_barriers.value().data() : nullptr;
+		vkCmdSetEvent2(this->buffer, event.get(), &event.get_dependency_info());
+		return event;
+	}
 
-    void reset_event(const Event& event, VkPipelineStageFlags stage_mask) const {
-        vkCmdResetEvent(buffer, event.get(), stage_mask);
-    }
+	void reset_event(const Event& event, VkPipelineStageFlags stage_mask) const {
+		vkCmdResetEvent(buffer, event.get(), stage_mask);
+	}
 
-    void wait_event(const Event& event) const {
-        vkCmdWaitEvents2(buffer, 1, &event.get(), &event.get_dependency_info());
-    }
+	void wait_event(const Event& event) const {
+		vkCmdWaitEvents2(buffer, 1, &event.get(), &event.get_dependency_info());
+	}
 
-    void bind_pipeline(const GraphicsPipeline& pipeline) const {
-        if (usage != QueueFamily::GRAPHICS_QUEUE) {
-            Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support graphics");
-        }
-        if (pipeline.get() != nullptr) {
-            vkCmdBindPipeline(buffer, bind_point, pipeline.get());
-        }
-        else {
-            Log::error("CommandBuffer::bind_pipeline() has invalid pipeline argument");
-        }
-    }
+	void bind_pipeline(const GraphicsPipeline& pipeline) const {
+		if (usage != QueueFamily::GRAPHICS_QUEUE) {
+			Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support graphics");
+		}
+		if (pipeline.get() != nullptr) {
+			vkCmdBindPipeline(buffer, bind_point, pipeline.get());
+		}
+		else {
+			Log::error("CommandBuffer::bind_pipeline() has invalid pipeline argument");
+		}
+	}
 
-    void bind_pipeline(const ComputePipeline& pipeline) {
-        if (usage != QueueFamily::COMPUTE_QUEUE) {
-            Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support compute");
-        }
-        if (pipeline.get() != nullptr) {
-            Log::debug("binding pipeline ", pipeline.get(), " to bindpoint type ", bind_point, " at command buffer ", buffer);
-            vkCmdBindPipeline(buffer, bind_point, pipeline.get());
-        }
-        else {
-            Log::error("CommandBuffer::bind_pipeline() has invalid pipeline argument");
-        }
-        workgroup_size_x = pipeline.get_workgroup_size_x();
-        workgroup_size_y = pipeline.get_workgroup_size_y();
-        workgroup_size_z = pipeline.get_workgroup_size_z();
-        pipeline_layout = pipeline.get_layout();
-    }
+	void bind_pipeline(const ComputePipeline& pipeline) {
+		if (usage != QueueFamily::COMPUTE_QUEUE) {
+			Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support compute");
+		}
+		if (pipeline.get() != nullptr) {
+			Log::debug("binding pipeline ", pipeline.get(), " to bindpoint type ", bind_point, " at command buffer ", buffer);
+			vkCmdBindPipeline(buffer, bind_point, pipeline.get());
+		}
+		else {
+			Log::error("CommandBuffer::bind_pipeline() has invalid pipeline argument");
+		}
+		workgroup_size_x = pipeline.get_workgroup_size_x();
+		workgroup_size_y = pipeline.get_workgroup_size_y();
+		workgroup_size_z = pipeline.get_workgroup_size_z();
+		pipeline_layout = pipeline.get_layout();
+	}
 
-    void bind_descriptor_set(const DescriptorSet& set) {
-        if (pipeline_layout == nullptr) {
-            Log::error("invalid usage of CommandBuffer::bind_descriptor_set(): please use CommandBuffer::bind_pipeline() first!");
-        }
-        Log::debug("binding descriptor sets to command buffer, bindpoint ", bind_point);
-        vkCmdBindDescriptorSets(buffer, bind_point, pipeline_layout, 0, 1, set.get_ptr(), 0, nullptr);
-    }
+	void bind_descriptor_set(const DescriptorSet& set) {
+		if (pipeline_layout == nullptr) {
+			Log::error("invalid usage of CommandBuffer::bind_descriptor_set(): please use CommandBuffer::bind_pipeline() first!");
+		}
+		Log::debug("binding descriptor sets to command buffer, bindpoint ", bind_point);
+		vkCmdBindDescriptorSets(buffer, bind_point, pipeline_layout, 0, 1, set.get_ptr(), 0, nullptr);
+	}
 
-    void push_constants(PushConstants& push_constants) const {
-        vkCmdPushConstants(
-            buffer,
-            pipeline_layout,
-            push_constants.get_range().stageFlags,
-            push_constants.get_range().offset,
-            push_constants.get_range().size,
-            push_constants.get_data()
-        );
-    }
+	void bind_constants(PushConstants& push_constants) const {
+		vkCmdPushConstants(
+			buffer,
+			pipeline_layout,
+			push_constants.get_range().stageFlags,
+			push_constants.get_range().offset,
+			push_constants.get_range().size,
+			push_constants.get_data()
+		);
+	}
 
-    // records a buffer copy command;
-    // an be used for Staging->Device, Device->Staging, Device->Device
-    template<typename SrcT, typename DstT>
-    void copy_buffer(const Buffer<SrcT>& src_buffer, Buffer<DstT>& dst_buffer, VkDeviceSize size_bytes, VkDeviceSize src_offset_bytes = 0, VkDeviceSize dst_offset_bytes = 0) {
-        if (size_bytes == 0) return; // Nothing to copy
+	// records a buffer copy command;
+	// an be used for Staging->Device, Device->Staging, Device->Device
+	template<typename SrcT, typename DstT>
+	void copy_buffer(const Buffer<SrcT>& src_buffer, Buffer<DstT>& dst_buffer, VkDeviceSize size_bytes, VkDeviceSize src_offset_bytes = 0, VkDeviceSize dst_offset_bytes = 0) {
+		if (size_bytes == 0) return; // Nothing to copy
 
-        // bound checks
-        if (src_offset_bytes + size_bytes > src_buffer.get_size_bytes()) {
-            Log::error("CommandBuffer::copy_buffer: Source region exceeds source buffer bounds.");
-            return; // Or handle error
-        }
-        if (dst_offset_bytes + size_bytes > dst_buffer.get_size_bytes()) {
-            Log::error("CommandBuffer::copy_buffer: Destination region exceeds destination buffer bounds.");
-            return; // Or handle error
-        }
+		// bound checks
+		if (src_offset_bytes + size_bytes > src_buffer.get_size_bytes()) {
+			Log::error("CommandBuffer::copy_buffer: Source region exceeds source buffer bounds.");
+			return; // Or handle error
+		}
+		if (dst_offset_bytes + size_bytes > dst_buffer.get_size_bytes()) {
+			Log::error("CommandBuffer::copy_buffer: Destination region exceeds destination buffer bounds.");
+			return; // Or handle error
+		}
 
-        VkBufferCopy copy_region = {};
-        copy_region.srcOffset = src_offset_bytes;
-        copy_region.dstOffset = dst_offset_bytes;
-        copy_region.size = size_bytes;
-        vkCmdCopyBuffer(buffer, src_buffer.get(), dst_buffer.get(), 1, copy_region);
-    }
+		VkBufferCopy copy_region = {};
+		copy_region.srcOffset = src_offset_bytes;
+		copy_region.dstOffset = dst_offset_bytes;
+		copy_region.size = size_bytes;
+		vkCmdCopyBuffer(buffer, src_buffer.get(), dst_buffer.get(), 1, copy_region);
+	}
 
-    // add memory barrier
-    void add_barrier(const DeviceMemoryBarrier& barrier) const {
-        VkDependencyInfo dependency_info = {};
-        dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency_info.pNext = nullptr;
-        dependency_info.memoryBarrierCount = 1;
-        dependency_info.pMemoryBarriers = &barrier.get();
-        dependency_info.bufferMemoryBarrierCount = 0;
-        dependency_info.pBufferMemoryBarriers = nullptr;
-        dependency_info.imageMemoryBarrierCount = 0;
-        dependency_info.pImageMemoryBarriers = nullptr;
-        vkCmdPipelineBarrier2(buffer, &dependency_info);
-    }
+	// add memory barrier
+	void add_barrier(const DeviceMemoryBarrier& barrier) const {
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.pNext = nullptr;
+		dependency_info.memoryBarrierCount = 1;
+		dependency_info.pMemoryBarriers = &barrier.get();
+		dependency_info.bufferMemoryBarrierCount = 0;
+		dependency_info.pBufferMemoryBarriers = nullptr;
+		dependency_info.imageMemoryBarrierCount = 0;
+		dependency_info.pImageMemoryBarriers = nullptr;
+		vkCmdPipelineBarrier2(buffer, &dependency_info);
+	}
 
-    // add buffer memory barrier
-    template<typename T>
-    void add_barrier(const BufferMemoryBarrier<T>& barrier) {
-        VkDependencyInfo dependency_info = {};
-        dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency_info.pNext = nullptr;
-        dependency_info.memoryBarrierCount = 0;
-        dependency_info.pMemoryBarriers = nullptr;
-        dependency_info.bufferMemoryBarrierCount = 1;
-        dependency_info.pBufferMemoryBarriers = barrier.get();
-        dependency_info.imageMemoryBarrierCount = 0;
-        dependency_info.pImageMemoryBarriers = nullptr;
-        vkCmdPipelineBarrier2(buffer, &dependency_info);
-    }
+	// add buffer memory barrier
+	template<typename T>
+	void add_barrier(const BufferMemoryBarrier<T>& barrier) {
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.pNext = nullptr;
+		dependency_info.memoryBarrierCount = 0;
+		dependency_info.pMemoryBarriers = nullptr;
+		dependency_info.bufferMemoryBarrierCount = 1;
+		dependency_info.pBufferMemoryBarriers = barrier.get();
+		dependency_info.imageMemoryBarrierCount = 0;
+		dependency_info.pImageMemoryBarriers = nullptr;
+		vkCmdPipelineBarrier2(buffer, &dependency_info);
+	}
 
-    // add image memory barrier
-    void add_barrier(ImageMemoryBarrier& barrier) const {
-        VkDependencyInfo dependency_info = {};
-        dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency_info.pNext = nullptr;
-        dependency_info.memoryBarrierCount = 0;
-        dependency_info.pMemoryBarriers = nullptr;
-        dependency_info.bufferMemoryBarrierCount = 0;
-        dependency_info.pBufferMemoryBarriers = nullptr;
-        dependency_info.imageMemoryBarrierCount = 1;
-        dependency_info.pImageMemoryBarriers = &barrier.get();
-        vkCmdPipelineBarrier2(buffer, &dependency_info);
-    }
+	// add image memory barrier
+	void add_barrier(ImageMemoryBarrier& barrier) const {
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.pNext = nullptr;
+		dependency_info.memoryBarrierCount = 0;
+		dependency_info.pMemoryBarriers = nullptr;
+		dependency_info.bufferMemoryBarrierCount = 0;
+		dependency_info.pBufferMemoryBarriers = nullptr;
+		dependency_info.imageMemoryBarrierCount = 1;
+		dependency_info.pImageMemoryBarriers = &barrier.get();
+		vkCmdPipelineBarrier2(buffer, &dependency_info);
+	}
 
-    // add multiple barriers
-    template<typename T>
-    void add_barriers(
-        std::optional<std::vector<DeviceMemoryBarrier>>& device_memory_barriers,
-        std::optional<std::vector<BufferMemoryBarrier<T>>>& buffer_memory_barriers,
-        std::optional<std::vector<ImageMemoryBarrier>>& image_memory_barriers
-    ) {
-        VkDependencyInfo dependency_info = {};
-        dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency_info.pNext = nullptr;
+	// add multiple barriers
+	template<typename T>
+	void add_barriers(
+		std::optional<std::vector<DeviceMemoryBarrier>>& device_memory_barriers,
+		std::optional<std::vector<BufferMemoryBarrier<T>>>& buffer_memory_barriers,
+		std::optional<std::vector<ImageMemoryBarrier>>& image_memory_barriers
+	) {
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.pNext = nullptr;
 
-        // setup device memory barriers
-        if (device_memory_barriers.has_value() && !device_memory_barriers.value().empty()) {
-            uint32_t barriers_count = device_memory_barriers.value().size();
-            std::vector<VkMemoryBarrier2> barrier_handles(barriers_count);
-            for (uint32_t i = 0; i < barriers_count; i++) {
-                barrier_handles[i] = device_memory_barriers.value()[i].get();
-            }
-            dependency_info.memoryBarrierCount = barriers_count;
-            dependency_info.pMemoryBarriers = barrier_handles.data();
-        }
-        else {
-            dependency_info.memoryBarrierCount = 0;
-            dependency_info.pMemoryBarriers = nullptr;
-        }
+		// setup device memory barriers
+		if (device_memory_barriers.has_value() && !device_memory_barriers.value().empty()) {
+			uint32_t barriers_count = device_memory_barriers.value().size();
+			std::vector<VkMemoryBarrier2> barrier_handles(barriers_count);
+			for (uint32_t i = 0; i < barriers_count; i++) {
+				barrier_handles[i] = device_memory_barriers.value()[i].get();
+			}
+			dependency_info.memoryBarrierCount = barriers_count;
+			dependency_info.pMemoryBarriers = barrier_handles.data();
+		}
+		else {
+			dependency_info.memoryBarrierCount = 0;
+			dependency_info.pMemoryBarriers = nullptr;
+		}
 
-        // setup buffer memory barriers
-        if (buffer_memory_barriers.has_value() && !buffer_memory_barriers.value().empty()) {
-            uint32_t barriers_count = buffer_memory_barriers.value().size();
-            std::vector<VkBufferMemoryBarrier2> barrier_handles(barriers_count);
-            for (uint32_t i = 0; i < barriers_count; i++) {
-                barrier_handles[i] = buffer_memory_barriers.value()[i].get();
-            }
-            dependency_info.bufferMemoryBarrierCount = barriers_count;
-            dependency_info.pBufferMemoryBarriers = barrier_handles.data();
-        }
-        else {
-            dependency_info.bufferMemoryBarrierCount = 0;
-            dependency_info.pBufferMemoryBarriers = nullptr;
-        }
+		// setup buffer memory barriers
+		if (buffer_memory_barriers.has_value() && !buffer_memory_barriers.value().empty()) {
+			uint32_t barriers_count = buffer_memory_barriers.value().size();
+			std::vector<VkBufferMemoryBarrier2> barrier_handles(barriers_count);
+			for (uint32_t i = 0; i < barriers_count; i++) {
+				barrier_handles[i] = buffer_memory_barriers.value()[i].get();
+			}
+			dependency_info.bufferMemoryBarrierCount = barriers_count;
+			dependency_info.pBufferMemoryBarriers = barrier_handles.data();
+		}
+		else {
+			dependency_info.bufferMemoryBarrierCount = 0;
+			dependency_info.pBufferMemoryBarriers = nullptr;
+		}
 
-        // setup image memory barriers
-        if (image_memory_barriers.has_value() && !image_memory_barriers.value().empty()) {
-            uint32_t barriers_count = image_memory_barriers.value().size();
-            std::vector<VkImageMemoryBarrier2> barrier_handles(barriers_count);
-            for (uint32_t i = 0; i < barriers_count; i++) {
-                barrier_handles[i] = image_memory_barriers.value()[i].get();
-            }
-            dependency_info.imageMemoryBarrierCount = barriers_count;
-            dependency_info.pImageMemoryBarriers = barrier_handles.data();
-        }
-        else {
-            dependency_info.imageMemoryBarrierCount = 0;
-            dependency_info.pImageMemoryBarriers = nullptr;
-        }
+		// setup image memory barriers
+		if (image_memory_barriers.has_value() && !image_memory_barriers.value().empty()) {
+			uint32_t barriers_count = image_memory_barriers.value().size();
+			std::vector<VkImageMemoryBarrier2> barrier_handles(barriers_count);
+			for (uint32_t i = 0; i < barriers_count; i++) {
+				barrier_handles[i] = image_memory_barriers.value()[i].get();
+			}
+			dependency_info.imageMemoryBarrierCount = barriers_count;
+			dependency_info.pImageMemoryBarriers = barrier_handles.data();
+		}
+		else {
+			dependency_info.imageMemoryBarrierCount = 0;
+			dependency_info.pImageMemoryBarriers = nullptr;
+		}
 
-        vkCmdPipelineBarrier2(buffer, &dependency_info);
-    }
+		vkCmdPipelineBarrier2(buffer, &dependency_info);
+	}
 
-    // transition image layout
-    void transition_image_layout(Image image, VkImageLayout new_layout, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT) {
-        VkImageMemoryBarrier2 image_memory_barrier = {};
-        image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        image_memory_barrier.oldLayout = image.get_layout();
-        image_memory_barrier.newLayout = new_layout;
-        image_memory_barrier.srcQueueFamilyIndex = device->get_graphics_queue_family_index();
-        image_memory_barrier.dstQueueFamilyIndex = device->get_graphics_queue_family_index();
-        image_memory_barrier.image = image.get();
-        image_memory_barrier.subresourceRange.aspectMask = aspect_mask;
-        image_memory_barrier.subresourceRange.baseMipLevel = 0;
-        image_memory_barrier.subresourceRange.levelCount = 1;
-        image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-        image_memory_barrier.subresourceRange.layerCount = 1;
+	// transition image layout
+	void transition_image_layout(Image image, VkImageLayout new_layout, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT) {
+		VkImageMemoryBarrier2 image_memory_barrier = {};
+		image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+		image_memory_barrier.oldLayout = image.get_layout();
+		image_memory_barrier.newLayout = new_layout;
+		image_memory_barrier.srcQueueFamilyIndex = device->get_graphics_queue_family_index();
+		image_memory_barrier.dstQueueFamilyIndex = device->get_graphics_queue_family_index();
+		image_memory_barrier.image = image.get();
+		image_memory_barrier.subresourceRange.aspectMask = aspect_mask;
+		image_memory_barrier.subresourceRange.baseMipLevel = 0;
+		image_memory_barrier.subresourceRange.levelCount = 1;
+		image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+		image_memory_barrier.subresourceRange.layerCount = 1;
 
-        // Determine stage and access masks based on layouts
-        if (image_memory_barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-            image_memory_barrier.srcAccessMask = 0;
-            image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-            image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        }
-        else if (image_memory_barrier.oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        }
-        else {
-            // Add more common layout transition cases or make masks parameters
-            Log::warning("Image::transition_layout: Unhandled layout transition, using default masks/stages.");
-            image_memory_barrier.srcAccessMask = 0; // Be conservative
-            image_memory_barrier.dstAccessMask = 0; // Be conservative
-        }
+		// Determine stage and access masks based on layouts
+		if (image_memory_barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+			image_memory_barrier.srcAccessMask = 0;
+			image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		}
+		else if (image_memory_barrier.oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+			image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		}
+		else {
+			// Add more common layout transition cases or make masks parameters
+			Log::warning("Image::transition_layout: Unhandled layout transition, using default masks/stages.");
+			image_memory_barrier.srcAccessMask = 0; // Be conservative
+			image_memory_barrier.dstAccessMask = 0; // Be conservative
+		}
 
-        // Setup dependency info
-        VkDependencyInfo dependency_info = {};
-        dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency_info.memoryBarrierCount = 0;
-        dependency_info.pMemoryBarriers = nullptr;
-        dependency_info.bufferMemoryBarrierCount = 0;
-        dependency_info.pBufferMemoryBarriers = nullptr;
-        dependency_info.imageMemoryBarrierCount = 1;
-        dependency_info.pImageMemoryBarriers = &image_memory_barrier;
+		// Setup dependency info
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.memoryBarrierCount = 0;
+		dependency_info.pMemoryBarriers = nullptr;
+		dependency_info.bufferMemoryBarrierCount = 0;
+		dependency_info.pBufferMemoryBarriers = nullptr;
+		dependency_info.imageMemoryBarrierCount = 1;
+		dependency_info.pImageMemoryBarriers = &image_memory_barrier;
 
-        vkCmdPipelineBarrier2(buffer, &dependency_info);
+		vkCmdPipelineBarrier2(buffer, &dependency_info);
 
-        image.set_layout(new_layout);
-    }
+		image.set_layout(new_layout);
+	}
 
-    void draw(uint32_t& vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) const {
-        vkCmdDraw(buffer, vertex_count, instance_count, first_vertex, first_instance);
-    }
+	void draw(uint32_t& vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) const {
+		vkCmdDraw(buffer, vertex_count, instance_count, first_vertex, first_instance);
+	}
 
-    void dispatch(uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1) const {
-        // dispatch for compute
-        if (usage == QueueFamily::COMPUTE_QUEUE) {
-            const uint32_t workgroups_x = (global_size_x + workgroup_size_x - 1) / workgroup_size_x;
-            const uint32_t workgroups_y = (global_size_y + workgroup_size_y - 1) / workgroup_size_y;
-            const uint32_t workgroups_z = (global_size_z + workgroup_size_z - 1) / workgroup_size_z;
-            vkCmdDispatch(buffer, workgroups_x, workgroups_y, workgroups_z);
-        }
-        else {
-            Log::error("invalid call of method CommandBuffer::dispatch, only allowed for usage type QueueFamily::COMPUTE");
-        }
-    }
+	void dispatch(uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1) const {
+		// dispatch for compute
+		if (usage == QueueFamily::COMPUTE_QUEUE) {
+			const uint32_t workgroups_x = (global_size_x + workgroup_size_x - 1) / workgroup_size_x;
+			const uint32_t workgroups_y = (global_size_y + workgroup_size_y - 1) / workgroup_size_y;
+			const uint32_t workgroups_z = (global_size_z + workgroup_size_z - 1) / workgroup_size_z;
+			vkCmdDispatch(buffer, workgroups_x, workgroups_y, workgroups_z);
+		}
+		else {
+			Log::error("invalid call of method CommandBuffer::dispatch, only allowed for usage type QueueFamily::COMPUTE");
+		}
+	}
 
-    void begin_render(VkOffset2D offset, VkExtent2D extent, VkRenderingFlags flags, std::vector<VkRenderingAttachmentInfo>& color_attachments, VkRenderingAttachmentInfo& depth_attachment, VkRenderingAttachmentInfo& stencil_attachment) {
-        rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        rendering_info.pNext = NULL;
-        rendering_info.flags = flags;
-        rendering_info.renderArea = {offset, extent}; // VkRect2D
-        rendering_info.layerCount = 1;
-        rendering_info.viewMask = 0; // =multiview disabled by default
-        rendering_info.colorAttachmentCount = static_cast<uint32_t>(color_attachments.size());
-        rendering_info.pColorAttachments = color_attachments.data();
-        rendering_info.pDepthAttachment = &depth_attachment;
-        rendering_info.pStencilAttachment = &stencil_attachment;
-        vkCmdBeginRendering(buffer, &rendering_info);
-    }
+	void begin_render(VkOffset2D offset, VkExtent2D extent, VkRenderingFlags flags, std::vector<VkRenderingAttachmentInfo>& color_attachments, VkRenderingAttachmentInfo& depth_attachment, VkRenderingAttachmentInfo& stencil_attachment) {
+		rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+		rendering_info.pNext = NULL;
+		rendering_info.flags = flags;
+		rendering_info.renderArea = { offset, extent }; // VkRect2D
+		rendering_info.layerCount = 1;
+		rendering_info.viewMask = 0; // =multiview disabled by default
+		rendering_info.colorAttachmentCount = static_cast<uint32_t>(color_attachments.size());
+		rendering_info.pColorAttachments = color_attachments.data();
+		rendering_info.pDepthAttachment = &depth_attachment;
+		rendering_info.pStencilAttachment = &stencil_attachment;
+		vkCmdBeginRendering(buffer, &rendering_info);
+	}
 
-    void begin_renderpass(RenderPass& renderpass, VkOffset2D offset, VkExtent2D extent, std::vector<VkClearValue>& clear_value) {
-        renderpass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderpass_begin_info.pNext = NULL;
-        renderpass_begin_info.renderPass = renderpass.get();
-        renderpass_begin_info.renderArea = {offset, extent}; // VkRect2D
-        renderpass_begin_info.clearValueCount = static_cast<uint32_t>(clear_value.size());
-        renderpass_begin_info.pClearValues = clear_value.data();
+	void begin_renderpass(RenderPass& renderpass, VkOffset2D offset, VkExtent2D extent, std::vector<VkClearValue>& clear_value) {
+		renderpass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		renderpass_begin_info.pNext = NULL;
+		renderpass_begin_info.renderPass = renderpass.get();
+		renderpass_begin_info.renderArea = { offset, extent }; // VkRect2D
+		renderpass_begin_info.clearValueCount = static_cast<uint32_t>(clear_value.size());
+		renderpass_begin_info.pClearValues = clear_value.data();
 
-        subpass_begin_info.sType = VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO;
-        subpass_begin_info.pNext = NULL;
-        subpass_begin_info.contents = VK_SUBPASS_CONTENTS_INLINE;
+		subpass_begin_info.sType = VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO;
+		subpass_begin_info.pNext = NULL;
+		subpass_begin_info.contents = VK_SUBPASS_CONTENTS_INLINE;
 
-        vkCmdBeginRenderPass2(buffer, &renderpass_begin_info, &subpass_begin_info);
-    }
+		vkCmdBeginRenderPass2(buffer, &renderpass_begin_info, &subpass_begin_info);
+	}
 
-    void end_renderpass() const {
-        vkCmdEndRenderPass(buffer);
-    }
+	void end_renderpass() const {
+		vkCmdEndRenderPass(buffer);
+	}
 
-    void next_subpass(VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE) const {
-        vkCmdNextSubpass(buffer, contents);
-    }
+	void next_subpass(VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE) const {
+		vkCmdNextSubpass(buffer, contents);
+	}
 
-    // end recording and submit command buffer to queue
-    // (overload with fence)
-    void submit(Fence& fence) {
-        // stop command buffer recording state (thus triggering executable state)
-        vkEndCommandBuffer(buffer);
+	// end recording and submit command buffer to queue
+	// (overload with fence)
+	void submit(Fence& fence) {
+		// stop command buffer recording state (thus triggering executable state)
+		vkEndCommandBuffer(buffer);
 
-        // submit to queue (triggers command buffer pending state)
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.pCommandBuffers = &buffer;
-        submit_info.commandBufferCount = 1;
+		// submit to queue (triggers command buffer pending state)
+		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit_info.pCommandBuffers = &buffer;
+		submit_info.commandBufferCount = 1;
 
-        if (usage == QueueFamily::GRAPHICS_QUEUE) {
-            vkQueueSubmit(graphics_queue, 1, &submit_info, fence.get());
-        }
-        else if (usage == QueueFamily::COMPUTE_QUEUE) {
-            vkQueueSubmit(compute_queue, 1, &submit_info, fence.get());
-        }
-        else if (usage == QueueFamily::TRANSFER_QUEUE) {
-            vkQueueSubmit(transfer_queue, 1, &submit_info, fence.get());
-        }
-    }
+		if (usage == QueueFamily::GRAPHICS_QUEUE) {
+			vkQueueSubmit(graphics_queue, 1, &submit_info, fence.get());
+		}
+		else if (usage == QueueFamily::COMPUTE_QUEUE) {
+			vkQueueSubmit(compute_queue, 1, &submit_info, fence.get());
+		}
+		else if (usage == QueueFamily::TRANSFER_QUEUE) {
+			vkQueueSubmit(transfer_queue, 1, &submit_info, fence.get());
+		}
+	}
 
-    // end recording and submit command buffer to queue
-    // (overload without fence)
-    void submit() {
-        // stop command buffer recording state (thus triggering executable state)
-        vkEndCommandBuffer(buffer);
+	// end recording and submit command buffer to queue
+	// (overload without fence)
+	void submit() {
+		// stop command buffer recording state (thus triggering executable state)
+		vkEndCommandBuffer(buffer);
 
-        // submit to queue (triggers command buffer pending state)
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.pCommandBuffers = &buffer;
-        submit_info.commandBufferCount = 1;
+		// submit to queue (triggers command buffer pending state)
+		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit_info.pCommandBuffers = &buffer;
+		submit_info.commandBufferCount = 1;
 
-        if (usage == QueueFamily::GRAPHICS_QUEUE) {
-            vkQueueSubmit(graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
-        }
-        else if (usage == QueueFamily::COMPUTE_QUEUE) {
-            vkQueueSubmit(compute_queue, 1, &submit_info, VK_NULL_HANDLE);
-        }
-        else if (usage == QueueFamily::TRANSFER_QUEUE) {
-            vkQueueSubmit(transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
-        }
-    }
+		if (usage == QueueFamily::GRAPHICS_QUEUE) {
+			vkQueueSubmit(graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+		}
+		else if (usage == QueueFamily::COMPUTE_QUEUE) {
+			vkQueueSubmit(compute_queue, 1, &submit_info, VK_NULL_HANDLE);
+		}
+		else if (usage == QueueFamily::TRANSFER_QUEUE) {
+			vkQueueSubmit(transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
+		}
+	}
 
-    VkCommandBuffer& get() { return buffer; }
+	VkCommandBuffer& get() { return buffer; }
 
-    // shorthand for:
-    // bind compute pipeline -> bind descriptor set -> push constants -> dispatch -> end recording -> submit
-    // (note: a fence will only be used if fence_timeout_nanosec != 0)
-    void compute(ComputePipeline& pipeline, uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1, uint64_t fence_timeout_nanosec = 100000) {
-        bind_pipeline(pipeline);
-        bind_descriptor_set(*pipeline.get_set());
-        push_constants(*pipeline.get_constants());
-        dispatch(global_size_x, global_size_y, global_size_z);
-        if (fence_timeout_nanosec != 0) {
-            Fence fence(*device, false);
-            submit(fence);
-            while (!fence.signaled()) {
-                fence.wait(fence_timeout_nanosec);
-            };
-        }
-        else {
-            submit();
-        }
-        reset();
-    }
+	// shorthand for:
+	// bind compute pipeline -> bind descriptor set -> push constants -> dispatch -> end recording -> submit
+	// (note: a fence will only be used if fence_timeout_nanosec != 0);
+	// the boolean direct_submit can be set to false in case multiple dispatches need to be added before a final submit
+	void compute(ComputePipeline& pipeline, uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1, bool direct_submit = true, uint64_t fence_timeout_nanosec = 100000) {
+		Log::debug("executing GPU compute (bind pipeline -> bind descriptor set -> bind push constants -> dispatch -> submit -> wait for fences)");
+		bind_pipeline(pipeline);
+		bind_descriptor_set(*pipeline.get_set());
+		bind_constants(*pipeline.get_constants());
+		dispatch(global_size_x, global_size_y, global_size_z);
+		if (direct_submit) {
+			if (fence_timeout_nanosec != 0) {
+				Fence fence(*device, false);
+				submit(fence);
+				while (!fence.signaled()) {
+					fence.wait(fence_timeout_nanosec);
+				};
+			}
+			else {
+				submit();
+			}
+			reset();
+		}
+		Log::debug("compute execution finished");
+	}
 
-    // start command buffer recording state
-    void begin_recording() {
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.pNext = NULL;
-        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // specifies that each recording of the command buffer will only be submitted once, and the command buffer will be reset and recorded again between each submission
-        begin_info.pInheritanceInfo = nullptr; // pointer to a VkCommandBufferInheritanceInfo struct; only relevant for secondary command buffers
-        VkResult result = vkBeginCommandBuffer(buffer, &begin_info);
-        if (result == VK_SUCCESS) {
-            Log::debug("beginning command buffer recording state");
-        }
-        else {
-            Log::warning("failed to begin command buffer recording state (VkResult = ", result, ")");
-        }
-    }
+	// start command buffer recording state
+	void begin_recording() {
+		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin_info.pNext = NULL;
+		begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // specifies that each recording of the command buffer will only be submitted once, and the command buffer will be reset and recorded again between each submission
+		begin_info.pInheritanceInfo = nullptr; // pointer to a VkCommandBufferInheritanceInfo struct; only relevant for secondary command buffers
+		VkResult result = vkBeginCommandBuffer(buffer, &begin_info);
+		if (result == VK_SUCCESS) {
+			Log::debug("beginning command buffer recording state");
+		}
+		else {
+			Log::warning("failed to begin command buffer recording state (VkResult = ", result, ")");
+		}
+	}
 
 protected:
-    VkCommandBuffer buffer = nullptr;
-    QueueFamily usage = QueueFamily::UNKNOWN_QUEUE;
-    VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
-    VkPipelineLayout pipeline_layout = nullptr;
-    VkDevice logical = nullptr;
-    Device* device = nullptr;
-    VkQueue graphics_queue = nullptr;
-    VkQueue compute_queue = nullptr;
-    VkQueue transfer_queue = nullptr;
-    VkCommandBufferAllocateInfo allocate_info = {};
-    VkCommandBufferBeginInfo begin_info = {};
-    VkRenderingInfo rendering_info = {};
-    VkRenderPassBeginInfo renderpass_begin_info = {};
-    VkSubpassBeginInfo subpass_begin_info = {};
-    VkSubmitInfo submit_info = {};
-    VkCommandPool pool = nullptr;
-    uint32_t workgroup_size_x = 0; // only used for compute pipelines
-    uint32_t workgroup_size_y = 0; // only used for compute pipelines
-    uint32_t workgroup_size_z = 0; // only used for compute pipelines
+	VkCommandBuffer buffer = nullptr;
+	QueueFamily usage = QueueFamily::UNKNOWN_QUEUE;
+	VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
+	VkPipelineLayout pipeline_layout = nullptr;
+	VkDevice logical = nullptr;
+	Device* device = nullptr;
+	VkQueue graphics_queue = nullptr;
+	VkQueue compute_queue = nullptr;
+	VkQueue transfer_queue = nullptr;
+	VkCommandBufferAllocateInfo allocate_info = {};
+	VkCommandBufferBeginInfo begin_info = {};
+	VkRenderingInfo rendering_info = {};
+	VkRenderPassBeginInfo renderpass_begin_info = {};
+	VkSubpassBeginInfo subpass_begin_info = {};
+	VkSubmitInfo submit_info = {};
+	VkCommandPool pool = nullptr;
+	uint32_t workgroup_size_x = 0; // only used for compute pipelines
+	uint32_t workgroup_size_y = 0; // only used for compute pipelines
+	uint32_t workgroup_size_z = 0; // only used for compute pipelines
 };
 
 // shared manager for instance, device and command pools as singleton class
 class VulkanManager {
 public:
-    static VulkanManager* make_singleton(const std::vector<const char*>& instance_layer_names,
-        const std::vector<const char*>& instance_extension_names,
-        const std::vector<const char*>& device_extension_names,
-        const VkPhysicalDeviceFeatures& enabled_device_features,
-        uint32_t api_major_version = 1,
-        uint32_t api_minor_version = 3,
-        uint32_t api_patch_version = 0,
-        uint32_t default_device_id = 0) {
-        if (singleton == nullptr) {
-            shared_instance_layer_names = instance_layer_names;
-            shared_instance_extension_names = instance_extension_names;
-            shared_device_extension_names = device_extension_names;
-            shared_enabled_device_features = enabled_device_features;
-            shared_default_device_id = default_device_id;
-            shared_api_major_version = api_major_version;
-            shared_api_minor_version = api_minor_version;
-            shared_api_patch_version = api_patch_version;
+	static VulkanManager* make_singleton(const std::vector<const char*>& instance_layer_names,
+		const std::vector<const char*>& instance_extension_names,
+		const std::vector<const char*>& device_extension_names,
+		const VkPhysicalDeviceFeatures& enabled_device_features,
+		uint32_t api_major_version = 1,
+		uint32_t api_minor_version = 3,
+		uint32_t api_patch_version = 0,
+		uint32_t default_device_id = 0) {
+		if (singleton == nullptr) {
+			shared_instance_layer_names = instance_layer_names;
+			shared_instance_extension_names = instance_extension_names;
+			shared_device_extension_names = device_extension_names;
+			shared_enabled_device_features = enabled_device_features;
+			shared_default_device_id = default_device_id;
+			shared_api_major_version = api_major_version;
+			shared_api_minor_version = api_minor_version;
+			shared_api_patch_version = api_patch_version;
 
-            // calling the private constructor
-            singleton = new VulkanManager;
+			// calling the private constructor
+			singleton = new VulkanManager;
 
-            // register static destructor
-            std::atexit(&VulkanManager::destroy_singleton);
-        }
-        return singleton;
-    }
+			// register static destructor
+			std::atexit(&VulkanManager::destroy_singleton);
+		}
+		return singleton;
+	}
 
-    // create a singleton with default device features for compute
-    static VulkanManager* make_singleton_for_compute(
-        uint32_t api_major_version = 1,
-        uint32_t api_minor_version = 3,
-        uint32_t api_patch_version = 0,
-        uint32_t default_device_id = 0) {
-        if (singleton == nullptr) {
-            // enable instance layers
-            shared_instance_layer_names = {};
-            #ifdef _DEBUG
-            shared_instance_layer_names.push_back("VK_LAYER_KHRONOS_validation");
-            #endif		
+	// create a singleton with default device features for compute
+	static VulkanManager* make_singleton_for_compute(
+		uint32_t api_major_version = 1,
+		uint32_t api_minor_version = 3,
+		uint32_t api_patch_version = 0,
+		uint32_t default_device_id = 0) {
+		if (singleton == nullptr) {
+			// enable instance layers
+			shared_instance_layer_names = {};
+#ifdef _DEBUG
+			shared_instance_layer_names.push_back("VK_LAYER_KHRONOS_validation");
+#endif		
 
-            // enable instance extensions
-            shared_instance_extension_names = {
-                "VK_KHR_get_physical_device_properties2"
-            };
+			// enable instance extensions
+			shared_instance_extension_names = {
+				"VK_KHR_get_physical_device_properties2"
+			};
 
-            // enable device extensions (if available)
-            shared_device_extension_names = {
-                "VK_KHR_synchronization2",
-                "VK_EXT_descriptor_indexing",
-                "VK_EXT_shader_atomic_float",
-                "VK_KHR_storage_buffer_storage_class",
-                "VK_KHR_uniform_buffer_standard_layout",
-                "VK_KHR_shader_non_semantic_info",
-                "VK_KHR_push_descriptor",
-                "VK_KHR_shader_float16_int8",
-                "VK_KHR_shader_int64",
-                "VK_KHR_shader_float64",
-                "VK_EXT_shader_atomic_float16_add"
-            };
+			// enable device extensions (if available)
+			shared_device_extension_names = {
+				"VK_KHR_synchronization2",
+				"VK_EXT_descriptor_indexing",
+				"VK_EXT_shader_atomic_float",
+				"VK_KHR_storage_buffer_storage_class",
+				"VK_KHR_uniform_buffer_standard_layout",
+				"VK_KHR_shader_non_semantic_info",
+				"VK_KHR_push_descriptor",
+				"VK_KHR_shader_float16_int8"
+				//"VK_KHR_shader_int64",
+				//"VK_KHR_shader_float64",
+				//"VK_EXT_shader_atomic_float16_add"
+			};
 
-            // enable device features
-            shared_enabled_device_features = {};
-            shared_enabled_device_features.robustBufferAccess = VK_TRUE;
-            shared_enabled_device_features.sparseBinding = VK_TRUE;
-            shared_enabled_device_features.sparseResidencyBuffer = VK_TRUE;
-            shared_enabled_device_features.shaderInt16 = VK_TRUE;
-            shared_enabled_device_features.shaderInt64 = VK_TRUE;
-            shared_enabled_device_features.shaderFloat64 = VK_TRUE;
+			// enable device features
+			shared_enabled_device_features = {};
+			shared_enabled_device_features.robustBufferAccess = VK_TRUE;
+			shared_enabled_device_features.sparseBinding = VK_TRUE;
+			shared_enabled_device_features.sparseResidencyBuffer = VK_TRUE;
+			shared_enabled_device_features.shaderInt16 = VK_TRUE;
+			shared_enabled_device_features.shaderInt64 = VK_TRUE;
+			shared_enabled_device_features.shaderFloat64 = VK_TRUE;
 
-            shared_default_device_id = default_device_id;
-            shared_api_major_version = api_major_version;
-            shared_api_minor_version = api_minor_version;
-            shared_api_patch_version = api_patch_version;
+			shared_default_device_id = default_device_id;
+			shared_api_major_version = api_major_version;
+			shared_api_minor_version = api_minor_version;
+			shared_api_patch_version = api_patch_version;
 
-            // calling the private constructor
-            singleton = new VulkanManager();
+			// calling the private constructor
+			singleton = new VulkanManager();
 
-            // register static destructor
-            std::atexit(&VulkanManager::destroy_singleton);
-        }
-        return singleton;
-    }
+			// register static destructor
+			std::atexit(&VulkanManager::destroy_singleton);
+		}
+		return singleton;
+	}
 
-    static Device& get_device() { return *device; }
-    static const Device* get_device_ptr() { return device; }
-    static const Instance& get_instance() { return *instance; }
-    static VulkanManager* get_singleton() { return singleton; }
-    static CommandPool& get_command_pool_graphics() { return *shared_command_pool_graphics; }
-    static CommandPool& get_command_pool_compute() { return *shared_command_pool_compute; }
-    static CommandPool& get_command_pool_transfer() { return *shared_command_pool_transfer; }
-    static const VkPhysicalDeviceFeatures& get_enabled_device_features() { return shared_enabled_device_features; }
+	static Device& get_device() { return *device; }
+	static const Device* get_device_ptr() { return device; }
+	static const Instance& get_instance() { return *instance; }
+	static VulkanManager* get_singleton() { return singleton; }
+	static CommandPool& get_command_pool_graphics() { return *shared_command_pool_graphics; }
+	static CommandPool& get_command_pool_compute() { return *shared_command_pool_compute; }
+	static CommandPool& get_command_pool_transfer() { return *shared_command_pool_transfer; }
+	static const VkPhysicalDeviceFeatures& get_enabled_device_features() { return shared_enabled_device_features; }
 
 private:
-   // shared members
-    static Instance* instance;
-    static Device* device;
-    static VulkanManager* singleton;
-    static std::vector<const char*> shared_instance_layer_names;
-    static std::vector<const char*> shared_instance_extension_names;
-    static std::vector<const char*> shared_device_extension_names;
-    static VkPhysicalDeviceFeatures shared_enabled_device_features;
-    static uint32_t shared_default_device_id;
-    static uint32_t shared_api_major_version;
-    static uint32_t shared_api_minor_version;
-    static uint32_t shared_api_patch_version;
-    static CommandPool* shared_command_pool_compute;
-    static CommandPool* shared_command_pool_graphics;
-    static CommandPool* shared_command_pool_transfer;
+	// shared members
+	static Instance* instance;
+	static Device* device;
+	static VulkanManager* singleton;
+	static std::vector<const char*> shared_instance_layer_names;
+	static std::vector<const char*> shared_instance_extension_names;
+	static std::vector<const char*> shared_device_extension_names;
+	static VkPhysicalDeviceFeatures shared_enabled_device_features;
+	static uint32_t shared_default_device_id;
+	static uint32_t shared_api_major_version;
+	static uint32_t shared_api_minor_version;
+	static uint32_t shared_api_patch_version;
+	static CommandPool* shared_command_pool_compute;
+	static CommandPool* shared_command_pool_graphics;
+	static CommandPool* shared_command_pool_transfer;
 
-    // private constructor: one-time initialization on first call of get_singleton()
-    VulkanManager() {
-        instance = new Instance();
+	// private constructor: one-time initialization on first call of get_singleton()
+	VulkanManager() {
+		instance = new Instance();
 
-        // finalize instance creation
-        instance->set_api_version(shared_api_major_version, shared_api_minor_version, shared_api_patch_version);
-        instance->set_application("Shared Vulkan Manager", 1, 0, 0);
-        instance->enable_extensions(shared_instance_extension_names);
-        instance->enable_layers(shared_instance_layer_names);
-        instance->create();
+		// finalize instance creation
+		instance->set_api_version(shared_api_major_version, shared_api_minor_version, shared_api_patch_version);
+		instance->set_application("Shared Vulkan Manager", 1, 0, 0);
+		instance->enable_extensions(shared_instance_extension_names);
+		instance->enable_layers(shared_instance_layer_names);
+		instance->create();
 
-        // finalize device creation
-        device = new Device(*instance, shared_enabled_device_features, shared_device_extension_names, shared_default_device_id);
+		// finalize device creation
+		device = new Device(*instance, shared_enabled_device_features, shared_device_extension_names, shared_default_device_id);
 
-        // setup command pools
-        Log::debug("creating new graphics command pool");
-        shared_command_pool_graphics = new CommandPool(*device, QueueFamily::GRAPHICS_QUEUE);
-        Log::debug("creating new compute command pool");
-        shared_command_pool_compute = new CommandPool(*device, QueueFamily::COMPUTE_QUEUE);
-        Log::debug("creating new transfer command pool");
-        shared_command_pool_transfer = new CommandPool(*device, QueueFamily::TRANSFER_QUEUE);
-    }
+		// setup command pools
+		Log::debug("creating new graphics command pool");
+		shared_command_pool_graphics = new CommandPool(*device, QueueFamily::GRAPHICS_QUEUE);
+		Log::debug("creating new compute command pool");
+		shared_command_pool_compute = new CommandPool(*device, QueueFamily::COMPUTE_QUEUE);
+		Log::debug("creating new transfer command pool");
+		shared_command_pool_transfer = new CommandPool(*device, QueueFamily::TRANSFER_QUEUE);
+	}
 
-    // private custom destructor method
-    static void destroy_singleton() {
-        if (singleton != nullptr) {
-            Log::debug("singleton manager destructor invoked");
-            delete shared_command_pool_graphics;    shared_command_pool_graphics = nullptr;
-            delete shared_command_pool_compute;     shared_command_pool_compute = nullptr;
-            delete shared_command_pool_transfer;    shared_command_pool_transfer = nullptr;
-            delete device;                          device = nullptr;
-            delete instance;                        instance = nullptr;
-            delete singleton;                       singleton = nullptr;
-        }
-    }
+	// private custom destructor method
+	static void destroy_singleton() {
+		if (singleton != nullptr) {
+			Log::debug("singleton manager destructor invoked");
+			delete shared_command_pool_graphics;    shared_command_pool_graphics = nullptr;
+			delete shared_command_pool_compute;     shared_command_pool_compute = nullptr;
+			delete shared_command_pool_transfer;    shared_command_pool_transfer = nullptr;
+			delete device;                          device = nullptr;
+			delete instance;                        instance = nullptr;
+			delete singleton;                       singleton = nullptr;
+		}
+	}
 };
 
 // initialization of VulkanManager static members from outside the class

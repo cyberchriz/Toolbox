@@ -2,8 +2,6 @@
 // author: Christian Suer (github: 'cyberchriz')
 
 #version 450
-
-#define MAX_UNIFORM_SIZE 10
 #define MAX_DIMENSIONS 10
 
 // setup specialization constants
@@ -12,8 +10,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // setup buffers
 layout(set = 0, binding = 0) buffer data_buffer {float data[];};
-layout(set = 0, binding = 1) uniform shape_buffer {uint shape[MAX_UNIFORM_SIZE];};
-layout(set = 0, binding = 2) uniform subspace_buffer {uint subspace[MAX_UNIFORM_SIZE];};
+layout(set = 0, binding = 1) buffer shape_buffer {uint shape[];};
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
@@ -21,50 +18,27 @@ layout(push_constant) uniform push_constants {
     uint dimensions;
 };
 
-// setup global variables
-uint array_index[MAX_DIMENSIONS];
-
-// Helper function to convert a flat index back to a multidimensional index
-// note: as a simple scalar GLSL will pass the flat_index by value, so the passed variable remains unchanged;
-// however, the result_array_index is passed by reference, so it will be modified (as intended)
-void multi_index(uint flat_index, uint result_array_index[MAX_DIMENSIONS]) {
-    for (uint i = 0; i < dimensions; ++i) {
-        result_array_index[i] = flat_index / subspace[i];
-        flat_index = flat_index % subspace[i];
-    }
-}
 
 // main function
 void main() {
-    uint flat_index = gl_GlobalInvocationID.x;
+    if (gl_GlobalInvocationID.x < N) {
 
-    if (flat_index < N) {
-        // for 1d arrays return a vector of all ones
-        if (dimensions == 1) {
-            data[flat_index] = 1.0;
+        // get the multidimensional index of the data buffer
+        uint array_index[MAX_DIMENSIONS];
+        uint flat_index = gl_GlobalInvocationID.x;
+        for (int i = int(dimensions) - 1; i >= 0; --i) {
+            array_index[i] = flat_index % shape[i];
+            flat_index = flat_index / shape[i];
         }
-        // for mutidimensional arrays: check if the indices of the other dimensions are equal
-        else {
-            // get the multidimensional index of the data buffer
-            multi_index(flat_index, array_index);
 
-            // check if indices of the other dimensions are equal
-            uint row_index = array_index[0];
-            bool indices_equal = true;
-            for (uint i = 1; i < dimensions; ++i) {
-                if (array_index[i] != row_index) {
-                    indices_equal = false;
-                    break;
-                }
-            }
-            if (indices_equal) {
-                // set the data to 1.0
-                data[flat_index] = 1.0;
-            }
-            else {
-                // set the data to 0.0
-                data[flat_index] = 0.0;
+        // check if indices of the other dimensions are equal
+        uint row_index = array_index[0];
+        for (uint i = 1; i < dimensions; i++) {
+            if (array_index[i] != row_index) {
+                data[gl_GlobalInvocationID.x] = 0.0;
+                return;
             }
         }
+        data[gl_GlobalInvocationID.x] = 1.0;
     }
 }

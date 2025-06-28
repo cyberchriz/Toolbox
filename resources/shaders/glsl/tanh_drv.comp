@@ -1,7 +1,7 @@
 // Vulkan/GLSL compute shader
 // author: Christian Suer (github: 'cyberchriz')
 
-#version 450 core
+#version 450
 
 // setup specialization constants
 // in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
@@ -9,28 +9,17 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // setup buffers
 layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer result_buffer {float result[];};
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
     uint N;
-    uint fan_in;
-    uint fan_out;
-    uint seed;
 };
-
-// Simple random float function based on seed
-float random(uint seed) {
-    uint state = seed;
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return float(state & 0xFFFFFFFF) / 4294967295.0;
-}
 
 // main function
 void main() {
     if (gl_GlobalInvocationID.x < N) {
-        // adding the workgroup id to the seed in order to get a different seed for each workgroup
-        data[gl_GlobalInvocationID.x] = random(seed + gl_GlobalInvocationID.x) * sqrt(2.0 / sqrt(fan_in + fan_out));
+        // 1-pow(tanh(x),2)
+        result[gl_GlobalInvocationID.x] = 1 - pow(tanh(data[gl_GlobalInvocationID.x]), 2);
     }
 }

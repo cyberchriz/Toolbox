@@ -6,7 +6,6 @@
 
 #ifndef RANDOM_DISTRIBUTIONS_H
 #define RANDOM_DISTRIBUTIONS_H
-#pragma once
 
 #include <chrono>
 #include <cmath>
@@ -15,7 +14,7 @@
 
 namespace rnd {
 
-	constexpr double PI = 3.1415926535897932384626433;
+    constexpr double PI = 3.1415926535897932384626433;
 
     template<typename T = float> static T gaussian(T mu = 0, T sigma = 1);
     template<typename T = float> static T cauchy(T x_peak = 0, T gamma = 1);

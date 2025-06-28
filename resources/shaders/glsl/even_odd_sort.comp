@@ -1,0 +1,60 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer result_buffer {float result[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N;
+    uint pass;
+    uint ascending; // 1 for ascending, 0 for descending
+};
+
+// main function
+void main() {
+    if (gl_GlobalInvocationID.x < N) {
+
+        // Initialize result with the input data
+        if (pass == 0) {
+            result[gl_GlobalInvocationID.x] = data[gl_GlobalInvocationID.x];
+            barrier(); // Ensure all threads have initialized their result before proceeding
+        }
+
+        // even pass
+        if (pass % 2 == 0 && gl_GlobalInvocationID.x % 2 == 0 && gl_GlobalInvocationID.x + 1 < N) {
+            if (ascending == 1 && result[gl_GlobalInvocationID.x] > result[gl_GlobalInvocationID.x + 1]) {
+                float temp = result[gl_GlobalInvocationID.x];
+                result[gl_GlobalInvocationID.x] = result[gl_GlobalInvocationID.x + 1];
+                result[gl_GlobalInvocationID.x + 1] = temp;
+            }
+            if (ascending == 0 && result[gl_GlobalInvocationID.x] < result[gl_GlobalInvocationID.x + 1]) {
+                float temp = result[gl_GlobalInvocationID.x];
+                result[gl_GlobalInvocationID.x] = result[gl_GlobalInvocationID.x + 1];
+                result[gl_GlobalInvocationID.x + 1] = temp;
+            }
+        }
+
+        // odd pass
+        if (pass % 2 == 1 && gl_GlobalInvocationID.x % 2 == 1 && gl_GlobalInvocationID.x + 1 < N) {
+            if (ascending == 1 && result[gl_GlobalInvocationID.x] > result[gl_GlobalInvocationID.x + 1]) {
+                float temp = result[gl_GlobalInvocationID.x];
+                result[gl_GlobalInvocationID.x] = result[gl_GlobalInvocationID.x + 1];
+                result[gl_GlobalInvocationID.x + 1] = temp;
+            }
+            if (ascending == 0 && result[gl_GlobalInvocationID.x] < result[gl_GlobalInvocationID.x + 1]) {
+                float temp = result[gl_GlobalInvocationID.x];
+                result[gl_GlobalInvocationID.x] = result[gl_GlobalInvocationID.x + 1];
+                result[gl_GlobalInvocationID.x + 1] = temp;
+            }
+        }
+    }
+    memoryBarrier();
+}

@@ -4,10 +4,9 @@
 
 #ifndef TIMELOG_H
 #define TIMELOG_H
-#pragma once
 
-#include <log.h>
 #include <chrono>
+#include <log.h>
 #include <string>
 
 
@@ -20,29 +19,53 @@
 
 class Timer {
 public:
-    double elapsed_microsec() {
+    double elapsed_sec() {
         end = std::chrono::high_resolution_clock::now();
-        return (std::chrono::duration_cast<std::chrono::duration<double>>(end - begin)).count() / 1000;
+        return (std::chrono::duration_cast<std::chrono::duration<double>>(end - begin)).count();
     }
 
     // constructor
     Timer(std::string caller_function = "") : caller_function(caller_function) {
         begin = std::chrono::high_resolution_clock::now();
         if (caller_function == "") {
-            Log::info("timer started");
+            Log::force("timer started");
         }
         else {
-            Log::info("timer started in scope ", caller_function);
+            Log::force("timer started in scope ", caller_function);
         }
     }
 
     void stop() {
-        double elapsed_since_start = elapsed_microsec();
-        if (caller_function == "") {
-            Log::info("timer stopped after ", elapsed_since_start, " microsec");
+        double elapsed = elapsed_sec();
+        if (elapsed > 60) {
+            Log::force("timer in scope ", caller_function == "" ? "<unknown>" : caller_function,
+                " stopped after ", elapsed / 60.0, " minutes");
+        }
+        else if (elapsed > 0.01) {
+            Log::force("timer in scope ", caller_function == "" ? "<unknown>" : caller_function,
+                " stopped after ", elapsed, " seconds");
         }
         else {
-            Log::info("timer in scope ", caller_function, " stopped after ", elapsed_microsec(), " microsec");
+            // convert to milliseconds
+            elapsed *= 1000;
+            if (elapsed > 0.01) {
+                Log::force("timer in scope ", caller_function == "" ? "<unknown>" : caller_function,
+                    " stopped after ", elapsed, " msec");
+            }
+            else {
+                // convert to microseconds
+                elapsed *= 1000;
+                if (elapsed > 0.01) {
+                    Log::force("timer in scope ", caller_function == "" ? "<unknown>" : caller_function,
+                        " stopped after ", elapsed, " µsec");
+                }
+                else {
+                    // convert to nanoseconds
+                    elapsed *= 1000;
+                    Log::force("timer in scope ", caller_function == "" ? "<unknown>" : caller_function,
+                        " stopped after ", elapsed, " nanosec");
+                }
+            }
         }
         stopped = true;
         begin = std::chrono::high_resolution_clock::now();
@@ -55,11 +78,9 @@ public:
 
     // destructor
     ~Timer() {
-        double elapsed_since_start = elapsed_microsec();
-        if (!stopped) {
-            Log::info("end of timer by reaching end of scope ", caller_function, ": ", elapsed_since_start, " microsec");
-        }
+        if (!stopped) { stop(); }
     }
+
 private:
     std::chrono::high_resolution_clock::time_point begin, end;
     bool stopped = false;

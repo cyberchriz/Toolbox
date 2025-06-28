@@ -17,13 +17,12 @@ layout(push_constant) uniform push_constants {
     float ratio;
 };
 
-// Simple random float function based on seed
+// pseudo-random number generator as a "Permuted Congruential Generator" (PCG);
+// results are in range [0,1]
 float random(uint seed) {
-    uint state = seed;
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return float(state & 0xFFFFFFFF) / 4294967295.0;
+    uint state = seed * 747795U + 2891234U;
+    uint word = ((state >> ((state >> 28U) + 4U)) ^ state) * 2778037U;
+    return float(((word >> 22U) ^ word) & 0xFFFFFFFF) / 4294967295.0;
 }
 
 // main function

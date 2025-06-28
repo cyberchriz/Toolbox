@@ -11,35 +11,34 @@ the probability of a random variable taking on a particular value. */
 
 #ifndef PROBABILITY_DENSITY_FUNCTIONS_H
 #define PROBABILITY_DENSITY_FUNCTIONS_H
-#pragma once
 
 #include <cmath>
 
 
 template<typename T>
-class PdfObject{
-    public: 
-        static_assert(std::is_same<T, float>::value ||
-                      std::is_same<T, double>::value,
-                      "T must be either type <float> or <double>");       
-        // methods
-        static T gaussian(T x_val,T mu=0, T sigma=1);
-        static T cauchy(T x_val,T x_peak, T gamma);
-        static T laplace(T x_val, T mu=0, T sigma=1);
-        static T pareto(T x_val, T alpha=1, T tail_index=1);
-        static T lomax(T x_val, T alpha=1, T tail_index=1);
-        static T F_distribution(T x_val, T d1, T d2);
-        static T poisson(T k, T lambda);
-        // constructor
-        PdfObject(){};
-        // destructor
-        ~PdfObject(){};
+class PdfObject {
+public:
+    static_assert(std::is_same<T, float>::value ||
+        std::is_same<T, double>::value,
+        "T must be either type <float> or <double>");
+// methods
+    static T gaussian(T x_val, T mu = 0, T sigma = 1);
+    static T cauchy(T x_val, T x_peak, T gamma);
+    static T laplace(T x_val, T mu = 0, T sigma = 1);
+    static T pareto(T x_val, T alpha = 1, T tail_index = 1);
+    static T lomax(T x_val, T alpha = 1, T tail_index = 1);
+    static T F_distribution(T x_val, T d1, T d2);
+    static T poisson(T k, T lambda);
+    // constructor
+    PdfObject() {};
+    // destructor
+    ~PdfObject() {};
 };
 
 // ------------------------------------------------------------------
 // ALIAS CLASS
 template<typename T>
-class pdf:public PdfObject<T>{};
+class pdf :public PdfObject<T> {};
 // ------------------------------------------------------------------
 
 
@@ -64,7 +63,7 @@ T PdfObject<T>::cauchy(T x_val, T x_peak, T gamma) {
 // scale factor default: sigma/sqrt(2)=0.707106781
 template<typename T>
 T PdfObject<T>::laplace(T x_val, T mu, T sigma) {
-    static double scale_factor= 0.707106781;
+    static double scale_factor = 0.707106781;
     scale_factor = sigma / sqrt(2);
     return exp(-fabs(x_val - mu) / scale_factor) / (2 * scale_factor);
 }
@@ -110,9 +109,9 @@ T PdfObject<T>::poisson(T k, T lambda) {
 template<typename T>
 T gamma_helper(T x) {
     // Constants
-    static const T P[] = { -1.716185138865495, 24.76565080557592,
+    static const T P[] = {-1.716185138865495, 24.76565080557592,
         -379.80425647094563, 629.3311553128184, 866.9662027904133,
-        -31451.272968848367, -36144.413418691172, 66456.14382024054 };
+        -31451.272968848367, -36144.413418691172, 66456.14382024054};
     static const int N = sizeof(P) / sizeof(T);
     static const T SQRT_TWO_PI = sqrt(2 * M_PI);
 

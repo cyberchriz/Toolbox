@@ -13,35 +13,34 @@
 #ifdef MEMLOG
 
 // dependencies
-#pragma once
 #include <cstdlib>
 #include <iostream>
 #include <unordered_map>
 
 // global variables
-    
+
 std::unordered_map<void*, std::size_t> allocated_memory;
-int total_allocation=0;
+int total_allocation = 0;
 
     // operator 'new' override
-    void* operator new(std::size_t size){
-        void* ptr = std::malloc(size);
-        allocated_memory.insert(ptr, size);
-        total_allocation+=size;
-        std::cout << " allocated " << size << " bytes at address " << ptr;
-        std::cout << " [total: " << total_allocation << " bytes]" << std::endl;
-        return ptr;
-    }
+void* operator new(std::size_t size) {
+    void* ptr = std::malloc(size);
+    allocated_memory.insert(ptr, size);
+    total_allocation += size;
+    std::cout << " allocated " << size << " bytes at address " << ptr;
+    std::cout << " [total: " << total_allocation << " bytes]" << std::endl;
+    return ptr;
+}
 
-    // operator 'delete' override
-    void operator delete(void* ptr) noexcept {
-        std::size_t size = allocated_memory[ptr];
-        total_allocation-=size;
-        std::cout << " freed " << size << " bytes at address " << ptr;
-        std::cout << " [total: " << total_allocation << " bytes]" << std::endl;
-        allocated_memory.erase(ptr);
-        std::free(ptr);
-    }
+// operator 'delete' override
+void operator delete(void* ptr) noexcept {
+    std::size_t size = allocated_memory[ptr];
+    total_allocation -= size;
+    std::cout << " freed " << size << " bytes at address " << ptr;
+    std::cout << " [total: " << total_allocation << " bytes]" << std::endl;
+    allocated_memory.erase(ptr);
+    std::free(ptr);
+}
 
 #endif
 

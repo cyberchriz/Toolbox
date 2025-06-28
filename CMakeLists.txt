@@ -66,22 +66,24 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 
-set(PROJECT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src" CACHE PATH "Location of project source files")
-set(PROJECT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE PATH "Location of project public header files")
-set(PROJECT_ENTRYPOINT "${PROJECT_SOURCE_DIR}/main.cpp" CACHE FILEPATH "Main entry point source file for the executable")
-set(PROJECT_RESOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources" CACHE PATH "Location of project resources (e.g., shaders, images)")
-set(PROJECT_GLSL_DIR "${PROJECT_RESOURCES_DIR}/shaders/glsl" CACHE PATH "Folder for GLSL shaders")
-set(PROJECT_SPIRV_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders/spirv" CACHE PATH "Folder for compiled SPIR-V files (in build dir)")
+set(PROJECT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(PROJECT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(PROJECT_ENTRYPOINT "${PROJECT_SOURCE_DIR}/main.cpp")
+set(PROJECT_RESOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources")
+set(PROJECT_GLSL_DIR "${PROJECT_RESOURCES_DIR}/shaders/glsl")
+set(PROJECT_SPIRV_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders/spirv")
 
 # --- Executable Target ---
 message(STATUS "Defining executable target: ${PROJECT_NAME}")
 add_executable(${PROJECT_NAME} "")
 
 # --- Source Files ---
+message(STATUS "DEBUG: Using PROJECT_SOURCE_DIR = ${PROJECT_SOURCE_DIR}")
 if(EXISTS "${PROJECT_SOURCE_DIR}")
     file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/*.cpp" "${PROJECT_SOURCE_DIR}/*.cxx" "${PROJECT_SOURCE_DIR}/*.cc" "${PROJECT_SOURCE_DIR}/*.c"
     )
+    message(STATUS "DEBUG: Found source files: ${PROJECT_SOURCES}")
     if(EXISTS "${PROJECT_ENTRYPOINT}")
         if(NOT PROJECT_ENTRYPOINT IN_LIST PROJECT_SOURCES)
             list(APPEND PROJECT_SOURCES ${PROJECT_ENTRYPOINT}) # Ensure entry point is included

@@ -1,0 +1,79 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// default constants
+#define MAX_DIMENSIONS 10
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer data_shape_buffer {uint data_shape[];};
+
+layout(set = 0, binding = 2) buffer other_buffer {float other[];};
+layout(set = 0, binding = 3) buffer other_shape_buffer {uint other_shape[];};
+
+layout(set = 0, binding = 4) buffer result_buffer {float result[];};
+layout(set = 0, binding = 5) buffer result_shape_buffer {uint result_shape[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint data_dim;      // number of dimensions of the data array
+    uint other_dim;     // number of dimensions of the 'other' array
+    uint result_dim;    // number of dimensions of the result array
+    uint data_N;        // total number of elements in the source array
+    uint result_N;      // total number of elements in the result array
+    uint axis;          // the axis along which the concatenation takes place
+};
+
+// main function
+void main() {
+    if (gl_GlobalInvocationID.x < result_N) {
+
+        // get multidimensional index of 'result' for the current invocation
+        uint result_array_index[MAX_DIMENSIONS];
+        uint result_flat_index = gl_GlobalInvocationID.x;
+        for (int i = int(result_dim) - 1; i >= 0; --i) {
+            result_array_index[i] = result_flat_index % result_shape[i];
+            result_flat_index = result_flat_index / result_shape[i];
+        }
+
+        bool source_is_other = false;
+        if (axis > data_dim && result_array_index[axis] > 0) {
+            source_is_other = true;
+        }
+        else {
+            for (uint i = 0; i < data_dim; i++) {
+                if (result_array_index[i] >= data_shape[i]) {
+                    source_is_other = true;
+                }
+            }
+        }
+
+        if (source_is_other) {
+            if (axis > data_dim && result_array_index[axis] > 0) {
+                result_array_index[axis] -= 1;
+            }
+            else {
+                result_array_index[axis] -= data_shape[axis];
+            }
+            uint other_flat_index = 0;
+            for (uint i = 0; i < other_dim; i++) {
+                other_flat_index = other_flat_index * other_shape[i] + result_array_index[i];
+            }
+            result[gl_GlobalInvocationID.x] = other[other_flat_index];
+        }
+        else {
+            uint data_flat_index = 0;
+            for (uint i = 0; i < data_dim; i++) {
+                data_flat_index = data_flat_index * data_shape[i] + result_array_index[i];
+            }
+            result[gl_GlobalInvocationID.x] = data[data_flat_index];
+        }
+    }
+}
+

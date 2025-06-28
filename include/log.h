@@ -1,6 +1,5 @@
 #ifndef LOG_H
 #define LOG_H
-#pragma once
 
 #ifdef _RELEASE
 #define DEFAULT_LEVEL LogLevel::LEVEL_ERROR
@@ -15,8 +14,8 @@
 #include <iosfwd>
 #include <iostream>
 #include <sstream>
-#include <string>
 #include <stdexcept>
+#include <string>
 
 enum LogLevel {
     LEVEL_ERROR,
@@ -33,6 +32,7 @@ public:
     template <typename... Args> static void warning(Args&&... args);
     template <typename... Args> static void info(Args&&... args);
     template <typename... Args> static void debug(Args&&... args);
+    template <typename... Args> static void force(Args&&... args);
     static void set_level(LogLevel level);
     static void set_filepath(const std::string& filepath);
     static void to_console(bool active = true);
@@ -46,7 +46,7 @@ private:
     static LogLevel log_level;
     static bool log_to_console;
     static bool log_to_file;
-	static bool exit_on_error;
+    static bool exit_on_error;
     static std::string log_filepath;
     template <typename Arg> static void concatArgs(std::stringstream& stream, Arg&& arg);
     template <typename First, typename... Args> static void concatArgs(std::stringstream& stream, First&& first, Args&&... args);
@@ -64,12 +64,12 @@ static void Log::error(Args&&... args) {
     concatArgs(stream, std::forward<Args>(args)...);
     std::string log_message = "[ERROR]:   \033[31m" + stream.str() + "\033[0m"; // red
     write_log(log_message);
-	if (exit_on_error) {
+    if (exit_on_error) {
         exit(EXIT_FAILURE);
-	}
-	else {
-		throw std::runtime_error(log_message);
-	}
+    }
+    else {
+        throw std::runtime_error(log_message);
+    }
 }
 
 template <typename... Args>
@@ -100,9 +100,17 @@ static void Log::debug(Args&&... args) {
     else if (log_level >= LogLevel::LEVEL_DEBUG) {
         std::stringstream stream;
         concatArgs(stream, std::forward<Args>(args)...);
-        std::string log_message = "[ERROR]:   \033[34m" + stream.str() + "\033[0m"; // blue
+        std::string log_message = "[DEBUG]:   \033[34m" + stream.str() + "\033[0m"; // blue
         write_log(log_message);
     }
+}
+
+template <typename... Args>
+static void Log::force(Args&&... args) {
+    std::stringstream stream;
+    concatArgs(stream, std::forward<Args>(args)...);
+    std::string log_message = stream.str();
+    write_log(log_message);
 }
 
 void Log::set_level(LogLevel level) {

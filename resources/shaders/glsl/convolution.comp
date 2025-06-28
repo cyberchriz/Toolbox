@@ -1,0 +1,208 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// default constants
+#define MAX_DIMENSIONS 10
+#define MAX_KERNEL_SIZE 25 // maximum kernel size for use of shared memory (global kernel size is not limited)
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer data_shape_buffer {uint data_shape[];};
+layout(set = 0, binding = 2) buffer kernel_buffer {float kernel[];};
+layout(set = 0, binding = 3) buffer kernel_shape_buffer {uint kernel_shape[];};
+layout(set = 0, binding = 4) buffer result_buffer {float result[];};
+layout(set = 0, binding = 5) buffer result_shape_buffer {uint result_shape[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint dimensions;
+    uint data_N;
+    uint result_N;
+    uint kernel_N;
+    uint padding_amount;
+    float padding_value;
+};
+
+// declare shared local memory arrays
+shared uint shared_data_shape[MAX_DIMENSIONS];
+shared uint shared_kernel_shape[MAX_DIMENSIONS];
+shared uint shared_result_shape[MAX_DIMENSIONS];
+shared float shared_kernel[MAX_KERNEL_SIZE];
+
+// main function
+void main() {
+
+    if (gl_GlobalInvocationID.x < result_N) {
+        
+        // load frequently used arrays into local shared memory
+        if (gl_LocalInvocationID.x < dimensions) {
+            shared_data_shape[gl_LocalInvocationID.x] = data_shape[gl_LocalInvocationID.x];
+            shared_kernel_shape[gl_LocalInvocationID.x] = kernel_shape[gl_LocalInvocationID.x];
+            shared_result_shape[gl_LocalInvocationID.x] = result_shape[gl_LocalInvocationID.x];
+        }
+
+        // fill the excess shape elements in case there are more dimensions than the workgroup size
+        if (gl_WorkGroupSize.x < dimensions && gl_LocalInvocationID.x == 0) {
+            for (uint i = dimensions; i < MAX_DIMENSIONS; i++) {
+                shared_data_shape[i] = data_shape[i];
+                shared_kernel_shape[i] = kernel_shape[i];
+                shared_result_shape[i] = result_shape[i];
+            }
+        }
+        
+        // store kernel data in shared memory
+        if (kernel_N <= MAX_KERNEL_SIZE) {
+            if (gl_LocalInvocationID.x < kernel_N) {
+                shared_kernel[gl_LocalInvocationID.x] = kernel[gl_LocalInvocationID.x];
+            }
+            // fill the excess kernel elements in case the kernel is larger than the workgroup size
+            if (kernel_N > gl_WorkGroupSize.x && gl_LocalInvocationID.x == 0) {
+                for (uint i = gl_WorkGroupSize.x; i < kernel_N; i++) {
+                    shared_kernel[i] = kernel[i];
+                }
+            }
+        }
+
+        // synchronize threads accross the workgroup
+        barrier();
+        memoryBarrierShared();
+
+        if (dimensions == 1) {
+            
+            uint result_flat_index = gl_GlobalInvocationID.x;    
+
+            // get corresponding data index for left border of kernel position
+            int data_flat_index = int(result_flat_index) - int(padding_amount);
+
+            // cycle over kernel elements
+            float product_sum = 0.0f;
+            if (kernel_N <= MAX_KERNEL_SIZE) {
+                // use the shared kernel array
+                for (uint i = 0; i < kernel_N; i++) {
+                    // check if the current index is within the data boundaries (versus within padding area)
+                    if ((data_flat_index + int(i)) < 0 || (data_flat_index + int(i)) >= int(data_N)) {
+                        product_sum += padding_value * shared_kernel[i];
+                    }
+                    else {
+                        product_sum += data[data_flat_index + i] * shared_kernel[i];
+                    }
+                }
+            }
+            else {
+                // use the global kernel array
+                for (uint i = 0; i < kernel_N; i++) {
+                    // check if the current index is within the data boundaries (versus within padding area)
+                    if ((data_flat_index + int(i)) < 0 || (data_flat_index + int(i)) >= int(data_N)) {
+                        product_sum += padding_value * kernel[i];
+                    }
+                    else {
+                        product_sum += data[data_flat_index + i] * kernel[i];
+                    }
+                }
+            }
+
+            // write the product sum to the result buffer
+            result[gl_GlobalInvocationID.x] = product_sum;
+        }
+
+        // handle 2d and higher dimensional convolutions
+        else {
+            // define local arrays
+            uint data_array_index[MAX_DIMENSIONS];
+            uint kernel_array_index[MAX_DIMENSIONS];
+            uint result_array_index[MAX_DIMENSIONS];
+
+            // get multidimensional index of current item of 'result'
+            uint result_flat_index = gl_GlobalInvocationID.x;
+            for (int i = int(dimensions) - 1; i >= 0; --i) {
+                result_array_index[i] = result_flat_index % shared_result_shape[i];
+                result_flat_index = result_flat_index / shared_result_shape[i];
+            }
+
+            // cycle over kernel elements
+            float product_sum = 0.0f;
+
+            if (kernel_N < MAX_KERNEL_SIZE) {
+                // use the shared kernel array
+                for (uint i = 0; i < kernel_N; i++) {
+                    
+                    // calculate the multidimensional index of the current kernel element
+                    uint kernel_flat_index = i;
+                    for (int j = int(dimensions) - 1; j >= 0; --j) {
+                        kernel_array_index[j] = kernel_flat_index % shared_kernel_shape[j];
+                        kernel_flat_index = kernel_flat_index / shared_kernel_shape[j];
+                    }
+                    // calculate the corresponding data index
+                    // (add kernel offset, substract padding amount)
+                    bool within_boundaries = true;
+                    for (uint j = 0; j < dimensions; j++) {
+                        int index_j = int(result_array_index[j] + kernel_array_index[j]) - int(padding_amount);
+                        if (index_j < 0 || index_j >= int(shared_data_shape[j])) {
+                            within_boundaries = false;
+                        }
+                        else {
+                            data_array_index[j] = uint(index_j);
+                        }
+                    }
+                    if (within_boundaries) {
+                        // calculate the flat index of the current item
+                        uint data_flat_index = 0;
+                        for (uint j = 0; j < dimensions; j++) {
+                            data_flat_index = data_flat_index * shared_data_shape[j] + data_array_index[j];
+                        }
+                        product_sum += data[data_flat_index] * shared_kernel[i];
+                    }
+                    else {
+                        product_sum += padding_value * shared_kernel[i];
+                    }
+                }
+            }
+            else {
+                // use the global kernel array
+                for (uint i = 0; i < kernel_N; i++) {
+            
+                    // calculate the multidimensional index of the current kernel element
+                    uint kernel_flat_index = i;
+                    for (int j = int(dimensions) - 1; j >= 0; --j) {
+                        kernel_array_index[j] = kernel_flat_index % shared_kernel_shape[j];
+                        kernel_flat_index = kernel_flat_index / shared_kernel_shape[j];
+                    }
+
+                    // calculate the corresponding data index
+                    // (add kernel offset, substract padding amount)
+                    bool within_boundaries = true;
+                    for (uint j = 0; j < dimensions; j++) {
+                        int index_j = int(result_array_index[j] + kernel_array_index[j]) - int(padding_amount);
+                        if (index_j < 0 || index_j >= int(shared_data_shape[j])) {
+                            within_boundaries = false;
+                        }
+                        else {
+                            data_array_index[j] = uint(index_j);
+                        }
+                    }
+
+                    if (within_boundaries) {
+                        // calculate the flat index of the current item
+                        uint data_flat_index = 0;
+                        for (uint j = 0; j < dimensions; j++) {
+                            data_flat_index = data_flat_index * shared_data_shape[j] + data_array_index[j];
+                        }
+                        product_sum += data[data_flat_index] * kernel[i];
+                    }
+                    else {
+                        product_sum += padding_value * kernel[i];
+                    }
+                }
+            }
+
+            // write the product sum to the result buffer
+            result[gl_GlobalInvocationID.x] = product_sum;
+        }
+    }
+}
