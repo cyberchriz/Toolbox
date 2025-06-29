@@ -20,36 +20,36 @@ layout(set = 0, binding = 4) buffer result_shape_buffer {uint result_shape[];};
 // setup push constants layout
 layout(push_constant) uniform push_constants {
     uint dimensions;
-    uint result_N;
+    uint data_N;
 };
 
 // main function
 void main() {
-    if (gl_GlobalInvocationID.x < result_N) {
+    if (gl_GlobalInvocationID.x < data_N) {
 
         // define local arrays
         uint data_array_index[MAX_DIMENSIONS];
         uint result_array_index[MAX_DIMENSIONS];
 
-        // get multidimensional index of current element of 'result'
-        uint result_flat_index = gl_GlobalInvocationID.x;
+        // get multidimensional index of current element of the source data
+        uint data_flat_index = gl_GlobalInvocationID.x;
         for (int i = int(dimensions) - 1; i >= 0; --i) {
-            result_array_index[i] = result_flat_index % result_shape[i];
-            result_flat_index = result_flat_index / result_shape[i];
+            data_array_index[i] = data_flat_index % data_shape[i];
+            data_flat_index = data_flat_index / data_shape[i];
         }
 
-        // convert result index to corresponding data index
+        // convert data index to corresponding result index
         for (uint i = 0; i < dimensions; i++) {
-            data_array_index[target_axis_order[i]] = result_array_index[i];
+            result_array_index[target_axis_order[i]] = data_array_index[i];
         }
 
-        // calculate flat index of data
-        uint data_flat_index = 0;
+        // calculate flat index of current element in the result buffer
+        uint result_flat_index = 0;
         for (uint i = 0; i < dimensions; i++) {
-            data_flat_index = data_flat_index * data_shape[i] + data_array_index[i];
+            result_flat_index = result_flat_index * result_shape[i] + result_array_index[i];
         }
 
         // write the data value to the result buffer
-        result[gl_GlobalInvocationID.x] = data[data_flat_index];
+        result[result_flat_index] = data[gl_GlobalInvocationID.x];
     }
 }

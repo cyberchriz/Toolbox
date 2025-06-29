@@ -292,7 +292,7 @@ public:
 	NGrid pool_min(const std::vector<uint32_t>& window_shape, const std::vector<uint32_t>& stride_shape = {}) const;
 	NGrid pool_mean(const std::vector<uint32_t>& window_shape, const std::vector<uint32_t>& stride_shape = {}) const;
 	NGrid convolution(const NGrid& kernel, uint32_t padding_amount = 0, float_t padding_value = 0.0f) const;
-	NGrid transpose(std::vector<uint32_t> target_axis_order = { 1,0 }) const;
+	NGrid transpose(const std::vector<uint32_t> target_axis_order = { 1,0 });
 	NGrid inverse(const float_t tolerance = 0.00001f, const uint32_t max_iterations = 20) const;
 	NGrid mirror(bool mirror_rows = true, bool mirror_cols = true, bool mirror_depth = true) const;
 
@@ -337,7 +337,6 @@ protected:
 	uint32_t flat_index(std::initializer_list<uint32_t> multi_index) const;
 	uint32_t flat_index(const std::vector<uint32_t>& multi_index) const;
 	void copy_resources(const NGrid& other);
-
 };
 
 
@@ -3789,7 +3788,11 @@ NGrid NGrid::convolution(const NGrid& kernel, uint32_t padding_amount, float_t p
 	return result;
 }
 
-NGrid NGrid::transpose(std::vector<uint32_t> target_axis_order) const {
+NGrid NGrid::transpose(const std::vector<uint32_t> target_axis_order) {
+	// make source 2d in case of 1d grid
+	if (this->dimensions == 1) {
+		*this = this->resize({ this->shape[0], 1 });
+	}
 	// check if target axis order is valid
 	if (target_axis_order.size() != this->dimensions) {
 		Log::warning("invalid usage of NGrid::transpose: target axis order size (", target_axis_order.size(),
@@ -3809,8 +3812,9 @@ NGrid NGrid::transpose(std::vector<uint32_t> target_axis_order) const {
 	}
 
 	// create result + buffer to store the target axis order
-	Buffer<uint32_t> target_axis_order_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
 	NGrid result(result_shape);
+	Buffer<uint32_t> target_axis_order_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
+	target_axis_order_buffer.write(target_axis_order);
 
 	// load shader
 	static ShaderModule shader(manager->get_device(), TRANSPOSE_SPIRV_BIN, TRANSPOSE_SPIRV_BYTES);
@@ -3824,16 +3828,15 @@ NGrid NGrid::transpose(std::vector<uint32_t> target_axis_order) const {
 	set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
 	descriptor_pool->allocate_set(set);
-
 	// define push constants
 	PushConstants constants(
 		this->dimensions,
-		result.get_elements()
+		this->elements
 	);
 
 	// execute compute pipeline
 	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_x);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
 	descriptor_pool->release_set(set);
 	return result;
 }
@@ -4583,8 +4586,9 @@ float_t NGrid::covariance(const NGrid& other) const {
 // use precision argument for decimal places (use negative number for unformatted full available precision)
 void NGrid::print(std::string comment, std::string delimiter, bool with_indices, bool rows_inline, int32_t precision) const {
 	uint32_t decimals = std::pow(10, precision);
-	std::cout << comment;
+
 	if (comment != "") {
+		std::cout << comment;
 		std::cout << "\n";
 	}
 
@@ -4702,6 +4706,5 @@ uint32_t NGrid::flat_index(const std::vector<uint32_t>& multi_index) const {
 	}
 	return static_cast<uint32_t>(flat_index_calc);
 }
-
 
 #endif
