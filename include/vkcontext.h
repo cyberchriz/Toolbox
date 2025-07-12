@@ -1,47 +1,15 @@
 #ifndef VKCONTEXT_H
 #define VKCONTEXT_H
 
-/* This library simplifies working with Vulkan objects
-
-Summary of a typical Vulkan workflow
-1. Instance Creation (with necessary extensions)                                        class Instance
-2. Physical Device selection and creation of an associated logical device               class Device
-3. Surface creation                                                                     class Surface
-4. Swapchain creation (to manage image presentation)                                    class Swapchain
-		ImageView creation
-		FrameBuffer creation
-5. RenderPass creation (defines rendering operations and attachments)                   class RenderPass
-6. Pipeline creation                                                                    class GraphicsPipeline, ComputePipeline, TransferPipeline
-		DescritorPool creation                                                          class DescriptorPool
-		DescriptorSets creation                                                         class DescriptorSet
-		bind buffers (index / vertex / storage) to DescriptorSets                       method DescriptorSet::bind_buffer()
-		load Shaders                                                                    class ShaderModule
-		VertexDescriptions                                                              class VertexDescriptions
-7. CommandPool allocation                                                               class CommandPool
-8. CommandBuffer allocations (to record rendering commands)                             class CommandBuffer
-9. main loop (repeat)
-		Data Buffer allocations (vertex / index / storage buffers)                      class Buffer
-		CommandBuffer recording
-			begin render pass                                                           method CommandBuffer::begin_renderpass()
-			bind pipeline                                                               method CommandBuffer::bind_pipeline()
-			draw commands                                                               method CommandBuffer::draw()
-		Submit CommandBuffer to Queue                                                   method CommandBuffer::submit()
-10. Clean-Up (release resources)
-
-helper classes for signaling: Event, Fence, Semaphore
-
-This library also comes with the option to handle Instance, Device and CommandPool on a high level via a 'VulkanManager' singleton class
-*/
-
 // include headers
 #define NOMINMAX
 #include <array>
-#include "log.h"
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <iostream>
+#include <log.h>
 #include <optional>
 #include <renderdoc_enable.h>
 #include <stdio.h>
@@ -49,16 +17,15 @@ This library also comes with the option to handle Instance, Device and CommandPo
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 #include <vulkan/vulkan.h>
-#include <variant>
 
 // --- Platform-Specific Headers ---
 #ifdef _WIN32
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <windows.h>            // required for HWND, HINSTANCE
 #include <vulkan/vulkan_win32.h>
-#include <__msvc_ostream.hpp>
 
 #elif defined(__ANDROID__)
 #define VK_USE_PLATFORM_ANDROID_KHR
@@ -84,6 +51,11 @@ This library also comes with the option to handle Instance, Device and CommandPo
 #else
 #error "Unsupported platform: No Vulkan WSI platform defined."
 #endif
+#include <corecrt.h>
+#include <cstdio>
+#include <cstdlib>
+#include <stdexcept>
+#include <vulkan/vulkan_core.h>
 
 // forward declarations
 class Device;
@@ -229,7 +201,7 @@ public:
 			layers.push_back(name);
 		}
 	}
-	void enable_layer(const char* layer_name) {
+	void enable_layers(const char* layer_name) {
 		layers.push_back(layer_name);
 	}
 
@@ -254,7 +226,7 @@ public:
 			extensions.push_back(name);
 		}
 	}
-	void enable_extension(const char* extension_name) {
+	void enable_extensions(const char* extension_name) {
 		extensions.push_back(extension_name);
 	}
 
@@ -584,6 +556,9 @@ public:
 		}
 		return memory_properties;
 	}
+
+	const VkPhysicalDeviceFeatures2& get_features() const { return enabled_features2; }
+	const VkPhysicalDeviceSynchronization2Features& get_synchronization_features() const { return synchronization2_features; }
 
 	// destructor
 	~Device() {
@@ -1841,7 +1816,6 @@ public:
 		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		present_info.waitSemaphoreCount = 1;
 		present_info.pWaitSemaphores = wait_semaphore.get_ptr();
-
 		present_info.swapchainCount = 1;
 		present_info.pSwapchains = &swapchain;
 		present_info.pImageIndices = &current_image_index;
@@ -1978,6 +1952,7 @@ public:
 		destroy();
 	}
 
+protected:
 	void destroy() {
 		if (swapchain != nullptr) {
 			vkDestroySwapchainKHR(logical, swapchain, nullptr);
@@ -1995,7 +1970,6 @@ public:
 		Log::info("Swapchain destroyed.");
 	}
 
-protected:
 	uint32_t num_images = 0;
 	std::vector<VkImage> image;
 	std::vector<VkImageView> color_image_views;
@@ -2047,17 +2021,13 @@ public:
 		}
 	}
 
-	void destroy() {
+	~CommandPool() {
 		if (pool != nullptr) {
 			// destroy command pool
 			Log::info("CommandPool destructor: destroying command pool with handle ", pool);
 			vkDestroyCommandPool(logical, pool, nullptr);
 			pool = nullptr;
 		}
-	}
-
-	~CommandPool() {
-		destroy();
 	}
 
 	void trim() const {
@@ -2326,7 +2296,7 @@ public:
 
 	// add multiple new values to the push constants range as a std::initializer_list;
 	// the size of data type T must(!) be a multiple of 4;
-	// returns the memory location byte offset of the new values within the push constants range
+	// returns the byte offset of the last written element within the push constants range
 	template<typename T>
 	uint32_t add_values(std::initializer_list<T> values) {
 		size_t current_offset = range.size;

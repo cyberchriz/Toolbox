@@ -4,36 +4,30 @@
 int main() {
 	Log::set_level(LEVEL_WARNING);
 	NGrid::set_workgroup_size_1d(256);
-	NGrid A(10, 20);
-	A.fill_random_uniform_int(-9, 9);
-	A.print("\nsource matrix A:");
+	NGrid A(100);
+	A.fill_random_uniform_int(0, 9);
+	A.print("\nmatrix A:");
 
-	NGrid L, U, P;
-	A.lu_decomp(L, U, P);
-	L.print("\nmatrix L:");
-	U.print("\nmatrix U:");
-	P.print("\nmatrix P:");
-	(P.transpose() * L * U).round().print("\nA = P.transpose * L * U:");
+	NGrid B = A;
+	B.print("\nmatrix B (copied from A):");
 
-	// check for square matrix A
-	if (A.get_shape()[0] == A.get_shape()[1]) {
-		NGrid L_inv = L.l_inverse();
-		NGrid U_inv = U.u_inverse();
+	B *= 2; // multiply B by 2
+	B.print("\nmatrix B after multiplying by 2 (as beta1):");
 
-		L_inv.print("\nL_inverse:", "|", 0, 1, 16);
-		U_inv.print("\nU_inverse:", "|", 0, 1, 16);
+	NGrid C(100);
+	C.fill_random_uniform_int(-2, 2);
 
-		(L * L_inv).print("\ntest calculation: L * L_inv (should result in identity matrix if L_inv has been calculated correctly) ");
-		(U * U_inv).print("\ntest calculation: U * U_inv (should result in identity matrix if U_inv has been calculated correctly) ");
+	C.print("\nlet's add some randomness: matrix C (random values -2 to 2):");
 
-		NGrid A_inv;
-		A_inv = U_inv * L_inv * P;
-		A_inv.print("\nA_inv = U_inv * L_inv * P =");
+	B += C; // add C to B
+	B.print("\nmatrix B after adding C:");
 
-		(A * A_inv).print("\ntest calculation: A * A_inv (should result in identity matrix if A_inv has been calculated correctly) ");
-	}
+	B += 5; // add 5 to B
+	B.print("\nmatrix B after adding 5 (as y_intercept):");
 
-	NGrid A_inv = A.inverse();
-	A_inv.print("\nA.inverse(100):");
-	(A * A_inv).print("\ntest of A * A.inverse():");
+	Log::force("Now let's check if the reggression works; we will use A as x and B as y");
+
+	auto result = A.regression(B);
+	result.print();
+
 }

@@ -1,15 +1,20 @@
-author: cyberchriz (Christian Suer);
-language: C++
+# `Core`
+### [______`NGrid`: n-dimensional data structures for GPU compute](docs/ngrid.md)
+### [______`VkContext`: high-level wrapper for Vulkan objects](docs/vkcontext.md)
+___ 
+# `Helpers / Utilities`
+### [______`Timer`: time logger for performance optimization]()
+### [______`Log`: logging system for debugging and information]()
+### [______`Random`: random numbers from different distributions]()
+### [______`CDF`: cumulative distribution functions]()
+### [______`PDF`: probability density functions]()
+### [______`Angular`: angular measure conversion]()
+### [______`RDocEnable`: implements capture for RenderDoc debugging]()
 ___
-# `Data Science`
-### [______Arrays](DataScience/datastructures/docs/array.md)
-### [______Neural Networks](DataScience/neuralnet/docs/neuralnet.md)
-### [______Classification](DataScience/classification/docs/classification.md)
-### [______Distributions](DataScience/distributions/docs/distributions.md)
-# `Utilities`
-### [______Debugging & Performance](utilities/docs/performance.md)
-___
-I'M SELF-TAUGHT AND NOT A PROFESSIONAL PROGRAMMER. THIS REPOSITORY IS 'WORK IN PROGRESS'.
-MOST OF THE CODE WILL WORK WITHOUT ANY ISSUES, BUT I'LL BE CONSTANTLY IMPROVING IT AND ADDING TO IT.
+THIS REPOSITORY IS 'WORK IN PROGRESS'.
+
+Author: cyberchriz (Christian Suer).
+
+Languages: C++, GLSL.
 
 FREE TO USE FOR NON-COMMERCIAL PURPOSES ([LICENCE](LICENSE)).

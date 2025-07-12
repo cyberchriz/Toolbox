@@ -94,7 +94,7 @@ if(EXISTS "${PROJECT_SOURCE_DIR}")
     endif()
 
     if(PROJECT_SOURCES)
-        target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
+        target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES} "include/spirv_bin_precompiled.h")
         message(STATUS "Added source files from: ${PROJECT_SOURCE_DIR}")
     else()
         message(WARNING "No source files found in ${PROJECT_SOURCE_DIR}")
@@ -466,7 +466,6 @@ if(COMPILE_GLSL_SHADERS AND EXISTS "${PROJECT_GLSL_DIR}")
              foreach(GLSL_INPUT ${GLSL_SHADER_SOURCES})
                 get_filename_component(SHADER_NAME ${GLSL_INPUT} NAME)
                 set(SPIRV_OUTPUT "${PROJECT_SPIRV_DIR}/${SHADER_NAME}.spv")
-                #set(SHADER_TARGET_NAME "${PROJECT_NAME}_shader_${SHADER_NAME}") # Unique target name
 
                 # Add the output file to the list
                 list(APPEND SPIRV_OUTPUT_FILES ${SPIRV_OUTPUT})
@@ -478,10 +477,6 @@ if(COMPILE_GLSL_SHADERS AND EXISTS "${PROJECT_GLSL_DIR}")
                     COMMENT "Compiling ${GLSL_INPUT} -> ${SPIRV_OUTPUT}"
                     VERBATIM
                 )
-                # Create a target for the compilation command
-                #add_custom_target(${SHADER_TARGET_NAME} DEPENDS ${SPIRV_OUTPUT})
-                # Ensure the main executable depends on the shader being compiled
-                #add_dependencies(${PROJECT_NAME} ${SHADER_TARGET_NAME})
             endforeach()
         else()
             message(STATUS "No GLSL shader files found in ${PROJECT_GLSL_DIR}")
