@@ -1,0 +1,67 @@
+// Vulkan/GLSL compute shader: calculate the inverse of a lower triangular matrix
+// This version is corrected to avoid race conditions.
+// author: Christian Suer (github: 'cyberchriz'), corrected by Google's Gemini
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+// The 'I' buffer is now just an output buffer, not an input.
+layout(set = 0, binding = 0) buffer l_buffer { float L[]; }; // Lower triangular matrix L
+layout(set = 0, binding = 1) buffer i_buffer { float I[]; }; // Output for the inverse matrix L^-1
+
+// --- Push Constants ---
+// The 'k' push constant is no longer needed, as the column index is taken from the invocation ID.
+layout(push_constant) uniform push_constants {
+    uint size;  // rows/cols of the square matrix L
+};
+
+// --- Helper function to calculate 1D index from 2D indices ---
+uint get_idx(uint row, uint col, uint matrix_size) {
+    return row * matrix_size + col;
+}
+
+// --- Main Function ---
+void main() {
+    // Each shader invocation computes one entire column of the inverse matrix.
+    // We launch 'size' invocations in total (e.g., dispatch(size, 1, 1) on the host).
+    uint col = gl_GlobalInvocationID.x; // This invocation is responsible for column 'col' (which corresponds to 'k').
+
+    // Exit if this invocation is outside the matrix dimensions.
+    if (col >= size) {
+        return;
+    }
+
+    // The elements of column 'col' are computed sequentially from top to bottom (row by row).
+    // This is required because the calculation for row 'i' depends on results from rows 'j < i'.
+    // Since a single thread does this whole loop, reads/writes are perfectly ordered.
+    for (uint row = 0; row < size; ++row) {
+        // The inverse of a lower triangular matrix is also lower triangular.
+        // All elements above the main diagonal (where row < col) are zero.
+        if (row < col) {
+            I[get_idx(row, col, size)] = 0.0;
+        } else {
+            // This is the forward substitution formula for X_ik (here, i=row, k=col)
+            // X_ik = (I_ik - sum(L_ij * X_jk for j from k to i-1)) / L_ii
+
+            float sum = 0.0;
+            // Sum over the elements in the same column that have already been computed by this invocation
+            // in previous iterations of this 'row' loop. This is safe.
+            for (uint j = col; j < row; ++j) {
+                sum += L[get_idx(row, j, size)] * I[get_idx(j, col, size)];
+            }
+
+            // The I_ik term from the identity matrix is 1.0 if i==k and 0.0 otherwise.
+            float identity_val = (row == col) ? 1.0 : 0.0;
+
+            // Calculate and write the inverse matrix element X_ik.
+            // This assumes L is invertible and thus has a non-zero diagonal (L_ii != 0)
+            float result = (identity_val - sum) / L[get_idx(row, row, size)];
+            result = result == 0.0 ? 0.0 : result; // ensure -0.0 is written as 0.0
+            I[get_idx(row, col, size)] = result;
+        }
+    }
+}

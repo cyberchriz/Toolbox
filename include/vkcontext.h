@@ -35,12 +35,15 @@ This library also comes with the option to handle Instance, Device and CommandPo
 
 // include headers
 #define NOMINMAX
+#include <array>
 #include "log.h"
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <iostream>
+#include <optional>
+#include <renderdoc_enable.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -48,9 +51,7 @@ This library also comes with the option to handle Instance, Device and CommandPo
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.h>
-#include <array>
 #include <variant>
-#include <optional>
 
 // --- Platform-Specific Headers ---
 #ifdef _WIN32
@@ -96,7 +97,7 @@ class Event;
 class ImageView;
 class Image;
 class DeviceMemoryBarrier;
-template<typename T> class BufferMemoryBarrier;
+class BufferMemoryBarrier;
 class ImageMemoryBarrier;
 
 // global enums
@@ -369,10 +370,14 @@ public:
 		// Filter requested extensions against available extensions
 		std::vector<const char*> supported_extensions;
 		this->extensions = enabled_extension_names; // Store the original requested extensions
+		bool use_synchronization2 = false;
 		for (const auto& requested_extension : enabled_extension_names) {
 			bool found = false;
 			for (const auto& available_extension : available_extensions) {
 				if (strcmp(requested_extension, available_extension.extensionName) == 0) {
+					if (strcmp(requested_extension, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME) == 0) {
+						use_synchronization2 = true; // Enable synchronization2 if requested
+					}
 					found = true;
 					break;
 				}
@@ -385,6 +390,21 @@ public:
 			}
 		}
 		device_extension_names = supported_extensions; // Update the member with only supported extensions
+
+		// prepare device features
+		enabled_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		void* next_ptr = nullptr;
+
+		if (use_synchronization2) {
+			enabled_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+			next_ptr = &synchronization2_features;
+			synchronization2_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
+			synchronization2_features.pNext = nullptr;
+			synchronization2_features.synchronization2 = VK_TRUE; // Enable synchronization2 features
+		}
+
+		enabled_features2.pNext = next_ptr;
+		enabled_features2.features = enabled_features;
 
 		// Queue creation
 		uint32_t num_queue_families;
@@ -486,13 +506,13 @@ public:
 		// Create logical device
 		VkDeviceCreateInfo device_create_info = {};
 		device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		device_create_info.pNext = nullptr;
+		device_create_info.pNext = &enabled_features2;
 		device_create_info.flags = 0; // reserved for future use
 		device_create_info.enabledExtensionCount = static_cast<uint32_t>(device_extension_names.size());
 		device_create_info.ppEnabledExtensionNames = device_extension_names.data();
 		device_create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
 		device_create_info.pQueueCreateInfos = queue_create_infos.data();
-		device_create_info.pEnabledFeatures = &enabled_features;
+		device_create_info.pEnabledFeatures = NULL;
 		result = vkCreateDevice(physical, &device_create_info, nullptr, &logical);
 		if (result == VK_SUCCESS) {
 			Log::info("successfully created logical device (handle: ", logical, ")");
@@ -602,6 +622,8 @@ protected:
 		this->extensions = std::move(other.get_extensions());
 		this->device_extension_names = std::move(other.device_extension_names);
 		this->memory_properties = std::exchange(other.memory_properties, VkPhysicalDeviceMemoryProperties{});
+		this->enabled_features2 = std::move(other.enabled_features2);
+		this->synchronization2_features = std::move(other.synchronization2_features);
 	}
 
 	VkPhysicalDevice physical = nullptr;
@@ -620,6 +642,8 @@ protected:
 	std::vector<const char*> extensions = {};
 	std::vector<const char*> device_extension_names = {};
 	VkPhysicalDeviceMemoryProperties memory_properties = {};
+	VkPhysicalDeviceFeatures2 enabled_features2 = {}; // Vulkan 1.1+ feature set, can be extended with pNext
+	VkPhysicalDeviceSynchronization2Features synchronization2_features = {}; // Vulkan 1.3+ feature set for synchronization2
 };
 
 class Image {
@@ -1443,8 +1467,8 @@ public:
 
 	VkFence get() const { return fence; }
 private:
-	VkFence fence = nullptr;
-	VkDevice logical = nullptr;
+	VkFence fence = VK_NULL_HANDLE;
+	VkDevice logical = VK_NULL_HANDLE;
 };
 
 // for synchronization on the GPU
@@ -2353,6 +2377,10 @@ public:
 		this->elements = elements;
 		this->size_bytes = this->elements * sizeof(T);
 
+		if (sizeof(T) < 4) {
+			Log::warning("in Buffer::Buffer(): data type 'T' has less than 4 bytes, which is not recommended for alignment reasons.");
+		}
+
 		is_device_local_only = (memory_property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) && !(memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 		is_host_visible = memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 
@@ -2622,6 +2650,33 @@ public:
 		memcpy(target, source, source_size_bytes);
 		vkUnmapMemory(logical, this->memory);
 		vkUnmapMemory(logical, sourcebuffer.memory);
+	}
+
+	// flush host writes to host memory demain
+	// this is only necessary if the memory allocation doesn't have the flag VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	// (can be made available to the device memory domain by using a pipeline barrier with the VK_ACCESS_HOST_WRITE_BIT access type flag)
+	void flush(uint64_t offset = 0, uint64_t size = VK_WHOLE_SIZE) {
+		void* source = nullptr;
+		vkMapMemory(logical, this->memory, offset, size, VkMemoryMapFlags(0), &source);
+
+		VkMappedMemoryRange range;
+		range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+		range.pNext = NULL;
+		range.memory = this->memory;
+		range.offset = offset;
+		range.size = size;
+
+		VkResult result = vkFlushMappedMemoryRanges(this->logical, 1, &range);
+		if (result != VK_SUCCESS) {
+			if (result == VK_ERROR_OUT_OF_HOST_MEMORY) {
+				Log::warning("Buffer<T>::flush() failed: out of host memory !");
+			}
+			else if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY) {
+				Log::warning("Buffer<T>::flush() failed: out of device memory !");
+			}
+		}
+
+		vkUnmapMemory(logical, this->memory);
 	}
 
 	// returns a continous data sequence from a host visible data buffer as a std::vector<T>
@@ -3083,21 +3138,6 @@ public:
 		}
 	}
 
-	// getters
-	VkDescriptorSet get() const { return set; }
-	const VkDescriptorSet* get_ptr() const { return &set; }
-	const VkDescriptorSetLayout& get_layout() const { return layout; }
-
-	// destructor
-	~DescriptorSet() {
-		if (layout != nullptr) {
-			Log::debug("destroying descriptor set layout (handle: ", layout, ")");
-			vkDestroyDescriptorSetLayout(logical, layout, nullptr);
-			layout = nullptr;
-			Log::info("[DESCRIPTORSET LAYOUT DESTROYED]");
-		}
-	}
-
 protected:
 	struct ImageBindingInfo {
 		uint32_t binding_index;
@@ -3114,6 +3154,24 @@ protected:
 		VkDescriptorType descriptor_type;
 	};
 
+public:
+	// getters
+	VkDescriptorSet get() const { return set; }
+	const VkDescriptorSet* get_ptr() const { return &set; }
+	const VkDescriptorSetLayout& get_layout() const { return layout; }
+	const std::vector<BufferBindingInfo>& get_buffer_bindings() const { return buffer_bindings; }
+
+	// destructor
+	~DescriptorSet() {
+		if (layout != nullptr) {
+			Log::debug("destroying descriptor set layout (handle: ", layout, ")");
+			vkDestroyDescriptorSetLayout(logical, layout, nullptr);
+			layout = nullptr;
+			Log::info("[DESCRIPTORSET LAYOUT DESTROYED]");
+		}
+	}
+
+protected:
 	VkDescriptorType get_descriptor_type(DescriptorType type) const {
 		switch (type) {
 		case DescriptorType::STORAGE_BUFFER_DESCRIPTOR: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -3697,29 +3755,30 @@ protected:
 };
 
 // buffer memory barrier for synchronization between different stages of the pipeline
-template<typename T>
 class BufferMemoryBarrier {
 public:
-	// constructor
+	// default constructor
 	BufferMemoryBarrier() = delete;
+
+	// constructor
 	BufferMemoryBarrier(
-		Buffer<T>& buffer,
-		VkPipelineStageFlags2 source_stage_flags,
-		VkAccessFlags2 source_access_flags,
-		VkPipelineStageFlags2 target_stage_flags,
-		VkAccessFlags2 target_access_flags,
-		uint32_t source_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
-		uint32_t target_queue_family_index = VK_QUEUE_FAMILY_IGNORED
+		VkBuffer buffer,
+		VkAccessFlags2 src_access_flags = VK_ACCESS_2_SHADER_WRITE_BIT,
+		VkAccessFlags2 dst_access_flags = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+		VkPipelineStageFlags2 src_stage_flags = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+		VkPipelineStageFlags2 dst_stage_flags = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+		uint32_t src_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
+		uint32_t dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED
 	) {
 		buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
 		buffer_memory_barrier.pNext = nullptr;
-		buffer_memory_barrier.srcStageMask = source_stage_flags;
-		buffer_memory_barrier.srcAccessMask = source_access_flags;
-		buffer_memory_barrier.dstStageMask = target_stage_flags;
-		buffer_memory_barrier.dstAccessMask = target_access_flags;
-		buffer_memory_barrier.srcQueueFamilyIndex = source_queue_family_index;
-		buffer_memory_barrier.dstQueueFamilyIndex = target_queue_family_index;
-		buffer_memory_barrier.buffer = buffer.get();
+		buffer_memory_barrier.srcStageMask = src_stage_flags;
+		buffer_memory_barrier.srcAccessMask = src_access_flags;
+		buffer_memory_barrier.dstStageMask = dst_stage_flags;
+		buffer_memory_barrier.dstAccessMask = dst_access_flags;
+		buffer_memory_barrier.srcQueueFamilyIndex = src_queue_family_index;
+		buffer_memory_barrier.dstQueueFamilyIndex = dst_queue_family_index;
+		buffer_memory_barrier.buffer = buffer;
 		buffer_memory_barrier.offset = 0;
 		buffer_memory_barrier.size = VK_WHOLE_SIZE;
 	}
@@ -3854,17 +3913,6 @@ public:
 		}
 	}
 
-	void reset(VkCommandBufferResetFlags flags = VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT) {
-		VkResult result = vkResetCommandBuffer(buffer, flags);
-		if (result == VK_SUCCESS) {
-			Log::debug("successfully reset command buffer");
-		}
-		else {
-			Log::warning("failed to reset command buffer (handle: ", buffer, ", VkResult = ", result, ")");
-		}
-		begin_recording();
-	}
-
 	// set event on command buffer
 	Event set_event(
 		const std::optional<std::vector<VkMemoryBarrier2>>& device_memory_barriers,
@@ -3979,15 +4027,14 @@ public:
 	}
 
 	// add buffer memory barrier
-	template<typename T>
-	void add_barrier(const BufferMemoryBarrier<T>& barrier) {
+	void add_barrier(const BufferMemoryBarrier& barrier) {
 		VkDependencyInfo dependency_info = {};
 		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 		dependency_info.pNext = nullptr;
 		dependency_info.memoryBarrierCount = 0;
 		dependency_info.pMemoryBarriers = nullptr;
 		dependency_info.bufferMemoryBarrierCount = 1;
-		dependency_info.pBufferMemoryBarriers = barrier.get();
+		dependency_info.pBufferMemoryBarriers = &barrier.get();
 		dependency_info.imageMemoryBarrierCount = 0;
 		dependency_info.pImageMemoryBarriers = nullptr;
 		vkCmdPipelineBarrier2(buffer, &dependency_info);
@@ -4008,10 +4055,9 @@ public:
 	}
 
 	// add multiple barriers
-	template<typename T>
 	void add_barriers(
 		std::optional<std::vector<DeviceMemoryBarrier>>& device_memory_barriers,
-		std::optional<std::vector<BufferMemoryBarrier<T>>>& buffer_memory_barriers,
+		std::optional<std::vector<BufferMemoryBarrier>>& buffer_memory_barriers,
 		std::optional<std::vector<ImageMemoryBarrier>>& image_memory_barriers
 	) {
 		VkDependencyInfo dependency_info = {};
@@ -4172,7 +4218,7 @@ public:
 
 	// end recording and submit command buffer to queue
 	// (overload with fence)
-	void submit(Fence& fence) {
+	void submit(Fence& fence, uint64_t fence_timeout_nanosec = 100000) {
 		// stop command buffer recording state (thus triggering executable state)
 		vkEndCommandBuffer(buffer);
 
@@ -4190,6 +4236,8 @@ public:
 		else if (usage == QueueFamily::TRANSFER_QUEUE) {
 			vkQueueSubmit(transfer_queue, 1, &submit_info, fence.get());
 		}
+		fence.wait(fence_timeout_nanosec);
+		fence.reset();
 	}
 
 	// end recording and submit command buffer to queue
@@ -4214,25 +4262,47 @@ public:
 		}
 	}
 
+	void reset(VkCommandBufferResetFlags flags = VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT) {
+		VkResult result = vkResetCommandBuffer(buffer, flags);
+		if (result == VK_SUCCESS) {
+			Log::debug("successfully reset command buffer");
+		}
+		else {
+			Log::warning("failed to reset command buffer (handle: ", buffer, ", VkResult = ", result, ")");
+		}
+		begin_recording();
+	}
+
 	VkCommandBuffer& get() { return buffer; }
 
 	// shorthand for:
 	// bind compute pipeline -> bind descriptor set -> push constants -> dispatch -> end recording -> submit
 	// (note: a fence will only be used if fence_timeout_nanosec != 0);
 	// the boolean direct_submit can be set to false in case multiple dispatches need to be added before a final submit
-	void compute(ComputePipeline& pipeline, uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1, bool direct_submit = true, uint64_t fence_timeout_nanosec = 100000) {
+	void compute(ComputePipeline& pipeline, uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1, bool direct_submit = true, uint64_t fence_timeout_nanosec = 100000, bool add_buffer_memory_barriers = true) {
 		Log::debug("executing GPU compute (bind pipeline -> bind descriptor set -> bind push constants -> dispatch -> submit -> wait for fences)");
 		bind_pipeline(pipeline);
 		bind_descriptor_set(*pipeline.get_set());
 		bind_constants(*pipeline.get_constants());
 		dispatch(global_size_x, global_size_y, global_size_z);
+
+		if (add_buffer_memory_barriers) {
+			for (uint32_t i = 0; i < pipeline.get_set()->get_buffer_bindings().size(); i++) {
+				BufferMemoryBarrier barrier(
+					pipeline.get_set()->get_buffer_bindings()[i].buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				this->add_barrier(barrier);
+			}
+		}
+
 		if (direct_submit) {
 			if (fence_timeout_nanosec != 0) {
 				Fence fence(*device, false);
-				submit(fence);
-				while (!fence.signaled()) {
-					fence.wait(fence_timeout_nanosec);
-				};
+				submit(fence, fence_timeout_nanosec);
 			}
 			else {
 				submit();

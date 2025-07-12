@@ -1,0 +1,71 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// default constants
+#define MAX_DIMENSIONS 10
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer data_shape_buffer {uint data_shape[];};
+layout(set = 0, binding = 2) buffer mirror_axes_buffer {uint mirror_axes[];};
+layout(set = 0, binding = 3) buffer result_buffer {float result[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N;
+    uint dimensions;
+};
+
+shared bool mirror_axes_shared[MAX_DIMENSIONS];
+shared uint data_shape_shared[MAX_DIMENSIONS];
+
+// main function
+void main() {
+    if (gl_GlobalInvocationID.x < N) {
+
+        // load mirror axes and data shape into shared memory (to reduce frequeny of global memory access)
+        // this is only done once per workgroup (in local invocation 0)
+        if (gl_LocalInvocationID.x == 0) {
+            for (uint i = 0; i < dimensions; i++) {
+                mirror_axes_shared[i] = bool(mirror_axes[i]);
+                data_shape_shared[i] = data_shape[i];
+            }
+        }
+        memoryBarrierShared();
+        barrier();
+
+        // get the multidimensional index for the current invocation
+        uint data_array_index[MAX_DIMENSIONS];
+        uint flat_index = gl_GlobalInvocationID.x;
+        for (int i = int(dimensions) - 1; i >= 0; --i) {
+            data_array_index[i] = flat_index % data_shape_shared[i];
+            flat_index = flat_index / data_shape_shared[i];
+        }
+
+        // calculate the mirrored index based on the mirror axes
+        uint mirrored_array_index[MAX_DIMENSIONS];
+        for (uint i = 0; i < dimensions; i++) {
+            if (mirror_axes_shared[i]) {
+                mirrored_array_index[i] = data_shape_shared[i] - 1 - data_array_index[i];
+            } else {
+                mirrored_array_index[i] = data_array_index[i];
+            }
+        }
+
+        // calculate the flat index of the mirrored element
+        flat_index = 0;
+        for (uint i = 0; i < dimensions; i++) {
+            flat_index = flat_index * data_shape_shared[i] + mirrored_array_index[i];
+        }
+
+        // assign the mirrored value to the result
+        result[flat_index] = data[gl_GlobalInvocationID.x];
+
+    }
+}

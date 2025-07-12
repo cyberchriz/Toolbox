@@ -29,7 +29,7 @@ float random(uint seed) {
 // main function
 void main() {
     if (gl_GlobalInvocationID.x < N) {
-    // adding the seed to the global invocation ID to ensure different random numbers for each invocation
-    data[gl_GlobalInvocationID.x] = round(random(seed + gl_GlobalInvocationID.x) * (max_val - min_val) + min_val);
+        // adding the seed to the global invocation ID to ensure different random numbers for each invocation
+        data[gl_GlobalInvocationID.x] = round(random(seed + gl_GlobalInvocationID.x) * (max_val - min_val) + min_val);
     }
 }

@@ -11,7 +11,7 @@ set(PROJECT_NAME "MyProject" CACHE STRING "Name of the project")
 set(PROJECT_VERSION "1.0.0" CACHE STRING "Project version (major.minor.patch)")
 set(PROJECT_DESCRIPTION "generic C++/C project" CACHE STRING "Project description")
 set(PROJECT_LANGUAGES "CXX;C" CACHE STRING "Enabled languages (e.g., CXX, C, CUDA)")
-set(PROJECT_CPP_STANDARD "17" CACHE STRING "Required C++ standard (e.g., 11, 14, 17, 20, 23)")
+set(PROJECT_CPP_STANDARD "20" CACHE STRING "Required C++ standard (e.g., 11, 14, 17, 20, 23)")
     set_property(CACHE PROJECT_CPP_STANDARD PROPERTY STRINGS 11 14 17 20 23)
 set(PROJECT_C_STANDARD "11" CACHE STRING "Required C standard (99, 11, 17, 23)")
     set_property(CACHE PROJECT_C_STANDARD PROPERTY STRINGS 99 11 17 23)
@@ -342,6 +342,84 @@ if(USE_GLM)
     endif()
 endif()
 
+# --- RenderDoc API (for programmatic capture) ---
+# This is a header-only API for dynamic loading.
+# No linking against a RenderDoc library is performed.
+# ... (rest of your CMakeLists.txt before this block) ...
+option(USE_RENDERDOC_API "Enable programmatic RenderDoc capture API calls" ON)
+mark_as_advanced(USE_RENDERDOC_API)
+
+if(USE_RENDERDOC_API)
+    message(STATUS "RENDERDOC_API_INCLUDE_DIR should point to the 'api' directory inside your RenderDoc installation.")
+    message(STATUS "Example: C:/Program Files/RenderDoc/renderdoc/api")
+    message(STATUS "Example: C:/Program Files (x86)/RenderDoc/renderdoc/api")
+    message(STATUS "Example: /usr/local/include/renderdoc/api")
+
+    # This list will hold all potential RenderDoc API include paths
+    set(RENDERDOC_SEARCH_PATHS)
+
+    # Windows specific paths
+    if(WIN32)
+        # CMAKE_PROGRAM_FILES is usually "C:/Program Files"
+        if(CMAKE_PROGRAM_FILES)
+            list(APPEND RENDERDOC_SEARCH_PATHS "${CMAKE_PROGRAM_FILES}/RenderDoc/renderdoc/api")
+            list(APPEND RENDERDOC_SEARCH_PATHS "${CMAKE_PROGRAM_FILES}/RenderDoc/renderdoc")
+        endif()
+        # CMAKE_PROGRAM_FILES_X86 is "C:/Program Files (x86)" on 64-bit Windows
+        if(CMAKE_PROGRAM_FILES_X86)
+            list(APPEND RENDERDOC_SEARCH_PATHS "${CMAKE_PROGRAM_FILES_X86}/RenderDoc/renderdoc/api")
+        endif()
+        # You could also add the %LOCALAPPDATA% path if RenderDoc has a user-specific install option
+        # For example, if RenderDoc installs to C:\Users\YourUser\AppData\Local\RenderDoc\renderdoc\api
+        # list(APPEND RENDERDOC_SEARCH_PATHS "$ENV{LOCALAPPDATA}/RenderDoc/renderdoc/api")
+    endif()
+
+    # Linux specific paths (and potentially macOS, though RenderDoc installation differs there)
+    # These are typically hardcoded because there aren't standard CMake variables like on Windows for /usr/local
+    list(APPEND RENDERDOC_SEARCH_PATHS
+        "/usr/local/include/renderdoc/api"
+        "/opt/renderdoc/include/renderdoc/api"
+        "/usr/include/renderdoc/api"
+    )
+
+    find_path(RENDERDOC_API_INCLUDE_DIR
+        NAMES renderdoc_app.h
+        PATHS ${RENDERDOC_SEARCH_PATHS} # Pass the list of generated paths
+        DOC "Path to RenderDoc's 'api' directory containing renderdoc_app.h"
+        NO_DEFAULT_PATH # Only search the paths we've explicitly listed
+    )
+
+    if(RENDERDOC_API_INCLUDE_DIR)
+        message(STATUS "Found RenderDoc API header at: ${RENDERDOC_API_INCLUDE_DIR}")
+        target_include_directories(${PROJECT_NAME} PUBLIC ${RENDERDOC_API_INCLUDE_DIR})
+        target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RENDERDOC_API_DEFINE=1)
+    else()
+        message(WARNING "Could not find RenderDoc API header (renderdoc_app.h). "
+                        "Programmatic capture will not be available. "
+                        "Please set RENDERDOC_API_INCLUDE_DIR manually (e.g., -DRENDERDOC_API_INCLUDE_DIR=\"C:/Path/To/RenderDoc/api\") "
+                        "if you need it.")
+        # Optionally, turn off the option if the header isn't found
+        # set(USE_RENDERDOC_API OFF CACHE BOOL "RenderDoc API disabled: header not found" FORCE)
+    endif()
+
+    if(WIN32)
+        # set the directory for renderdoc.dll (if not found in PATH)
+        # (use same path as the include directory as default; alternatively
+        # the dll may e.g. be located in C:\Program Files\RenderDoc\bin\x64 or
+        # C:\Program Files\RenderDoc\bin\x86)
+        set(RENDERDOC_DLL_DIR "${RENDERDOC_API_INCLUDE_DIR}" CACHE PATH "location of renderdoc.dll")
+    else()
+        # On Linux, RenderDoc is usually installed in /usr/lib or /usr/local/lib
+        set(RENDERDOC_DLL_DIR "/usr/lib" CACHE PATH "location of renderdoc.so")
+    endif()
+
+    # The `PRIVATE` keyword means it only applies to sources in this target;
+    # STRINGIFY_IMPL and STRINGIFY are needed to turn the path string into a C++ string literal
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        RENDERDOC_DLL_RUNTIME_PATH="${RENDERDOC_DLL_DIR}"
+    )
+endif()
+
 # --- Boost ---
 option(USE_BOOST "Find and link Boost" OFF)
 # Fetching Boost is complex, sticking to find_package
@@ -388,22 +466,22 @@ if(COMPILE_GLSL_SHADERS AND EXISTS "${PROJECT_GLSL_DIR}")
              foreach(GLSL_INPUT ${GLSL_SHADER_SOURCES})
                 get_filename_component(SHADER_NAME ${GLSL_INPUT} NAME)
                 set(SPIRV_OUTPUT "${PROJECT_SPIRV_DIR}/${SHADER_NAME}.spv")
-                set(SHADER_TARGET_NAME "${PROJECT_NAME}_shader_${SHADER_NAME}") # Unique target name
+                #set(SHADER_TARGET_NAME "${PROJECT_NAME}_shader_${SHADER_NAME}") # Unique target name
 
-                # <--- Add the output file to the list --->
+                # Add the output file to the list
                 list(APPEND SPIRV_OUTPUT_FILES ${SPIRV_OUTPUT})
 
                 add_custom_command(
                     OUTPUT ${SPIRV_OUTPUT}
                     COMMAND ${GLSLANG_VALIDATOR_EXECUTABLE} -V ${GLSL_INPUT} --target-env ${PROJECT_GLSL_TARGET_ENV} -o ${SPIRV_OUTPUT}
                     DEPENDS ${GLSL_INPUT} # Depends on the input shader file
-                    COMMENT "Compiling ${GLSL_INPUT} -> ${SPIRV_OUTPUT}" # <--- Improved comment
+                    COMMENT "Compiling ${GLSL_INPUT} -> ${SPIRV_OUTPUT}"
                     VERBATIM
                 )
                 # Create a target for the compilation command
-                add_custom_target(${SHADER_TARGET_NAME} DEPENDS ${SPIRV_OUTPUT})
+                #add_custom_target(${SHADER_TARGET_NAME} DEPENDS ${SPIRV_OUTPUT})
                 # Ensure the main executable depends on the shader being compiled
-                add_dependencies(${PROJECT_NAME} ${SHADER_TARGET_NAME})
+                #add_dependencies(${PROJECT_NAME} ${SHADER_TARGET_NAME})
             endforeach()
         else()
             message(STATUS "No GLSL shader files found in ${PROJECT_GLSL_DIR}")

@@ -1,0 +1,60 @@
+// Vulkan/GLSL compute shader: calculate the inverse of an upper triangular matrix via backward substitution
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+layout(set = 0, binding = 0) buffer u_buffer { float U[]; }; // Input: Upper triangular matrix U
+layout(set = 0, binding = 1) buffer i_buffer { float I[]; }; // Output: The inverse matrix U^-1
+
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint size;  // The number of rows/columns in the square matrix U
+};
+
+// --- Main Function ---
+void main() {
+    // Each invocation is assigned to compute one entire column of the inverse matrix.
+    // This shader should be dispatched with 'size' workgroups in the X dimension.
+    uint col = gl_GlobalInvocationID.x;
+
+    // Exit if this invocation is outside the matrix dimensions.
+    if (col >= size) {
+        return;
+    }
+
+    // To perform backward substitution, we must compute the elements of a column
+    // sequentially from the bottom row up to the top row. This is because the calculation
+    // for row 'i' depends on the results from rows 'j' where j > i.
+    // A signed integer is used for the loop counter to allow it to decrement to zero safely.
+    for (int row = int(size) - 1; row >= 0; --row) {
+        
+        // The inverse of an upper triangular matrix is also upper triangular.
+        // Therefore, any element below the main diagonal (where row > col) must be zero.
+        if (row > col) {
+            I[row * size + col] = 0.0;
+        }
+        
+        else {
+            // Apply the backward substitution formula to find the element X_ik (where i=row, k=col):
+            // X_ik = (I_ik - sum(U_ij * X_jk for j from i+1 to n-1)) / U_ii
+
+            float sum = 0.0;
+            // The sum is over elements in the same column that this invocation has already
+            // computed in previous iterations of this loop (i.e., for rows 'j' below the current 'row').
+            for (uint j = uint(row) + 1; j < size; ++j) {
+                sum += U[row * size + j] * I[j * size + col];
+            }
+
+            // The term I_ik comes from the identity matrix. It's 1.0 on the diagonal (row == col) and 0.0 otherwise.
+            float identity_val = (uint(row) == col) ? 1.0 : 0.0;
+
+            // Calculate and write the final value for the inverse matrix element X_ik.
+            // This relies on the matrix U being invertible, meaning all its diagonal elements are non-zero.
+            I[row * size + col] = (identity_val - sum) / U[row * size + row];
+        }
+    }
+}

@@ -27,8 +27,8 @@ layout(push_constant) uniform push_constants {
 
 // main function
 void main() {
-    uint row = gl_GlobalInvocationID.x;
-    uint col = gl_GlobalInvocationID.y;
+    uint col = gl_GlobalInvocationID.x % result_cols; // column index
+    uint row = gl_GlobalInvocationID.x / result_cols; // row index
 
     // Ensure we don't go out of bounds for the result matrix
     if (row >= result_rows || col >= result_cols) {
@@ -52,6 +52,7 @@ void main() {
 
     // Perform bounds checking for the result array
     if (result_index < result_N) {
+        sum = sum == 0.0 ? 0.0 : sum; // ensure -0.0 is written as 0.0
         result[result_index] = sum;
     }
 }

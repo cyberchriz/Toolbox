@@ -1,0 +1,63 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for LU decomposition;
+// performs a row swap (if needed) for the current row 'k'
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+layout(set = 0, binding = 0) buffer l_buffer    { float L[]; };     // Lower triangular matrix L
+layout(set = 0, binding = 1) buffer u_buffer    { float U[]; };     // Upper triangular matrix U (initialized with source matrix)
+layout(set = 0, binding = 2) buffer p_buffer    { float P[]; };     // Permutation vector P (stores final row indices)
+                                                                    // note: the P matrix could be of type 'uint' instead of 'float',
+                                                                    // but using floats is more convenient for the host application,
+                                                                    // since data buffers of NGrid objects are always floats by design
+layout(set = 0, binding = 3) buffer swap_row_buffer {uint swap_row[];};  // stores the row to swap for the current row 'k'
+                                                                    
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;
+    uint cols;
+    uint k;
+};
+
+// --- Main Function ---
+void main() {
+    uint swap_row_cpy = swap_row[0]; // copy to local variable to reduce global memory access
+    uint i = gl_GlobalInvocationID.x;
+    uint cols_L = rows; // L is a rows x rows square matrix !
+    uint cols_P = rows; // P is a rows x rows square matrix !
+    float temp;
+    
+    if (swap_row_cpy > k && swap_row_cpy < rows && i < cols) {
+
+        // swap ENTIRE row in permutation matrix P
+        if (i < cols_P) {
+            temp = P[k * cols_P + i];
+            P[k * cols_P + i] = P[swap_row_cpy * cols_P + i];
+            P[swap_row_cpy * cols_P + i] = temp;
+        }
+
+        // swap row in U matrix
+        // note: swapping in columns <k is not necessary, since these elements are expected to already be zeroed out
+        if (i >= k) {
+            temp = U[k * cols + i];
+            U[k * cols + i] = U[swap_row_cpy * cols + i];
+            U[swap_row_cpy * cols + i] = temp;
+        }
+        
+        // swap the already computed part in the L matrix (columns 0 to k-1)
+        else { // i<k
+            if (i < cols_L) {
+                temp = L[k * cols_L + i];
+                L[k * cols_L + i] = L[swap_row_cpy * cols_L + i];
+                L[swap_row_cpy * cols_L + i] = temp;
+            }
+        }
+    }
+}

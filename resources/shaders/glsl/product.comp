@@ -43,7 +43,9 @@ void main() {
         // Global Reduction
         for (uint stride = gl_NumWorkGroups.x / 2; stride > 0 ; stride /= 2) {
             if (gl_GlobalInvocationID.x < stride) {
-                local_result[gl_GlobalInvocationID.x] = local_result[gl_GlobalInvocationID.x] * local_result[gl_GlobalInvocationID.x + stride];
+                float val = local_result[gl_GlobalInvocationID.x] * local_result[gl_GlobalInvocationID.x + stride];
+                val = val == 0.0 ? 0.0 : val; // ensure -0.0 is written as 0.0
+                local_result[gl_GlobalInvocationID.x] = val;
             }
             barrier();
         }

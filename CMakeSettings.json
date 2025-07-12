@@ -25,6 +25,16 @@
           "name": "CMAKE_VERBOSE_MAKEFILE",
           "value": "True",
           "type": "BOOL"
+        },
+        {
+          "name": "RENDERDOC_API_INCLUDE_DIR",
+          "value": "C:/Program Files/RenderDoc",
+          "type": "PATH"
+        },
+        {
+          "name": "USE_RENDERDOC_API",
+          "value": "true",
+          "type": "BOOL"
         }
       ]
     },
@@ -37,7 +47,14 @@
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
-      "inheritEnvironments": [ "msvc_x64_x64" ]
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "variables": [
+        {
+          "name": "PROJECT_CPP_STANDARD",
+          "value": "20",
+          "type": "STRING"
+        }
+      ]
     }
   ]
 }

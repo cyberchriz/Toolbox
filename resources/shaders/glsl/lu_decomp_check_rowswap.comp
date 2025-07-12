@@ -1,0 +1,48 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for LU decomposition;
+// it checks if a row swap is needed for the current row 'k'
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+layout(set = 0, binding = 0) buffer l_buffer    { float L[]; };     // Lower triangular matrix L
+layout(set = 0, binding = 1) buffer u_buffer    { float U[]; };     // Upper triangular matrix U (initialized with source matrix)
+layout(set = 0, binding = 2) buffer p_buffer    { float P[]; };     // Permutation vector P (stores final row indices)
+                                                                    // note: the P matrix could be of type 'uint' instead of 'float',
+                                                                    // but using floats is more convenient for the host application,
+                                                                    // since data buffers of NGrid objects are always floats by design
+layout(set = 0, binding = 3) buffer swap_row_buffer {uint swap_row[];};  // stores the row to swap for the current row 'k'
+                                                                    
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;
+    uint cols;
+    uint k;
+};
+
+// --- Main Function ---
+void main() {
+    uint j = gl_GlobalInvocationID.x;
+    
+    // initialize swap_row with current row k (done by local thread 0)
+    if (gl_LocalInvocationID.x == 0) {
+        while (swap_row[0] < k) {
+            atomicExchange(swap_row[0], k);
+        }
+    }
+    barrier();
+
+    if (j >= k) {
+        // search for highest absolute value in column k (at or below row k)
+        while (U[j * cols + k] > U[swap_row[0] * cols + k]) {
+            atomicExchange(swap_row[0], j);
+        }
+    }
+    memoryBarrierBuffer();
+}

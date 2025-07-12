@@ -1,0 +1,44 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer result_buffer {float result[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N; // number of elements in the result (one less than the data buffer)
+    float log_base;
+};
+
+// main function
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx < N) {
+        float current_val = data[idx + 1];
+        float prev_val = data[idx];
+        float epsilon = 1e-6;
+
+        // Check if values are valid before performing logarithm:
+        // log(x) is only defined for x > 0;
+        // Add a small epsilon to prevent log(0) if data can be zero
+        prev_val = max(prev_val, epsilon);
+
+        // Ensure log_base is valid
+        float valid_base = max(log_base, 1.0 + epsilon); // Ensures base > 1
+
+        float quotient = current_val / prev_val;
+
+        // If quotient is negative or zero, we need to handle it before taking the log
+        quotient = max(quotient, epsilon);
+
+        // get final result
+        result[idx] = log(quotient) / log(log_base);
+    }
+}

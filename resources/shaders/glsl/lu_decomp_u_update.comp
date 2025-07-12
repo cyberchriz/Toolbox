@@ -1,0 +1,43 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for LU decomposition;
+// it updates U matrix (=upper triangular matrix)
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+layout(set = 0, binding = 0) buffer l_buffer    { float L[]; };     // Lower triangular matrix L
+layout(set = 0, binding = 1) buffer u_buffer    { float U[]; };     // Upper triangular matrix U (initialized with source matrix)
+layout(set = 0, binding = 2) buffer p_buffer    { float P[]; };     // Permutation vector P (stores final row indices)
+                                                                    // note: the P matrix could be of type 'uint' instead of 'float',
+                                                                    // but using floats is more convenient for the host application,
+                                                                    // since data buffers of NGrid objects are always floats by design
+layout(set = 0, binding = 3) buffer swap_row_buffer {uint swap_row[];};  // stores the row to swap for the current row 'k'
+                                                                    
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;
+    uint cols;
+    uint k;
+};
+
+// --- Main Function ---
+void main() {
+    uint col = gl_GlobalInvocationID.x % cols; // column index
+    uint row = gl_GlobalInvocationID.x / cols; // row index
+    uint cols_L = rows; // L is a rows x rows square matrix !
+
+    if (row > k) {
+        if (col > k) {
+            U[row * cols + col] -= L[row * cols_L + k] * U[k * cols + col];
+        }
+        else if (col == k) {
+            U[row * cols + col] = 0;
+        }
+    }
+}
