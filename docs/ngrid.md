@@ -1,6 +1,4 @@
-﻿Of course! Here is a Github-flavored Markdown documentation for your `ngrid.h` C++ library, structured and formatted as you requested.
-
-# NGrid Library (`ngrid.h`)
+﻿# NGrid Library (`ngrid.h`)
 
 ## 📜 Summary
 The `ngrid.h` library provides a powerful n-dimensional data structure, the `NGrid` class, designed for high-performance mathematical and scientific computing. It leverages the power of GPU acceleration via the Vulkan API to perform a vast array of parallel computations, from basic arithmetic to complex matrix operations, statistical analysis, and neural network functions.
