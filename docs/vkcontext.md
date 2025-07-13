@@ -1,6 +1,6 @@
-# Vulkan Context Library (`vkcontext.h`)
+﻿# Vulkan Context Library (`vkcontext.h`)
 
-## Summary
+## 📜 Summary
 The `vkcontext.h` library provides high-level abstraction for managing Vulkan objects and workflows.
 It simplifies the creation and management of Vulkan instances, devices, surfaces, swapchains, pipelines,
 and other essential Vulkan components. The library is designed to streamline Vulkan development by offering
@@ -11,7 +11,7 @@ _Note: testing is mostly complete for CGU compute. Handling of graphics still ne
 
 ---
 
-## Features
+## ✨ Features
 - **Instance and Device Management**: Simplifies the creation of Vulkan instances and logical devices.
 - **Surface and Swapchain Management**: Handles platform-specific surface creation and swapchain setup.
 - **Pipeline and RenderPass Management**: Provides tools for creating graphics and compute pipelines, as well as render passes.
@@ -22,7 +22,7 @@ _Note: testing is mostly complete for CGU compute. Handling of graphics still ne
 
 ---
 
-## Classes and Methods
+## 🛠️ Classes and Methods
 
 ### Instance Management
 
