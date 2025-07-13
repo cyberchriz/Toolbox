@@ -456,7 +456,7 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 
 	// create a command buffer
 	if (this->command_buffer == nullptr) {
-		command_buffer = new CommandBuffer(manager->get_device(), QueueFamily::COMPUTE_QUEUE, manager->get_command_pool_compute());
+		command_buffer = new CommandBuffer(manager->get_device(), manager->get_command_pool_compute());
 	}
 
 	if (this->elements != 0) {

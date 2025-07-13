@@ -177,21 +177,50 @@ The `SubPass` class represents a subpass within a render pass, defining how atta
 ---
 
 ### Pipeline Management
+
 The `GraphicsPipeline` and `ComputePipeline` classes manage Vulkan pipelines.
 
-#### GraphicsPipeline
+class `GraphicsPipeline`
+
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
-| `GraphicsPipeline(Device& device, ...)` | Constructs a graphics pipeline.                                            |
+| `GraphicsPipeline(Device& device, ...)` | Constructs a graphics pipeline (with renderpass, subpass, swapchain, vertex shader, etc).|
 | `VkPipeline& get()`                 | Returns the Vulkan graphics pipeline handle.                                   |
 | `VkPipelineLayout& get_layout()`    | Returns the pipeline layout handle.                                            |
+| `const VkViewport& get_viewport() const` | Returns the viewport struct                                               |
 
-#### ComputePipeline
+class `ComputePipeline`
+
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
 | `ComputePipeline(Device& device, ...)` | Constructs a compute pipeline.                                              |
 | `VkPipeline& get()`                 | Returns the Vulkan compute pipeline handle.                                    |
 | `VkPipelineLayout& get_layout()`    | Returns the pipeline layout handle.                                            |
+| `DescriptorSet* get_set() const`    | Returns a pointer to the descriptor set associated with the pipeline.          |
+| `PushConstants* get_constants()`    | Returns a pointer to the push constants range associated with the pipeline.    |
+| `uint32_t get_workgroup_size_x()`   | Returns the x-dimensional workgroup size the pipepine was created with.        |
+| `uint32_t get_workgroup_size_y()`   | Returns the y-dimensional workgroup size the pipepine was created with.        |
+| `uint32_t get_workgroup_size_z()`   | Returns the z-dimensional workgroup size the pipepine was created with.        |
+
+`DeviceMemoryBarrier` objects are generic memory barriers for synchronization between different pipeline stages
+
+| **Method**                          | **Description**                                                                |
+|-------------------------------------|--------------------------------------------------------------------------------|
+| `DeviceMemoryBarrier(...)`          | Parametric constructor for a device memory barrier with the specified stage flags and access flags. |
+
+
+`BufferMemoryBarrier` objects synchronize buffers between pipeline stages
+
+| **Method**                          | **Description**                                                                |
+|-------------------------------------|--------------------------------------------------------------------------------|
+| `BufferMemoryBarrier(...)`          | Parametric constructor for a buffer memory barrier with the specified stage flags and access flags. |
+
+`ImageMemoryBarrier` objects synchronize image memory between pipeline stages
+
+| **Method**                          | **Description**                                                                |
+|-------------------------------------|--------------------------------------------------------------------------------|
+| `ImageMemoryBarrier(...)`           | Parametric constructor for an image memory barrier with the specified stage flags, access flags and layout changes. |
+
 
 ---
 
@@ -232,7 +261,8 @@ ___
 ___
 
 ### Command Pool / Command Buffer
-The `CommandPool` class manages Vulkan command pools, which are used to allocate command buffers.
+
+The `CommandPool` class manages Vulkan command pools, which are used to allocate command buffers. Use separate pools for each queue family.
 
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
@@ -240,21 +270,42 @@ The `CommandPool` class manages Vulkan command pools, which are used to allocate
 | `void trim()`                       | Trims the command pool, releasing unused memory.                               |
 | `VkResult reset()`                  | Resets the command pool, releasing all command buffers.                        |
 | `VkCommandPool get()`               | Returns the Vulkan command pool handle.                                        |
+| `QueueFamily get_usage() const`     | Returns the queue family associated with this pool                             |
 
 The `CommandBuffer` class manages Vulkan command buffers (used to record commands for execution on the GPU).
 
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
-| `CommandBuffer(Device& device, ...)`| Constructs a command buffer for the specified queue family.                    |
+| `CommandBuffer(Device& device, ...)`| Constructs a command buffer for the queue family associated with the pool.     |
+| `CommandBuffer(CommandBuffer&& other) noexcept`| Move constructor.                                                   |
+| `CommandBuffer& operator=(CommandBuffer&& other) noexcept`| Move assignment.                                         |
+| `Event set_event(...)`			  | Set event on the command buffer with the specified memory barriers and flags. Use NULLOPT for any barrier types that aren't needed.|
+| `void reset_event(const Event& event, ...)`| Reset a command buffer event.                                           |
+| `void wait_event(const Event& event) const`| Wait for the specified event to signal.                                 |
 | `void reset()`                      | Resets the command buffer.                                                     |
-| `void bind_pipeline(...)`           | Binds a pipeline to the command buffer.                                        |
-| `void draw(...)`                    | Records a draw command.                                                        |
-| `void dispatch(...)`                | Records a compute dispatch command.                                            |
-| `void submit(...)`                  | Submits the command buffer to the queue.                                       |
+| `void bind_pipeline(...)`           | Binds a graphics or compute pipeline to the command buffer.                    |
+| `void bind_descriptor_set(const DescriptorSet& set)` | Binds a descriptor set to the command buffer (the command buffer has to be constructed for graphics or compute queue family!)|
+| `void bind_constants(PushConstants& constants) const`| Binds a push constants range to the command buffer.           |
+| `... copy_buffer(...)`              | For copy operation between a source and destination buffer (Staging->Device, Device->Staging, Device->Device).|
+| `void add_barrier(...)`             | Add a device/buffer/image memory barrier to the command buffer.                |
+| `void add_barriers(...)`            | Add vectors of multiple barriers at once. Use NULLOPT for barrier types that aren't needed.|
+| `void transition_image_layout()`    | Transition image layout for the specified image.                               |
+| `void draw(...)`                    | Records a draw command for graphics.                                           |
+| `void dispatch(...)`                | Records a dispatch command for compute.                                        |
+| `void begin_render(...)`            |                                                                                |
+| `void begin_renderpass(...)`        |                                                                                |
+| `void end_renderpass() const`       |                                                                                |
+| `void next_subpass(...)`            |                                                                                |
+| `void submit(...)`                  | Ends recording and submits the command buffer to the queue (optionally with Fence).|
+| `VkCommandBuffer& get()`            | Returns the Vulkan handle of the command buffer                                |
+| `void compute(...)`                 | shorthand for: bind compute pipeline -> bind descriptor set -> push constants -> dispatch -> add buffer memory barriers (optionally) -> end recording -> submit (note: a fence will only be used if fence_timeout_nanosec != 0); the boolean direct_submit can be set to false in case multiple dispatches need to be added before a final submit |
+| `void begin_recording()`            | Start command buffer recording state. This is already done once by default after a CommandBuffer object is created.|
+
 
 ---
 
 ### Synchronization Primitives
+
 The library provides classes for synchronization, including `Fence`, `Semaphore`, and `Event`.
 
 `Fence` objects handle synchonization between GPU and CPU, allowing the CPU to wait for GPU operations to complete.
@@ -299,14 +350,38 @@ The library provides classes for synchronization, including `Fence`, `Semaphore`
 
 ### Descriptor Management
 
+class `DescriptorPool`
+
+| **Method**                          | **Description**                                                                |
+|-------------------------------------|--------------------------------------------------------------------------------|
+| `DescriptorPool(const Device& device, ....)` | Parametric constructor.                                               |
+| `DescriptorPool(DescriptorPool&& other) noexcept` | Move constructor.                                                |
+| `DescriptorPool& operator=(DescriptorPool&& other) noexcept` | Move assignment.                                      |
+| `VkDescriptorPool get() const`      | Returns the Vulkan handle of the pool.                                         |
+| `... get_sets() const`              | Returns a vector of the sets assigned to this pool.                            |
+| `uint32_t get_max_set() const`      | Returns the max number of sets the pool is configured to hold.                 |
+| `uint32_t get_current_sets_count() const` | Returns the number of sets currently allocated to this pool.             |
+| `void release_all_sets()`           | Releases all descriptor sets from the pool.                                    |
+| `void release_set(const DescriptorSet& set)` | Released a single set from the pool. Returns the remaining number of sets.|
+| `uint32_t allocate_set(DescriptorSet& set)` | Allocates a new descriptor set to the pool and returns its index       |
+
 class `DescriptorSet`
 
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
 | `DescriptorSet(Device& device)`     | Constructs a descriptor set.                                                   |
-| `uint32_t bind_buffer(...)`         | Binds a buffer to the descriptor set.                                          |
-| `uint32_t bind_image(...)`          | Binds an image view to the descriptor set.                                     |
+| `DescriptorSet(DescriptorSet&& other) noexcept` | move constructor												   |
+| `DescriptorSet& operator=(DescriptorSet&& other) noexcept` | move assignment                                         |
+| `uint32_t bind_buffer(...)`         | Binds a buffer to the descriptor set. Returns the binding index.               |
+| `void replace_buffer(...)`          | Replaces the buffer at the specified binding (usage on finalized sets is allowed).|
+| `uint32_t bind_image(...)`          | Binds an image view to the descriptor set. Returns the binding index.          |
+| `void replace_image(...)`           | Replaces the image at the specified binding (usage on finalized sets is allowed).|
 | `void update()`                     | Updates the descriptor set with the current bindings.                          |
+| `void finalize_layout()`		      | Finalizes the set layout after all bindings are added.                         |
+| `VkDescriptorSet get() const`       | Returns the Vulkan handle of the set.                                          |
+| `... get_layout() const`            | Returns the Vulkan handle of the set layout.                                   |
+| `... get_buffer_bindings() const`   | Returns a vector of buffer binding info structs                                |
+| `... get_image_bndings() const`     | Returns a vector of image binding info structs                                 |
 
 class `VertexDescriptions`
 
@@ -346,6 +421,7 @@ class `Buffer`
 ### Sampler
 
 class `Sampler` for texture sampling
+
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
 | `Sampler(...)`                      | parametric constructor														   |
@@ -353,14 +429,17 @@ class `Sampler` for texture sampling
 
 ___
 
+### Shared Vulkan Manager
+
+The `VulkanManager` class creates a singleton object to conviently manage instance, device and command pools 
+
+| **Method**                          | **Description**                                                                |
+|-------------------------------------|--------------------------------------------------------------------------------|
+
+___
 ### Cross-Platform Support
 The library supports multiple platforms, including:
 - **Windows**: Uses `VK_USE_PLATFORM_WIN32_KHR`.
 - **Linux**: Uses `VK_USE_PLATFORM_XCB_KHR`.
 - **Android**: Uses `VK_USE_PLATFORM_ANDROID_KHR`.
 - **macOS**: Uses `VK_USE_PLATFORM_METAL_EXT`.
-
----
-
-## License
-This library is provided under the MIT License. See the `LICENSE` file for details.

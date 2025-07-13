@@ -1,8 +1,11 @@
 #ifndef VKCONTEXT_H
+
+// Macros & Preprocessor Definitions
 #define VKCONTEXT_H
+#define NOMINMAX
+#define NULLOPT std::nullopt
 
 // include headers
-#define NOMINMAX
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -1759,7 +1762,7 @@ public:
 		Log::info("Swapchain framebuffers created successfully.");
 	}
 
-	void acquire_next_image(const Semaphore& image_available_semaphore, const std::optional<Fence>& fence = std::nullopt, uint64_t timeout = UINT64_MAX) {
+	void acquire_next_image(const Semaphore& image_available_semaphore, const std::optional<Fence>& fence = NULLOPT, uint64_t timeout = UINT64_MAX) {
 		VkResult result;
 		if (fence.has_value()) {
 			result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), fence.value().get(), &current_image_index);
@@ -1995,6 +1998,7 @@ public:
 	CommandPool() = delete;
 	CommandPool(const Device& device, QueueFamily usage) {
 		this->logical = device.get_logical();
+		this->usage = usage;
 
 		// setup command pool
 		VkCommandPoolCreateInfo create_info = {};
@@ -2039,9 +2043,11 @@ public:
 	}
 
 	VkCommandPool get() const { return pool; }
+	QueueFamily get_usage() const { return usage; }
 private:
 	VkCommandPool pool = nullptr;
 	VkDevice logical = nullptr;
+	QueueFamily usage;
 };
 
 class VertexDescriptions {
@@ -2980,7 +2986,7 @@ public:
 	}
 
 	// replaces the image view at the specified binding index with a new one
-	void replace_image(const ImageView& new_image_view, VkImageLayout image_layout, uint32_t target_binding_index, DescriptorType type, const std::optional<Sampler>& sampler = std::nullopt) {
+	void replace_image(const ImageView& new_image_view, VkImageLayout image_layout, uint32_t target_binding_index, DescriptorType type, const std::optional<Sampler>& sampler = NULLOPT) {
 		if (target_binding_index >= layout_bindings.size()) {
 			Log::warning("in method DescriptorSet::replace_image(): argument for the target binding index is invalid; value is ", target_binding_index, " but the highest available index is ", layout_bindings.size() - 1);
 			return;
@@ -3130,6 +3136,7 @@ public:
 	const VkDescriptorSet* get_ptr() const { return &set; }
 	const VkDescriptorSetLayout& get_layout() const { return layout; }
 	const std::vector<BufferBindingInfo>& get_buffer_bindings() const { return buffer_bindings; }
+	const std::vector<ImageBindingInfo>& get_image_bindings() const { return image_bindings; }
 
 	// destructor
 	~DescriptorSet() {
@@ -3257,7 +3264,7 @@ public:
 	}
 
 	// releases a single descriptor sets from the pool
-	void release_set(const DescriptorSet& set) {
+	uint32_t release_set(const DescriptorSet& set) {
 		if (sets.empty()) { return; }
 
 		// remove from VkDescriptorSet vector of the pool
@@ -3275,6 +3282,7 @@ public:
 		else {
 			Log::warning("failed to remove descriptor set from pool (VkResult = ", result, ")");
 		}
+		return sets.size();
 	}
 
 	// allocates a new descriptor set to the pool and returns its index
@@ -3321,16 +3329,16 @@ public:
 		uint32_t subpass_index,
 		const Swapchain& swapchain,
 		const ShaderModule& vertex_shader_module,
-		const std::optional<ShaderModule>& fragment_shader_module = std::nullopt,
-		const std::optional<ShaderModule>& hull_shader_module = std::nullopt,
-		const std::optional<ShaderModule>& domain_shader_module = std::nullopt,
+		const std::optional<ShaderModule>& fragment_shader_module = NULLOPT,
+		const std::optional<ShaderModule>& hull_shader_module = NULLOPT,
+		const std::optional<ShaderModule>& domain_shader_module = NULLOPT,
 		uint32_t tessellation_patch_control_points = 3,
-		const std::optional<VertexDescriptions>& vertex_descriptions = std::nullopt,
-		const std::optional<PushConstants>& push_constants = std::nullopt,
-		const std::optional<DescriptorSet>& descriptor_set = std::nullopt,
+		const std::optional<VertexDescriptions>& vertex_descriptions = NULLOPT,
+		const std::optional<PushConstants>& push_constants = NULLOPT,
+		const std::optional<DescriptorSet>& descriptor_set = NULLOPT,
 		VkPipelineDepthStencilStateCreateFlagBits depth_stencil_flags = VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_DEPTH_ACCESS_BIT_EXT,
 		bool color_blend = false,
-		const std::optional<std::vector<VkDynamicState>>& dynamic_states = std::nullopt
+		const std::optional<std::vector<VkDynamicState>>& dynamic_states = NULLOPT
 	) {
 		this->logical = device.get_logical();
 
@@ -3802,28 +3810,20 @@ class CommandBuffer {
 public:
 	// constructor
 	CommandBuffer() = delete;
-	CommandBuffer(Device& device, QueueFamily usage, const CommandPool& pool) {
+	CommandBuffer(Device& device, const CommandPool& pool) {
 		this->device = &device;
 		this->logical = device.get_logical();
-		this->graphics_queue = this->device->get_graphics_queue();
-		this->compute_queue = this->device->get_compute_queue();
-		this->transfer_queue = this->device->get_transfer_queue();
-		this->usage = usage;
-		this->pool = pool.get();
 
-		// set pipeline bind point according to command pool QueueFamily setting
-		if (usage == QueueFamily::GRAPHICS_QUEUE) {
-			bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		this->usage = pool.get_usage();
+		switch (usage) {
+		case QueueFamily::COMPUTE_QUEUE: queue = this->device->get_compute_queue(); break;
+		case QueueFamily::GRAPHICS_QUEUE: queue = this->device->get_graphics_queue(); break;
+		case QueueFamily::TRANSFER_QUEUE: queue = this->device->get_transfer_queue(); break;
+		default:
+			Log::error("Constructor for CommandBuffer has invalid QueueFamily argument.");
 		}
-		else if (usage == QueueFamily::COMPUTE_QUEUE) {
-			bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
-		}
-		else if (usage == QueueFamily::TRANSFER_QUEUE) {
-			// do nothing (reason: transfer operations don't use pipelines)
-		}
-		else {
-			Log::error("in CommandBuffer constructor: invalid QueueFamily argument!");
-		}
+
+		this->pool = pool.get();
 
 		// destroy any previous command buffer
 		if (buffer != nullptr) {
@@ -3849,7 +3849,17 @@ public:
 	}
 
 	// move constructor
-	CommandBuffer(CommandBuffer&& other) noexcept : buffer(std::exchange(other.buffer, nullptr)), logical(std::exchange(other.logical, nullptr)), device(std::exchange(other.device, nullptr)), graphics_queue(std::exchange(other.graphics_queue, nullptr)), compute_queue(std::exchange(other.compute_queue, nullptr)), transfer_queue(std::exchange(other.transfer_queue, nullptr)), pool(std::exchange(other.pool, nullptr)), usage(other.usage), bind_point(other.bind_point), workgroup_size_x(other.workgroup_size_x), workgroup_size_y(other.workgroup_size_y), workgroup_size_z(other.workgroup_size_z) {}
+	CommandBuffer(CommandBuffer&& other) noexcept :
+		buffer(std::exchange(other.buffer, nullptr)),
+		logical(std::exchange(other.logical, nullptr)),
+		device(std::exchange(other.device, nullptr)),
+		queue(std::exchange(other.queue, nullptr)),
+		pool(std::exchange(other.pool, nullptr)),
+		usage(other.usage),
+		workgroup_size_x(other.workgroup_size_x),
+		workgroup_size_y(other.workgroup_size_y),
+		workgroup_size_z(other.workgroup_size_z) {
+	}
 
 	// move assignment
 	CommandBuffer& operator=(CommandBuffer&& other) noexcept {
@@ -3857,12 +3867,9 @@ public:
 			logical = std::exchange(other.logical, nullptr);
 			buffer = std::exchange(other.buffer, nullptr);
 			device = std::exchange(other.device, nullptr);
-			graphics_queue = std::exchange(other.graphics_queue, nullptr);
-			compute_queue = std::exchange(other.compute_queue, nullptr);
-			transfer_queue = std::exchange(other.transfer_queue, nullptr);
+			queue = std::exchange(other.queue, nullptr);
 			pool = std::exchange(other.pool, nullptr);
 			usage = other.usage;
-			bind_point = other.bind_point;
 			workgroup_size_x = other.workgroup_size_x;
 			workgroup_size_y = other.workgroup_size_y;
 			workgroup_size_z = other.workgroup_size_z;
@@ -3913,10 +3920,10 @@ public:
 
 	void bind_pipeline(const GraphicsPipeline& pipeline) const {
 		if (usage != QueueFamily::GRAPHICS_QUEUE) {
-			Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support graphics");
+			Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support graphics (queue family mismatch)");
 		}
 		if (pipeline.get() != nullptr) {
-			vkCmdBindPipeline(buffer, bind_point, pipeline.get());
+			vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.get());
 		}
 		else {
 			Log::error("CommandBuffer::bind_pipeline() has invalid pipeline argument");
@@ -3925,11 +3932,11 @@ public:
 
 	void bind_pipeline(const ComputePipeline& pipeline) {
 		if (usage != QueueFamily::COMPUTE_QUEUE) {
-			Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support compute");
+			Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support compute (queue family mismatch)");
 		}
 		if (pipeline.get() != nullptr) {
-			Log::debug("binding pipeline ", pipeline.get(), " to bindpoint type ", bind_point, " at command buffer ", buffer);
-			vkCmdBindPipeline(buffer, bind_point, pipeline.get());
+			Log::debug("binding pipeline ", pipeline.get(), " to compute bindpoint type at command buffer ", buffer);
+			vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.get());
 		}
 		else {
 			Log::error("CommandBuffer::bind_pipeline() has invalid pipeline argument");
@@ -3944,8 +3951,17 @@ public:
 		if (pipeline_layout == nullptr) {
 			Log::error("invalid usage of CommandBuffer::bind_descriptor_set(): please use CommandBuffer::bind_pipeline() first!");
 		}
-		Log::debug("binding descriptor sets to command buffer, bindpoint ", bind_point);
-		vkCmdBindDescriptorSets(buffer, bind_point, pipeline_layout, 0, 1, set.get_ptr(), 0, nullptr);
+		if (usage == QueueFamily::COMPUTE_QUEUE) {
+			Log::debug("binding descriptor sets to command buffer at compute queue bindpoint ");
+			vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, set.get_ptr(), 0, nullptr);
+		}
+		else if (usage == QueueFamily::GRAPHICS_QUEUE) {
+			Log::debug("binding descriptor sets to command buffer at graphics queue bindpoint ");
+			vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, set.get_ptr(), 0, nullptr);
+		}
+		else {
+			Log::warning("CommandBuffer::bind_descriptor_set() failed. The queue family of the command buffer has to be COMPUTE_QUEUE or GRAPHICS_QUEUE.");
+		}
 	}
 
 	void bind_constants(PushConstants& push_constants) const {
@@ -4026,9 +4042,9 @@ public:
 
 	// add multiple barriers
 	void add_barriers(
-		std::optional<std::vector<DeviceMemoryBarrier>>& device_memory_barriers,
-		std::optional<std::vector<BufferMemoryBarrier>>& buffer_memory_barriers,
-		std::optional<std::vector<ImageMemoryBarrier>>& image_memory_barriers
+		std::optional<std::vector<DeviceMemoryBarrier>> device_memory_barriers = NULLOPT,
+		std::optional<std::vector<BufferMemoryBarrier>> buffer_memory_barriers = NULLOPT,
+		std::optional<std::vector<ImageMemoryBarrier>> image_memory_barriers = NULLOPT
 	) {
 		VkDependencyInfo dependency_info = {};
 		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -4145,7 +4161,7 @@ public:
 			vkCmdDispatch(buffer, workgroups_x, workgroups_y, workgroups_z);
 		}
 		else {
-			Log::error("invalid call of method CommandBuffer::dispatch, only allowed for usage type QueueFamily::COMPUTE");
+			Log::error("invalid call of method CommandBuffer::dispatch(), only allowed for usage type QueueFamily::COMPUTE. Graphics uses draw commands instead.");
 		}
 	}
 
@@ -4197,15 +4213,8 @@ public:
 		submit_info.pCommandBuffers = &buffer;
 		submit_info.commandBufferCount = 1;
 
-		if (usage == QueueFamily::GRAPHICS_QUEUE) {
-			vkQueueSubmit(graphics_queue, 1, &submit_info, fence.get());
-		}
-		else if (usage == QueueFamily::COMPUTE_QUEUE) {
-			vkQueueSubmit(compute_queue, 1, &submit_info, fence.get());
-		}
-		else if (usage == QueueFamily::TRANSFER_QUEUE) {
-			vkQueueSubmit(transfer_queue, 1, &submit_info, fence.get());
-		}
+		vkQueueSubmit(queue, 1, &submit_info, fence.get());
+
 		fence.wait(fence_timeout_nanosec);
 		fence.reset();
 	}
@@ -4221,15 +4230,7 @@ public:
 		submit_info.pCommandBuffers = &buffer;
 		submit_info.commandBufferCount = 1;
 
-		if (usage == QueueFamily::GRAPHICS_QUEUE) {
-			vkQueueSubmit(graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
-		}
-		else if (usage == QueueFamily::COMPUTE_QUEUE) {
-			vkQueueSubmit(compute_queue, 1, &submit_info, VK_NULL_HANDLE);
-		}
-		else if (usage == QueueFamily::TRANSFER_QUEUE) {
-			vkQueueSubmit(transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
-		}
+		vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
 	}
 
 	void reset(VkCommandBufferResetFlags flags = VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT) {
@@ -4300,13 +4301,10 @@ public:
 protected:
 	VkCommandBuffer buffer = nullptr;
 	QueueFamily usage = QueueFamily::UNKNOWN_QUEUE;
-	VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
 	VkPipelineLayout pipeline_layout = nullptr;
 	VkDevice logical = nullptr;
 	Device* device = nullptr;
-	VkQueue graphics_queue = nullptr;
-	VkQueue compute_queue = nullptr;
-	VkQueue transfer_queue = nullptr;
+	VkQueue queue = nullptr;
 	VkCommandBufferAllocateInfo allocate_info = {};
 	VkCommandBufferBeginInfo begin_info = {};
 	VkRenderingInfo rendering_info = {};
