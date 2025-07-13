@@ -166,6 +166,8 @@ The `RenderPass` class defines the structure and dependencies of rendering opera
 | `... get_attachment_descriptions()` | Returns a std::vector of the attachment descriptions of the render pass.       |
 | `const AttachmentType get_attachment_type(uint32_t index) const` | Returns the type of an attachment at the specified index. |
 
+<br>
+
 The `SubPass` class represents a subpass within a render pass, defining how attachments are used.
 
 | **Method**                          | **Description**                                                                |
@@ -180,6 +182,8 @@ The `SubPass` class represents a subpass within a render pass, defining how atta
 
 The `GraphicsPipeline` and `ComputePipeline` classes manage Vulkan pipelines.
 
+<br>
+
 class `GraphicsPipeline`
 
 | **Method**                          | **Description**                                                                |
@@ -188,6 +192,8 @@ class `GraphicsPipeline`
 | `VkPipeline& get()`                 | Returns the Vulkan graphics pipeline handle.                                   |
 | `VkPipelineLayout& get_layout()`    | Returns the pipeline layout handle.                                            |
 | `const VkViewport& get_viewport() const` | Returns the viewport struct                                               |
+
+<br>
 
 class `ComputePipeline`
 
@@ -202,18 +208,23 @@ class `ComputePipeline`
 | `uint32_t get_workgroup_size_y()`   | Returns the y-dimensional workgroup size the pipepine was created with.        |
 | `uint32_t get_workgroup_size_z()`   | Returns the z-dimensional workgroup size the pipepine was created with.        |
 
+<br>
+
 `DeviceMemoryBarrier` objects are generic memory barriers for synchronization between different pipeline stages
 
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
 | `DeviceMemoryBarrier(...)`          | Parametric constructor for a device memory barrier with the specified stage flags and access flags. |
 
+<br>
 
 `BufferMemoryBarrier` objects synchronize buffers between pipeline stages
 
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
 | `BufferMemoryBarrier(...)`          | Parametric constructor for a buffer memory barrier with the specified stage flags and access flags. |
+
+<br>
 
 `ImageMemoryBarrier` objects synchronize image memory between pipeline stages
 
@@ -272,6 +283,8 @@ The `CommandPool` class manages Vulkan command pools, which are used to allocate
 | `VkCommandPool get()`               | Returns the Vulkan command pool handle.                                        |
 | `QueueFamily get_usage() const`     | Returns the queue family associated with this pool                             |
 
+<br>
+
 The `CommandBuffer` class manages Vulkan command buffers (used to record commands for execution on the GPU).
 
 | **Method**                          | **Description**                                                                |
@@ -320,6 +333,8 @@ The library provides classes for synchronization, including `Fence`, `Semaphore`
 | `VkResult wait(...)`                | Waits for the fence to be signaled.                                            |
 | `VkFence get()`                     | Returns the Vulkan fence handle.                                               |
 
+<br>
+
 `Semaphore` objects handle synchronization on the GPU side (synchronize operations between different queue submissions on the GPU).
 
 | **Method**                          | **Description**                                                                |
@@ -331,7 +346,8 @@ The library provides classes for synchronization, including `Fence`, `Semaphore`
 | `uint64_t counter()`                | Returns the current counter value of the semaphore.                            |
 | `void signal(...)`                  | Signals the semaphore.                                                         |
 | `VkSemaphore get()`                 | Returns the Vulkan semaphore handle.                                           |
-|
+
+<br>
 
 `Event` objects handle fine-grained synchronization of operations within a single command buffer or queue.
 
@@ -365,6 +381,8 @@ class `DescriptorPool`
 | `void release_set(const DescriptorSet& set)` | Released a single set from the pool. Returns the remaining number of sets.|
 | `uint32_t allocate_set(DescriptorSet& set)` | Allocates a new descriptor set to the pool and returns its index       |
 
+<br>
+
 class `DescriptorSet`
 
 | **Method**                          | **Description**                                                                |
@@ -382,6 +400,8 @@ class `DescriptorSet`
 | `... get_layout() const`            | Returns the Vulkan handle of the set layout.                                   |
 | `... get_buffer_bindings() const`   | Returns a vector of buffer binding info structs                                |
 | `... get_image_bndings() const`     | Returns a vector of image binding info structs                                 |
+
+<br>
 
 class `VertexDescriptions`
 
@@ -435,6 +455,15 @@ The `VulkanManager` class creates a singleton object to conviently manage instan
 
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
+| `static VulkanManager* make_singleton(...)`| Creates a shared manager with the specified layers, extensions and features|
+| `static VulkanManager* make_singleton_for_compute(...)`| Creates a shared manager with default settings specifically for most GPU compute scenarios | 
+| `static Device& get_device()`       | Returns the shared Device object.                                              |
+| `static const Instance& get_instance()` | Returns the shared Instance object.                                        |
+| `static VulkanManager* get_singleton()`| Returns a pointer to the shared Vulkan Manager. Will be nullptr in case it hasn't yet been created |
+| `static CommandPool& get_command_pool_graphics()`| Returns the shared command pool associated with a graphics queue. |
+| `static CommandPool& get_command_pool_compute()`| Returns the shared command pool associated with a compute queue.   |
+| `static CommandPool& get_command_pool_transfer()`| Returns the shared command pool associated with a transfer queue. |
+| `... get_enabled_device_features()` | Returns a Vulkan struct with the enabled device features as specified at the singleton's construction time.|
 
 ___
 ### Cross-Platform Support
