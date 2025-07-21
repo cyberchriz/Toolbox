@@ -19,7 +19,93 @@ layout(push_constant) uniform push_constants {
 
 // main function
 void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
     if (gl_GlobalInvocationID.x < N) {
-        result[gl_GlobalInvocationID.x] = pow(data[gl_GlobalInvocationID.x], exponent);
+        
+        float base = data[idx];
+        float x;
+        float NAN = 0.0f / 0.0f;
+
+        // squared
+        if (exponent == 2.0f) {
+            x = base * base;
+        }
+
+        // exponent 0
+        else if (exponent == 0.0f) {
+            x = 1;
+        }
+
+        // any other positive exponent
+        else if (exponent > 0.0f) {
+            
+            // positive base
+            if (base >= 0.0f) {
+                x = pow(base, exponent);
+            }
+
+            // negative base
+            else {
+                // integer exponent
+                if (exponent == round(exponent)) {
+                    // even positive integer exponent
+                    if (0.5 * exponent == round(0.5 * exponent)) {
+                        x = pow(abs(base), exponent);
+                    }
+                    // odd positive integer exponent
+                    else {
+                        x = -pow(abs(base), exponent);
+                    }
+                }
+                // negative base, floating point positive exponent
+                else {
+                    // accept NAN
+                    x = NAN;
+                    result[idx] = x;
+                    return;
+                }
+            }
+        }
+
+        // negative exponent
+        else {
+            // positive base
+            if (base >= 0.0f) {
+                x = 1.0f / pow(base, -exponent);
+            }
+            
+            // negative base
+            else {
+                // negative integer exponent
+                if (exponent == round(exponent)) {
+                    // even negative integer exponent
+                    if (0.5 * exponent == round(0.5 * exponent)) {
+                        x = 1.0f / pow(abs(base), -exponent);
+                    }
+                    // odd negative integer exponent
+                    else {
+                        x = -1.0f / pow(abs(base), -exponent);
+                    }
+                }
+                // negative base, negative floating point exponent
+                else {
+                    // accept NAN
+                    x = NAN;
+                    result[idx] = x;
+                    return;
+                }
+            }
+        }
+
+        // final checks for NAN / Infinity
+        if (isinf(x)) {
+            x = x > 0.0f ? 3.402823466e+38 : -3.402823466e+38;
+        }
+        else if (isnan(x)) {
+            x = 0.0;
+        }
+
+        result[idx] = x;
     }
 }

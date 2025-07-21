@@ -29,7 +29,6 @@ These methods handle the creation, copying, moving, and destruction of `NGrid` o
 | `NGrid(const std::vector<uint32_t>& shape)` | Constructs a grid with the specified shape from a vector. |
 | `NGrid(std::initializer_list<uint32_t> shape)`| Constructs a grid with the specified shape from an initializer list. |
 | `NGrid(std::vector<float_t> source_vector)` | Constructs a 1D grid and fills it with data from a `std::vector`. |
-| `NGrid(const float_t* source_array, ...)` | Constructs a 1D grid and fills it with data from a raw C-style array. |
 | `NGrid(const NGrid& other)` | Copy constructor. Creates a deep copy of another grid's data on the GPU. |
 | `NGrid(NGrid&& other) noexcept` | Move constructor. Efficiently transfers ownership of GPU resources. |
 | `~NGrid()` | Destructor that cleans up and releases all associated GPU resources. |
@@ -77,6 +76,8 @@ Quickly populate the entire grid with specific values or random distributions.
 | `fill_random_gaussian(mu, sigma)` | Fills with random numbers from a Gaussian (normal) distribution. |
 | `fill_random_uniform(min, max)` | Fills with random numbers from a uniform distribution. |
 | `fill_random_uniform_int(min, max)`| Fills with random integers from a uniform distribution. |
+| `fill_random(min, max)` | Alias for fill_random_uniform(). |
+| `fill_random_int(min, max)`| Alias for fill_random_uniform_int(). |
 | `fill_random_binary(ratio)` | Fills with `0.0f` or `1.0f` based on a given ratio. |
 | `fill_random_sign(ratio)` | Fills with `-1.0f` or `1.0f` based on a given ratio. |
 | `fill_range(start, step)` | Fills the grid with a sequence of numbers. |

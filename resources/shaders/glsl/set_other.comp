@@ -1,0 +1,75 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// default constants
+#define MAX_DIMENSIONS 10
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer data_shape_buffer {uint data_shape[];};
+
+layout(set = 0, binding = 2) buffer other_buffer {float other_data[];};
+layout(set = 0, binding = 3) buffer other_shape_buffer {uint other_shape[];};
+
+layout(set = 0, binding = 4) buffer offset_buffer {uint offset[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint data_N;  // number of elements of 'this'
+    uint other_N; // number of elements of 'other'
+    uint dimensions;
+};
+
+// setup shared variables
+shared uint shared_data_shape[MAX_DIMENSIONS];
+shared uint shared_other_shape[MAX_DIMENSIONS];
+shared uint shared_offset[MAX_DIMENSIONS];
+
+// main function
+void main() {
+    // copy shape buffers to shared memory (reducing global buffer access);
+    // local thread 0 takes care of this
+    if (gl_LocalInvocationID.x == 0) {
+        for (uint i = 0; i < dimensions; i++) {
+            shared_data_shape[i] = data_shape[i];
+            shared_other_shape[i] = other_shape[i];
+            shared_offset[i] = offset[i];
+        }
+    }
+    barrier();
+
+    if (gl_GlobalInvocationID.x < other_N) {
+        
+        // get multidimensional index of 'other'
+        uint other_array_index[MAX_DIMENSIONS];
+        uint other_flat_index = gl_GlobalInvocationID.x;
+        for (int i = int(dimensions) - 1; i >= 0; --i) {
+            other_array_index[i] = other_flat_index % shared_other_shape[i];
+            other_flat_index = other_flat_index / shared_other_shape[i];
+        }
+
+        // add the offset
+        uint data_array_index[MAX_DIMENSIONS];
+        for (uint i = 0; i < dimensions; i++) {
+            data_array_index[i] = other_array_index[i] + shared_offset[i];
+        }
+
+        // calculate the flat equivalent
+        uint data_flat_index = 0;
+        for (uint i = 0; i < dimensions; i++) {
+            data_flat_index = data_flat_index * shared_data_shape[i] + data_array_index[i];
+        }
+
+        // make sure the calculated result fits into the boundaries of 'this'
+        if (data_flat_index < data_N) {
+            data[data_flat_index] = other_data[gl_GlobalInvocationID.x];
+        }
+
+    }
+}

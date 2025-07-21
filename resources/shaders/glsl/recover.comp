@@ -28,9 +28,9 @@ void main() {
         // check for Infinity
         else if (abs(val) == float(1.0/0.0)) {
             if (val > 0.0) {
-                result[gl_GlobalInvocationID.x] = 3.4028235e+38;
+                result[gl_GlobalInvocationID.x] = 3.402823466e+38;
             } else {
-                result[gl_GlobalInvocationID.x] = -3.4028235e+38;
+                result[gl_GlobalInvocationID.x] = -3.402823466e+38;
             }
         }
         else {

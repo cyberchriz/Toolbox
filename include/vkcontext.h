@@ -3265,7 +3265,7 @@ public:
 
 	// releases a single descriptor sets from the pool
 	uint32_t release_set(const DescriptorSet& set) {
-		if (sets.empty()) { return; }
+		if (sets.empty()) { return 0; }
 
 		// remove from VkDescriptorSet vector of the pool
 		for (uint32_t i = 0; i < sets.size(); i++) {

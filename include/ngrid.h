@@ -49,7 +49,6 @@ public:
 	NGrid(const std::vector<uint32_t>& shape);      // parametric default constructor for multi-dimensional array, overload for std::vector
 	NGrid(std::initializer_list<uint32_t> shape);   // parametric default constructor for multi-dimensional array, overload for std::initializer_list
 	NGrid(std::vector<float_t> source_vector);      // construct 1d array and directly fill it with the contents of a std::vector<float_t>
-	NGrid(const float_t* source_array, const uint32_t copied_elements, const uint32_t source_offset = 0); // construct 1d array and directly fill it with the contents of a float array[]
 	NGrid(NGrid&& other) noexcept;                  // move constructor
 	NGrid(const NGrid& other);                      // copy constructor
 	~NGrid();                                       // destructor
@@ -71,6 +70,8 @@ public:
 	void set(const std::vector<float_t>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
 	void set(const float_t* data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
 	void set(const NGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	void set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset);
+	void set(const NGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
 	float_t get(const uint32_t flat_index) const;
 	std::vector<float_t> get() const;
 	std::vector<float_t> get(const uint32_t read_elements, const uint32_t source_offset_elements) const;
@@ -93,6 +94,8 @@ public:
 	void fill_random_gaussian(const float_t mu = 0.0f, const float_t sigma = 1.0f);
 	void fill_random_uniform(const float_t min = 0.0f, const float_t max = 1.0f);
 	void fill_random_uniform_int(const int32_t min = 0, const int32_t max = 9);
+	void fill_random(const float_t min = 0.0f, const float_t max = 1.0f); // alias for fill_random_uniform()
+	void fill_random_int(const int32_t min = 0, const int32_t max = 9); // alias for fill_random_uniform_int()
 	void fill_random_binary(float_t ratio = 0.5f);
 	void fill_random_sign(float_t ratio = 0.5f);
 	void fill_range(const float_t start = 0.0f, const float_t step = 1.0f);
@@ -409,12 +412,6 @@ NGrid::NGrid(std::vector<float_t> source_vector) {
 	this->create(shape_vec);
 	this->set(source_vector, copied_elements, 0, 0);
 }
-// construct 1d array and directly fill it with the contents of a given float array[]
-NGrid::NGrid(const float_t* source_array, const uint32_t copied_elements, const uint32_t source_offset) {
-	std::vector<uint32_t> shape_vec = { copied_elements };
-	this->create(shape_vec);
-	this->set(source_array, copied_elements, source_offset, 0);
-}
 
 // shared protected helper method for constructors
 void NGrid::create(const std::vector<uint32_t>& shape) {
@@ -460,7 +457,7 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 	}
 
 	if (this->elements != 0) {
-		// allocate as a 'flat' buffer -> this is required because GLSL shaders only support dynamic sizing in a single (=the last) dimension
+		// allocate as a 'flat' buffer
 		VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		if (this->data_buffer == nullptr) {
 			data_buffer = new Buffer<float_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->elements, memory_properties);
@@ -537,8 +534,8 @@ NGrid::~NGrid() {
 NGrid& NGrid::operator=(const NGrid& other) {
 	Log::debug("NGrid copy assignment invoked, copying from other (handle: ", other.data_buffer, ") to this (handle: ", this->data_buffer, ")");
 	if (this != &other) {
-		delete this->data_buffer;
-		delete this->shape_buffer;
+		delete this->data_buffer;	this->data_buffer = nullptr;
+		delete this->shape_buffer;  this->shape_buffer = nullptr;
 		this->create(other.get_shape());
 		this->set(other);
 	}
@@ -580,6 +577,7 @@ void NGrid::set(const std::vector<uint32_t>& index, const float_t value) {
 
 // alias for set(const std::vector<float_t>& data)
 void NGrid::operator=(const std::vector<float_t>& data) {
+	*this = this->reshape({ uint32_t(data.size()) });
 	this->set(data);
 }
 
@@ -598,7 +596,8 @@ void NGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint
 // copies raw data from a float_t array to the data buffer
 // of the underlying NGrid array;
 void NGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
-	data_buffer->write(data, copied_elements, source_offset_elements, target_offset_elements);
+	uint32_t source_elements = copied_elements == 0 ? this->elements - source_offset_elements : copied_elements;
+	data_buffer->write(data, source_elements, source_offset_elements, target_offset_elements);
 }
 
 // copies raw data from another NGrid array to the data buffer
@@ -635,6 +634,58 @@ void NGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_of
 		}
 	}
 	data_buffer->write(*other.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
+}
+
+// copies from 'other' n-dimensional NGrid to 'this';
+// the target_origin_offset argument is used to shift the copy region relative
+// to the origin of 'this'
+// (overload with offset argument as std::vector)
+void NGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset) {
+	uint32_t offset_dim = target_origin_offset.size();
+	if (this->dimensions != other.get_dimensions() || this->dimensions != offset_dim) {
+		Log::warning("In method NGrid::set(const NGrid& other, ...): dimensions of 'this', 'other' and target_origin_offset must match! ",
+			"'this' has ", this->dimensions, " dimensions, 'other' has ", other.get_dimensions(), " dimensions, offset argument has ",
+			offset_dim, " dimensions");
+		return;
+	}
+
+	// create a buffer for the offset
+	Buffer<uint32_t> offset(manager->get_device(), BufferUsage::STORAGE_BUFFER, offset_dim);
+	offset.write(target_origin_offset);
+
+	// load shader
+	static ShaderModule shader(manager->get_device(), SET_OTHER_SPIRV_BIN, SET_OTHER_SPIRV_BYTES);
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(offset, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push_constants
+	PushConstants constants(
+		this->elements,
+		other.get_elements(),
+		this->dimensions
+	);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, other.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+}
+
+// copies from 'other' n-dimensional NGrid to 'this';
+// the target_origin_offset argument is used to shift the copy region relative
+// to the origin of 'this'
+// (overload with offset argument as std::initializer_list)
+void NGrid::set(const NGrid& other, const std::initializer_list<uint32_t>& target_offset_index) {
+	std::vector<uint32_t> offset(target_offset_index);
+	this->set(other, offset);
 }
 
 // returns the value of an array element via its flattened index
@@ -738,6 +789,7 @@ NGrid NGrid::subgrid(std::initializer_list<uint32_t> source_offset, std::initial
 	descriptor_pool->allocate_set(set);
 
 	PushConstants constants(this->dimensions);
+
 	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
 	command_buffer->compute(pipeline, subgrid.get_elements(), 1, 1, true, fence_timeout_nanosec);
 	descriptor_pool->release_set(set);
@@ -787,6 +839,11 @@ NGrid NGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> 
 
 // fill entire array with given floating point value
 void NGrid::fill(const float_t value) {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
+
 	static ShaderModule shader(manager->get_device(), FILL_SPIRV_BIN, FILL_SPIRV_BYTES);
 
 	DescriptorSet set(manager->get_device());
@@ -804,6 +861,10 @@ void NGrid::fill(const float_t value) {
 
 // initialize the entire array with zeros
 void NGrid::fill_zero() {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
 	static ShaderModule shader(manager->get_device(), FILL_ZERO_SPIRV_BIN, FILL_ZERO_SPIRV_BYTES);
 
 	DescriptorSet set(manager->get_device());
@@ -821,6 +882,10 @@ void NGrid::fill_zero() {
 
 // fill entire array with identity matrix
 void NGrid::fill_identity() {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
 	static ShaderModule shader(manager->get_device(), FILL_IDENTITY_SPIRV_BIN, FILL_IDENTITY_SPIRV_BYTES);
 
 	DescriptorSet set(manager->get_device());
@@ -839,6 +904,10 @@ void NGrid::fill_identity() {
 
 // fill with values from a random normal (=gaussian) distribution
 void NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
 	static ShaderModule shader(manager->get_device(), FILL_RANDOM_GAUSSIAN_SPIRV_BIN, FILL_RANDOM_GAUSSIAN_SPIRV_BYTES);
 
 	DescriptorSet set(manager->get_device());
@@ -856,6 +925,10 @@ void NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
 
 // fill with values from a random uniform distribution
 void NGrid::fill_random_uniform(const float_t min, const float_t max) {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
 	static ShaderModule shader(manager->get_device(), FILL_RANDOM_UNIFORM_SPIRV_BIN, FILL_RANDOM_UNIFORM_SPIRV_BYTES);
 
 	DescriptorSet set(manager->get_device());
@@ -871,8 +944,17 @@ void NGrid::fill_random_uniform(const float_t min, const float_t max) {
 	descriptor_pool->release_set(set);
 }
 
+// Alias for NGrid::fill_random_uniform()
+void NGrid::fill_random(const float_t min, const float_t max) {
+	fill_random_uniform(min, max);
+}
+
 // fill with values from a random uniform distribution
 void NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
 	static ShaderModule shader(manager->get_device(), FILL_RANDOM_UNIFORM_INT_SPIRV_BIN, FILL_RANDOM_UNIFORM_INT_SPIRV_BYTES);
 
 	DescriptorSet set(manager->get_device());
@@ -888,8 +970,17 @@ void NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
 	descriptor_pool->release_set(set);
 }
 
+// Alias for NGrid::fill_random_uniform_int()
+void NGrid::fill_random_int(const int32_t min, const int32_t max) {
+	fill_random_uniform_int(min, max);
+}
+
 // randomly sets the specified fraction of the values to zero and the rest to 1 (default: 0.5, i.e. 50%)
 void NGrid::fill_random_binary(float_t ratio) {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
 	// check valid ratio
 	if (ratio > 1 || ratio < 0) {
 		Log::warning("invalid usage of method 'void NGrid::fill_binary(float_t ratio)': ratio argument must be between 0-1 but is ",
@@ -914,6 +1005,10 @@ void NGrid::fill_random_binary(float_t ratio) {
 
 // randomly sets the specified fraction of the values to -1 and the rest to +1 (default: 0.5, i.e. 50%)
 void NGrid::fill_random_sign(float_t ratio) {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
 	// check valid ratio
 	if (ratio > 1 || ratio < 0) {
 		Log::warning("invalid usage of method 'void NGrid::fill_binary(float_t ratio)': ratio argument must be between 0-1 but is ",
@@ -941,6 +1036,10 @@ void NGrid::fill_random_sign(float_t ratio) {
 // referring to the zero position and a step parameter)
 // in all dimensions
 void NGrid::fill_range(const float_t start, const float_t step) {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
 	static ShaderModule shader(manager->get_device(), FILL_RANGE_SPIRV_BIN, FILL_RANGE_SPIRV_BYTES);
 
 	DescriptorSet set(manager->get_device());
@@ -958,6 +1057,10 @@ void NGrid::fill_range(const float_t start, const float_t step) {
 }
 
 void NGrid::fill_dropout(float_t ratio) {
+	if (this->elements == 0) {
+		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return;
+	}
 	// check valid ratio
 	if (ratio > 1 || ratio < 0) {
 		Log::warning("invalid usage of method 'void NGrid::fill_dropout(float_t ratio)': ratio argument must be between 0-1 but is ",
@@ -1192,25 +1295,25 @@ float_t NGrid::median() const {
 // use 'true' for the sample_var parameter to query the sample variance;
 // if 'false' the population variance will be returned instead
 float_t NGrid::var(bool sample_var) const {
-	// std::cout << "expected variance result: " << (this->operator-((this->operator/(elements)).sum())).pow().operator/(elements - 1).sum() << std::endl;
-	static ShaderModule shader(manager->get_device(), VARIANCE_SPIRV_BIN, VARIANCE_SPIRV_BYTES);
+	float_t mean = this->sum() / this->elements;
+	NGrid mdev2 = (*this - mean).pow();
+	float_t mdev2_sum = mdev2.sum();
+	float variance = sample_var ? mdev2_sum / (this->elements - 1) : mdev2_sum / this->elements;
 
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
+	// NAN/INF check
+	if (std::isinf(variance) || std::isnan(variance)) {
+		// infinite results may be the consequence of summing up many very large numbers,
+		// which may happen because the mean deviations are squared before calculting the sum;
+		// therefore, let's try to divide elementwise by N (or N-1) first, before summing up:
+		if (sample_var) {
+			variance = (mdev2 / (this->elements - 1)).sum();
+		}
+		else {
+			variance = (mdev2 / this->elements).sum();
+		}
+	}
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(this->elements, static_cast<uint32_t>(sample_var));
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
-
-	return local_results.read_element(0);
+	return variance;
 }
 
 // returns the standard deviation of all values a the vector, matrix or array
@@ -1276,22 +1379,45 @@ float_t NGrid::kurt() const {
 float_t NGrid::sum() const {
 	static ShaderModule shader(manager->get_device(), SUM_SPIRV_BIN, SUM_SPIRV_BYTES);
 
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
+	NGrid data_input = this->flatten();
+	NGrid local_results(1);
+	uint32_t input_elements, num_workgroups;
+	float_t total_sum;
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	do {
+		// calculate number of workgroups required to cover all input elements
+		input_elements = data_input.get_elements();
+		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	descriptor_pool->allocate_set(set);
+		// resize local results NGrid (one element for each workgroup)
+		local_results = local_results.reshape({ num_workgroups });
 
-	PushConstants constants(this->elements);
+		// define descriptor set
+		DescriptorSet set(manager->get_device());
+		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.finalize_layout();
+		descriptor_pool->allocate_set(set);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
+		// define push constants
+		PushConstants constants(data_input.get_elements());
 
-	return local_results.read_element(0);
+		// execute compute pipeline
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
+		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
+		descriptor_pool->release_set(set);
+
+		if (num_workgroups > 1) {
+			// turn the local results of this iteration into the input of the next one
+			data_input = local_results;
+		}
+		else {
+			total_sum = local_results.get(0);
+		}
+
+	} while (num_workgroups > 1);
+
+	return total_sum;
 }
 
 // elementwise addition of the specified value to all elements of the array
@@ -4983,7 +5109,7 @@ uint32_t NGrid::flat_index(std::initializer_list<uint32_t> multi_index_list) con
 uint32_t NGrid::flat_index(const std::vector<uint32_t>& multi_index) const {
 	// Check if the number of indices provided matches the array's dimensions
 	if (multi_index.size() != this->dimensions) {
-		Log::warning("Number of indices (", multi_index.size(), ") does not match array dimensions (",
+		Log::warning("Error in NGrid::flat_index(...): Number of indices (", multi_index.size(), ") does not match array dimensions (",
 			this->dimensions, "). Returning 0 (potential trunctation).");
 		return UINT32_MAX;
 	}

@@ -451,7 +451,7 @@ ___
 
 ### Shared Vulkan Manager
 
-The `VulkanManager` class creates a singleton object to conviently manage instance, device and command pools 
+The `VulkanManager` class creates a global singleton object to conviently manage instance, device and command pools 
 
 | **Method**                          | **Description**                                                                |
 |-------------------------------------|--------------------------------------------------------------------------------|
