@@ -121,8 +121,8 @@ public:
 	float_t median() const;
 	float_t var(bool sample_var = true) const;
 	float_t stdev() const;
-	float_t kurt() const;
-	float_t skew() const;
+	float_t kurt(const bool sample_kurt = true) const;
+	float_t skew(const bool sample_skew = true) const;
 
 	// +=================================+   
 	// | Addition                        |
@@ -1321,54 +1321,90 @@ float_t NGrid::stdev() const {
 	return std::sqrt(this->var());
 }
 
-// returns the sample skewness of all data of the NGrid
-float_t NGrid::skew() const {
-	static ShaderModule shader(manager->get_device(), SKEW_SPIRV_BIN, SKEW_SPIRV_BYTES);
+// returns the skewness (sample or population) of all data of the NGrid
+float_t NGrid::skew(const bool sample_skew) const {
 
-	Buffer<float> local_results1(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
-	Buffer<float> local_results2(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
+	// for formula explanation see: https://en.wikipedia.org/wiki/Skewness
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results1, DescriptorType::STORAGE_BUFFER_DESCRIPTOR); // local_result1[0] will store the mean mdev2
-	set.bind_buffer(local_results2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR); // local_result1[0] will store the mean mdev3
-	set.finalize_layout();
+	// get the mean
+	float_t n = this->elements;
+	float_t mean = this->mean();
 
-	descriptor_pool->allocate_set(set);
+	// get mean deviations
+	NGrid mdev = *this - mean;
 
-	PushConstants constants(this->elements);
+	// get third sample moment
+	float_t m3 = (mdev.pow(3)).sum() / n;
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
+	// NAN/INF check
+	if (std::isinf(m3) || std::isnan(m3)) {
+		// infinite results may be the consequence of summing up many very large numbers,
+		// which may happen because the mean deviations are raised to the third power before calculting the sum;
+		// therefore, let's try to divide elementwise by N first, before summing up:
+		m3 = (mdev.pow(3) / n).sum();
+	}
 
-	return static_cast<float_t>(local_results1.read_element(0) / std::pow(local_results2.read_element(0), 1.5));
+	// get standard deviation
+	float_t s = std::pow(mdev.pow(2).sum() / (n - 1), 2);
+
+	// NAN/INF check
+	if (std::isinf(s) || std::isnan(s)) {
+		s = std::pow((mdev.pow(2) / (n - 1)).sum(), 2);
+	}
+
+	// get b1 (population skewness estimator)
+	float_t b1 = m3 / std::pow(s, 3);
+
+	// in case of the population skewness we are done here
+	if (!sample_skew) {
+		return b1;
+	}
+	// else: return sample skewness
+	else {
+		float_t G1 = ((n * n) / ((n - 1) * (n - 2))) * b1;
+		return G1;
+	}
 }
 
-// returns the sample kurtosis of all elements of the NGrid
-float_t NGrid::kurt() const {
-	static ShaderModule shader(manager->get_device(), SKEW_SPIRV_BIN, SKEW_SPIRV_BYTES);
+// returns the kurtosis of all elements of the NGrid
+float_t NGrid::kurt(const bool sample_kurt) const {
 
-	Buffer<float> local_results1(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
-	Buffer<float> local_results2(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
+	// for formula explanation see: https://en.wikipedia.org/wiki/Kurtosis
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results1, DescriptorType::STORAGE_BUFFER_DESCRIPTOR); // local_result1[0] will store the mean mdev2
-	set.bind_buffer(local_results2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR); // local_result2[0] will store the mean mdev4
-	set.finalize_layout();
+	// get the mean
+	float_t n = this->elements;
+	float_t mean = this->mean();
 
-	descriptor_pool->allocate_set(set);
+	// get mean deviations
+	NGrid mdev = *this - mean;
 
-	PushConstants constants(this->elements);
+	// get second and fourth sample moment
+	float_t m2 = (mdev.pow(2)).sum() / n;
+	float_t m4 = (mdev.pow(4)).sum() / n;
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
+	// NAN/INF check
+	if (std::isinf(m2) || std::isnan(m2)) {
+		// infinite results may be the consequence of summing up many very large numbers,
+		// which may happen because the mean deviations are raised to the power before calculting the sum;
+		// therefore, let's try to divide elementwise by N first, before summing up:
+		m2 = (mdev.pow(2) / n).sum();
+	}
+	if (std::isinf(m4) || std::isnan(m4)) {
+		m4 = (mdev.pow(4) / n).sum();
+	}
 
-	float_t mean_mdev2 = local_results1.read_element(0);
-	float_t mean_mdev4 = local_results2.read_element(0);
-	return mean_mdev4 / (mean_mdev2 * mean_mdev2) - 3;
+	// calculate sample kurtosis
+	float_t g2 = m4 / std::pow(m2, 2) - 3.0f;
+
+	// in case of the sample kurtosis (biased estimator) we are done heere
+	if (sample_kurt) {
+		return g2;
+	}
+	// else: calculate population kurtosis (unbiased estimator)
+	else {
+		float_t G2 = ((n - 1) / ((n - 2) * (n - 3))) * ((n + 1) * g2 + 6);
+		return G2;
+	}
 }
 
 // +=================================+   

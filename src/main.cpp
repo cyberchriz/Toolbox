@@ -3,7 +3,7 @@
 
 int main() {
 	// +=================================+   
-	// | Functionality Demonstration     |
+	// | Introduction                    |
 	// +=================================+
 	Log::force("\nThis is a test output for the NGrid library, demonstrating its functionality.");
 	Log::force("This library implements a vast collection of parallel compute operations on the GPU, using Vulkan.");
@@ -23,6 +23,9 @@ int main() {
 	Log::force("A += 0.5            ...etc");
 	Log::force("\nThe outputs in the following examples are made by using the NGrid::print() method.");
 
+	// +=================================+   
+	// | Constructors & Destructors      |
+	// +=================================+
 	Log::force("\n+=================================+\n| Constructors & Destructors      |\n+=================================+");
 	Log::force("\nLet's start with a 10x10 2d matrix using the variadic template constructor: template<typename... Args> NGrid(Args... args);");
 	Log::force("NGrid A(10,10);\nA.fill(5); // initializing all elements with a value of 5.0f");
@@ -49,6 +52,9 @@ int main() {
 	NGrid D(example);
 	D.print("\nresult (D):");
 
+	// +=================================+   
+	// | Assignment                      |
+	// +=================================+
 	Log::force("\n+=================================+\n| Assignment                      |\n+=================================+");
 	Log::force("\nHere's an example of copy assignment, using 'operator=', in this example let's reassign D to C (see above):");
 	Log::force("D = C;");
@@ -69,6 +75,9 @@ int main() {
 	D = array;
 	D.print("\nupdated result (D):");
 
+	// +=================================+   
+	// | getters & setters               |
+	// +=================================+
 	Log::force("\n+=================================+\n| Getters & Setters               |\n+=================================+");
 	Log::force("\nA std::initializer_list<uint32_t> argument can be used to update an individual NGrid element via its multidimensional index:");
 	Log::force("NGrid E(5,5);\nE.fill_zero();\E.set({2,2},1)");
@@ -155,6 +164,9 @@ int main() {
 	G.print("\nresult (G) after the operation:");
 	Log::force("Note: the offset and shape arguments can either be both type std::initializer_list<uint32_t> or both type std::vector<uint32_t>");
 
+	// +=================================+   
+	// | Fill / Initialize               |
+	// +=================================+
 	Log::force("\n+=================================+\n| Fill / Initialize               |\n+=================================+");
 	Log::force("\nWe've already seen examples of the methods fill(float_t value), fill_zero(), fill_random() and fill_random_int().");
 	Log::force("fill_random() and fill_random_int() generate random values from a uniform distribution.");
@@ -192,6 +204,108 @@ int main() {
 	Log::force("H.fill_identity();");
 	H.fill_identity();
 	H.print("\nresult (H):");
+
+	// +=================================+   
+	// | Neural Net Weight Initialization|
+	// +=================================+
+	Log::force("\n+=================================+\n| Neural Net Weight Initialization|\n+=================================+");
+	Log::force("Several methods are implemented to serve as a good starting point for weight initialization of neural networks,");
+	Log::force("depending on the layer's activation function and the number of input and output connections:");
+	Log::force("    void weightinit_tanh_normal(uint32_t fan_in, uint32_t fan_out);   // 'Xavier' tanh normal method (Xavier Glorot, Yoshua Bengio)");
+	Log::force("    void weightinit_tanh_uniform(uint32_t fan_in, uint32_t fan_out);  // 'Xavier' tanh uniform method (Xavier Glorot, Yoshua Bengio)");
+	Log::force("    void weightinit_sigmoid(uint32_t fan_in, uint32_t fan_out);       // 'Xavier' sigmoid uniform method (Xavier Glorot, Yoshua Bengio)");
+	Log::force("    void weightinit_relu(uint32_t fan_in);                            // 'Kaiming He' method for ReLU activation");
+	Log::force("    void weightinit_elu(uint32_t fan_in);                             // 'Kaiming He' method for ELU activation");
+	Log::force("\nHere's an example for sigmoid activation (with 25 inputs and outputs for each neuron):\nNGrid I(5,5);\nI.weightinit_sigmoid(25,25);");
+	NGrid I(5, 5);
+	I.weightinit_sigmoid(25, 25);
+	I.print("\nresult: initialized weights (I):");
+
+	// +=================================+
+	// | Distribution Properties         |
+	// +=================================+
+	Log::force("\n+=================================+\n| Distribution Properties         |\n+=================================+");
+	Log::force("There currently are methods to retrieve the minimum, maximum, max absolute, mean, median, variance, standard deviation, kurtosis and skewness");
+	Log::force("As an example, let's take a 1d matrix 'J' with 50 random elements from a Gaussian normal distribution with a mean of 2.0 and a standard deviation of 1.0:");
+	Log::force("NGrid J(50);\nJ.fill_random_gaussian(2,1);");
+	NGrid J(50);
+	J.fill_random_gaussian(2, 1);
+	J.print("Source vector (J):");
+	Log::force("float_t x = J.min();     // result: x = ", J.min());
+	Log::force("float_t x = J.max();     // result: x = ", J.max());
+	Log::force("float_t x = J.maxabs();  // result: x = ", J.maxabs());
+	Log::force("float_t x = J.mean();    // result: x = ", J.mean(), " (we expect a result close to 2.0, according to the initialization method of J)");
+	Log::force("float_t x = J.median();  // result: x = ", J.median());
+	Log::force("float_t x = J.var();     // result: x = ", J.var(), " (we expect a result close to 1.0 (stdev squared)");
+	Log::force("float_t x = J.stdev();   // result: x = ", J.stdev(), " (we expect a result close to 1.0, according to the initialization method of J)");
+	Log::force("float_t x = J.kurt();    // result: x = ", J.kurt());
+	Log::force("float_t x = J.skew();    // result: x = ", J.skew());
+
+	// +=================================+   
+	// | Elementwise Arrithmetics        |
+	// +=================================+
+	Log::force("\n+=================================+\n| Elementwise Arrithmetics        |\n+=================================+");
+	Log::force("Let's take the following 3x3 example NGrid:\nNGrid K(3,3);\nK.fill_random_int(1,9);");
+	NGrid K(3, 3);
+	K.fill_random_int(1, 9);
+	K.print("\nNGrid K:");
+
+	Log::force("\nWe can calculate the sum of all elements:\nfloat_t sum_K = K.sum(); // result: sum_K = ", K.sum());
+	Log::force("\nSimilarly, we can calculate the product of all elements:\nproduct_K = K.product(); // result: product_K = ", K.product());
+	Log::force("Note: this can quickly result in very large numbers, exceeding the limits of 32bit floats, resulting in +INF or -INF.");
+
+	Log::force("\nWe can easily add or substract a value elementwise (or multiply with or divide by a value elementwise), for example:\nK = K + 1;");
+	K = K + 1;
+	K.print("\nupdated result (K): ");
+
+	Log::force("\nThe prefix and postfix increment/decrement operators are also implemented; for example:\nK++;");
+	K++;
+	K.print("\nupdated result (K): ");
+
+	Log::force("\nThe operator+=, operator-=, operator*= and operator/= for in-place addition/substraction/multiplication/division");
+	Log::force("are also implemented, for example:\nK -= 3.0f; ");
+	K -= 3.0f;
+	K.print("\nupdated result (K): ");
+
+	Log::force("\nSimilarly, the modulo operator (% and %=) calculates elementwise the remainder of the division by a scalar value");
+
+	Log::force("\nLet's now take a second NGrid called 'L':\nNGrid L(3,3);\nL.fill_random_int(-9,0);");
+	NGrid L(3, 3);
+	L.fill_random_int(-9, 0);
+	L.print("L:");
+	Log::force("\nNow we can add both NGrids together (or substract), for example:\nNGrid M = K + L;");
+	NGrid M = K + L;
+	M.print("\nresult (M): ");
+	Log::force("\nUsing the operator += should lead to the same result:\n K += L;");
+	K += L;
+	K.print("\nupdated result (K):");
+	Log::force("\nHere's an example for the elementwise *= operation:\nK *= 3;");
+	K *= 3;
+	K.print("\nupdated result (K):");
+
+	// +=================================+   
+	// | Matrix Multiplication           |
+	// +=================================+
+	Log::force("\n+=================================+\n| Matrix Multiplication           |\n+=================================+");
+	Log::force("\nAbove, we've already seen an example of elementwise multiplication by a 'scalar' value. However, there are other types of matrix multiplication:");
+
+	Log::force("\nIf all elements of 'this' are supposed to be multiplied (or divided) elementwise by the corresponding elements of 'other',");
+	Log::force("this is a Hadamard product(or division), for example:\nNGrid C = A.Hadamard_product(B);\nNGrid D = A.Hadamard_division(B);");
+
+	Log::force("\nThe next type of multiplication is the scalar product (aka 'dot product'),");
+	Log::force("i.e.the sum of elementwise multiplication of to vectors of matrices of equal dimensions, for example:");
+	Log::force("float_t c = A.scalar_product(B);");
+
+	Log::force("\nAnother type of multiplication is the 'matrix product' in the conventional sense.");
+	Log::force("The result is a square matrix in case of the multiplication of the multiplication of two 2d matrices");
+	Log::force("or a size {1} 'scalar' matrix (i.e. holding a single element) in case of multiplication of two 1d vectors, in which case it's the same as the scalar product.");
+	Log::force("Note: the 'inner' dimensions must match, e.g. A{m,n} * B{n,o}; Example:\nNGrid O(3,5); O.fill_random_int(0,9);\nNGrid P(5,3); P.fill_random_int(0,9)");
+	NGrid O(3, 5); O.fill_random_int(0, 9); O.print("\nmatrix O:");
+	NGrid P(5, 3); P.fill_random_int(0, 9); P.print("\nmatrix P:");
+	(O * P).print("\nresult of multiplication O * P:");
+	Log::force("Note: the alias method NGrid::matrix_product() can be used alternatively instead of the * operator for clarity, demonstrating which multiplication method is used");
+	Log::force("The *= operator is also supported, e.g. A *= B;");
+	Log::force("In case of division, A / B is synonymous with A * B.inverse(); A /= B is synonymous with A *= B.inverse();");
 
 	// ... to be continued
 }
