@@ -22,16 +22,23 @@ int main() {
 	Log::force("A = A * 2");
 	Log::force("A += 0.5            ...etc");
 	Log::force("\nThe outputs in the following examples are made by using the NGrid::print() method.");
+	Log::force("For readability reasons, the following examples will use relatively small data structures");
+	Log::force("with no more than 1-3 dimensions, but they could of course in theory hold millions of values.");
 
 	// +=================================+   
-	// | Constructors & Destructors      |
+	// | Constructors                    |
 	// +=================================+
-	Log::force("\n+=================================+\n| Constructors & Destructors      |\n+=================================+");
+	Log::force("\n+=================================+\n| Constructors                    |\n+=================================+");
 	Log::force("\nLet's start with a 10x10 2d matrix using the variadic template constructor: template<typename... Args> NGrid(Args... args);");
 	Log::force("NGrid A(10,10);\nA.fill(5); // initializing all elements with a value of 5.0f");
 	NGrid A(10, 10);
 	A.fill(5);
 	A.print("\nresult (A):");
+
+	Log::force("\nLet's try a 3d array of size {4,4,2}:\nNGrid example_3d(4,4,2);\nexample_3d.fill_random_int(0,999);");
+	NGrid example_3d(4, 4, 2);
+	example_3d.fill_random_int(0, 999);
+	example_3d.print("\nresult (example_3d):");
 
 	Log::force("\nNow let's use a constructor with a std::vector instead for the shape: NGrid(const std::vector<uint32_t>& shape);");
 	Log::force("std::vector<uint32_t> shape = {3,5);\nNGrid B(shape); \nB.fill_zero();");
@@ -140,7 +147,7 @@ int main() {
 	as_vector = floats.get(5, 1);
 	Log::force("Now element [0] in the result vector should be the same as element [1] of the source (due to the offset of 1)");
 	x = as_vector[0];
-	Log::force("x = as_vector[0];\nresult: x = ", x, " (again, if everything works as intendec, this value should be the same as above)");
+	Log::force("x = as_vector[0];\nresult: x = ", x, " (again, if everything works as intended, this value should be the same as above)");
 
 	Log::force("\nHere are examples of some more getter functions:");
 	Log::force("  Buffer<float_t>* NGrid::get_buffer(): returns a pointer to the underlying raw data buffer object");
@@ -307,5 +314,245 @@ int main() {
 	Log::force("The *= operator is also supported, e.g. A *= B;");
 	Log::force("In case of division, A / B is synonymous with A * B.inverse(); A /= B is synonymous with A *= B.inverse();");
 
-	// ... to be continued
+	// +=================================+   
+	// | Exponentiation & Logarithm      |
+	// +=================================+
+	Log::force("\n+=================================+\n| Exponentiation & Logarithm      |\n+=================================+");
+	Log::force("\nThis library supports elementwise exponentiation to the power of a specified exponent");
+	Log::force("with the method NGrid::pow(float_t exponent) or the operators ^ and ^= .");
+	Log::force("Moreover, an NGrid object can be raised elementwise to the powers of the corresponding element of second");
+	Log::force("NGrid by using the methods pow(NGrid& other) or ^(other). Examples:");
+	NGrid Q(3, 10);
+	Q.fill_random_int(1, 5);
+	Q.print("\nLet's start with an NGrid Q(3,10) filled with random integer within range [1,5]:");
+	(Q ^ 2).print("\nQ^2:");
+	(Q.pow(-3)).print("\nQ.pow(-3):");
+	Log::force("\nWe can also apply the elementwise square root, log or exp.");
+	(Q.sqrt()).print("\nQ.sqrt():");
+	(Q.log()).print("\nQ.log() [this is the natural log by default, i.e. base e=2.718282]:");
+	(Q.log(10)).print("\nQ.log(10) [example for logarithm with base 10:");
+	(Q.exp()).print("\nQ.exp():");
+
+	// +=================================+   
+	// | Rounding                        |
+	// +=================================+
+	Log::force("\n+=================================+\n| Rounding                        |\n+=================================+");
+	Log::force("\nLet's consider the following NGrid R(10) filled with floating point numbers:");
+	NGrid R(10);
+	R.fill_random(-9, 9);
+	R.print("R =");
+	R.round().print("\nR.round() =");
+	R.floor().print("\nR.floor() =");
+	R.ceil().print("\nR.ceil() =");
+	R.abs().print("\nR.abs() =");
+
+	// +=================================+   
+	// | Min, Max                        |
+	// +=================================+
+	Log::force("\n+=================================+\n| Min, Max                        |\n+=================================+");
+	Log::force("\nWe've already seen how min() and max() can be used to find the minimum or maximum of ALL elements of the NGrid.");
+	Log::force("min(value) and max(value) can be used for elementwise comparison. The individual elements are assigned to whichever is lower");
+	Log::force("(or higher in the case of max(value)) out of the original element versus the specified value.");
+	NGrid X(7, 5);
+	X.fill_random_int(-999, 999);
+	X.print("\nsource NGrid X:");
+	X.min(0).print("\nX.min(0):");
+	X.max(0).print("\nX.max(0):");
+	Log::force("\nWe can also compare elementwise with a second NGrid and reassign the min or max between both (elementwise).");
+	NGrid Y(7, 5);
+	Y.fill_random_int(-999, 999);
+	Y.print("\NGrid Y:");
+	X.min(Y).print("\nX.min(Y):");
+	X.max(Y).print("\nX.max(Y):");
+
+	// +=================================+   
+	// | Trigonometry Functions          |
+	// +=================================+
+	Log::force("\n+=================================+\n| Trigonometry Functions          |\n+=================================+");
+	Log::force("\nThis library supports the following trigonometry functions:");
+	Log::force("  (1) cos(), sin(), tan()              with optional argument for the source angular unit (default: RAD)");
+	Log::force("  (2) acos(), asin(), atan()           with optional argument for the target angular unit (default: RAD)");
+	Log::force("  (3) cosh(), sinh(), tanh()");
+	Log::force("  (4) acosh(), asinh(), atanh()");
+	X = X.reshape(10);
+	X.fill_random_int(0, 360);
+	X.print("\nExample for source angles: X =");
+	X.sin(DEG).print("\nX.sin(DEG) =");
+
+	// +=================================+   
+	// | Find, Replace                   |
+	// +=================================+
+	Log::force("\n+=================================+\n| Find, Replace                   |\n+=================================+");
+	Log::force("\nThis library supports several find/replace methods.");
+	Log::force("Like most other methods, these are also non - destructive and return the result rather than modifying the source itself");
+	X = X.reshape(15, 15);
+	X.fill_random_int(0, 5);
+	X.print("\nLet's consider the following source matrix X:");
+	Log::force("\nuint32_t n = X.find(2) can e.g. be used to count the number of occurences of the value '2'. Result: n = ", X.find(2));
+	X.replace(0, 1).print("\nHere's an example replacing all zeros with ones: X.replace(0,1) =");
+	Log::force("\nWe can also replace based on a 'condition map' (i.e. a boolean NGrid of the same size)");
+	X.replace_if(X % 2 == 0, 0).print("Here's an example with a condition to set all even numbers to zero: X.replace_if(X % 2 == 0, 0) =");
+	Log::force("\nNote: instead of replacing with a single value, we can also replace 'this' NGrid elementwise with 'other' NGrid,");
+	Log::force("based on a condition map: replace_if(condition_map, replacing_map)");
+	Log::force("\nThe sign() method can be used to return an NGrid of equal dimensions, with -1 for all negative values, 0 for all zeros and +1 for all positive values");
+	X = X.reshape(5, 5);
+	X.fill_random_int(-9, 9);
+	X.print("\nExample: X =");
+	X.sign().print("\nX.sign() = ");
+	Log::force("\nThe methods isnan() and isinf() return a boolean NGrid of equal dimensions with 1.0 for each NAN ('not a number') or each pos/neg INFinity, respectively,");
+	Log::force("and 0.0 for all valid numbers");
+	X.fill_random_int(-3, 5);
+	X = X.sqrt();
+	X.print("\nLet's take an NGrid with a few NANs as an example. X = ");
+	X.isnan().print("\nX.isnan() =");
+
+	// +=================================+   
+	// | Data Preprocessing              |
+	// +=================================+
+	Log::force("\n+=================================+\n| Data Preprocessing              |\n+=================================+");
+	X = X.reshape(30);
+	X.fill_range(0, 1);
+	Log::force("\nLet's take the following 1d-NGrid X with shape X.get_shapestr() = ", X.get_shapestring(), ", X.mean() = ", X.mean(), " and X.stdev() = ", X.stdev(), ":");
+	X.print();
+
+	Log::force("\nWe have the following scaling options:");
+	X.scale_minmax(10, 20).print("\nMinMax-Scaling: shift the minimum and stretch/compress the range to fit within [min,max], e.g.: X.scale_minmax(10,20) = ", "|", false, true, 2);
+	X.scale_mean().print("\nShift to zero mean, stretch/compress to range to fit within [-1,1], e.g. X.scale_mean() = ", "|", false, true, 2);
+	X.scale_zscore().print("\nShift to zero mean, strech/compress to match unit-variance (i.e. z_score = 1.0 = default) or the specified z_score, e.g. X.scale_zscore(1.0f) = ", "|", false, true, 2);
+	Log::force("Let's verify the standard deviation of this result (it should be ~1.0): X.scale_score(1).stdev() = ", X.scale_zscore().stdev());
+
+	Log::force("\nWe have the following options for outlier treatment:");
+	X.outliers_clamp_minmax(10, 20).print("\nClamp the values of the array within range [min,max], e.g. X.outliers_clamp_minmax(10,20) = ");
+	X.outliers_clamp_zscore(1.0f).print("\nClamp the values within a specified z-score, e.g. in order to limit to +/- 1 standard deviation: X.outliers_clamp_score(1.0f) = ", "|", false, true, 2);
+	X.outliers_mean_imputation(1.0f).print("\nSet all values that exceed the specified z-score by the arrithmetic mean of all values, e.g. X.outliers_mean_imputation(1.0f) = ", "|", false, true, 2);
+	X.outliers_value_imputation(1.0f, 0.0f).print("\nSet all values that exceed the specified z-score with the specified value, e.g. replace outliers that exceed +/- 1 sigma by 0: X.outliers_value_imputation(2.0f, 0.0f) = ", "|", false, true, 2);
+	Log::force("\nNGrid::recover(): 'Recovers' invalid data by replacing +INF with FLOAT_MAX, -INF with -FLOAT_MAX and NAN with 0.");
+	Log::force("To test this, let's set some of the values intentionally to NAN or INF:");
+	Y = X.replace_if(X % 3 == 0, std::numeric_limits<float>::quiet_NaN());
+	Y = Y.replace_if(X % 4 == 0, std::numeric_limits<float>::infinity());
+	Y *= -1;
+	Y.print("Y = ", "|", false);
+	Y.recover().print("Y.recover() =", "|", false, true, 3);
+
+	// +=================================+   
+	// | Activation Functions            |
+	// | (with Derivatives)              |
+	// +=================================+
+	Log::force("\n+=================================+\n| Activation Functions            |\n+=================================+");
+	Log::force("\nThis library has support for activation functions (for neural networks):");
+	Log::force("    RELU:    rectified linear unit");
+	Log::force("    LRELU:   'leaky' rectified linear unit");
+	Log::force("    ELU:     exponential linar unit");
+	Log::force("    LELU:    leaky exponential linear unit");
+	Log::force("    SIGMOID: sigmoid (=logistic)");
+	Log::force("    TANH:    hyperbolic tangent (tanh), with angular unit radians");
+	Log::force("    IDENT:   identity function");
+	Log::force("The functions can either be used directly: NGrid::sigmoid(), NGrid::tanh() ... [or NGrid_sigmoid_drv(), ... etc. for their derivatives]");
+	Log::force("or NGrid::activation(ActFunc) / NGrid::derivative(ActFunc) can be used for more flexibility (passing the used function as an argument makes changes easier).");
+	X = X.reshape(5, 5);
+	X.fill_random_gaussian();
+	X.print("\nfor example for X =");
+	X.sigmoid().print("\n... X.sigmoid() =");
+	X.activation(SIGMOID).print("\n... which is the same as saying X.activation(SIGMOID) = ");
+
+	// +=================================+   
+	// | Elementwise Comparison          |
+	// +=================================+
+	Log::force("\n+=================================+\n| Elementwise Comparison          |\n+=================================+");
+	Log::force("\nThis library supports operators for elementwise comparison: >, >=, ==, !=, <, <=");
+	Log::force("\n These comparisons can be done by comparing with a single value, or elementwise with the corresponding elements of 'other'");
+	Log::force("The return value is a 'boolean' NGrid (1.0f for true, 0.0f for false)");
+	X.fill_random_int(0, 9);
+	X.print("\nFor example, for X =");
+	(X > 5).print("... X > 5 = ");
+	Log::force("\nAccordingly, logical operators are supported: &&, || to compare with 'other' or a single boolean value, as well as ! to toggle each element to its boolean opposite");
+	Log::force("For example:");
+	X = X.reshape(40); X.fill_random_binary(); X.print("\nX =");
+	Y = Y.reshape(40); Y.fill_random_binary(); Y.print("\nY =");
+	(X && Y).print("\nX && Y = ");
+	(X || Y).print("\nX || Y = ");
+	(!X).print("\n!X = ");
+
+	// +=================================+   
+	// | Advanced Matrix Operations      |
+	// +=================================+
+	Log::force("\n+=================================+\n| Advanced Matrix Operations      |\n+=================================+");
+	X = X.reshape(3, 3); X.fill_random_int(0, 9);
+	X.print("\nWe can 'flatten' any multidimensional NGrid to a 1d vector, e.g. for X =");
+	X.flatten().print("\nX.flatten() =");
+
+	X.reshape({ 4, 5 }, 0.0f).print("We can reshape/resize whilst maintaining any preexisting values, e.g. X.reshape(4,5) = ");
+	Log::force("Note: this method is also non-destructive, i.e. to actually assign the new shape we have to write X = X.reshape(...)");
+
+	Y = Y.reshape(3, 3); Y.fill_random_int(0, 9);
+	Y.print("\nLet's take a second NGrid Y =");
+	X.concatenate(Y, 0).print("\nLet's now concatenate the original NGrid X with Y along the row axis: X.concatenate(Y, 0) = ");
+	X.concatenate(Y, 1).print("\n... or alternatively along the column axis: X.concatenate(Y, 1) =");
+	X.concatenate(Y, 2).print("\n... or stacked along z axis: X.concatenate(Y,2)");
+
+	X = X.reshape(10, 10); X.fill_random_int(1, 3);
+	X.padding(2, 0).print("\nThe method NGrid::padding(amount,init_value) can be used to 'pad' e.g. to be used before convolution");
+	X.print("\ne.g. X = ");
+	X.padding(2, 0).print("\nX.padding(2,0) = ");
+	Y = Y.reshape(3, 3); Y.fill_random_binary();
+	Y.print("\nExample for a filter kernel: Y =");
+	Log::force("\nThe method NGrid::convolution(kernel,padding_amount,padding_value) also has a built-in padding-option:");
+	X = X.convolution(Y, 2, 0);
+	X.print("\nX.convolution(Y,2,0) =");
+
+	Log::force("\nThis library supports the following pooling options: max, min, maxabs. The methods each take an argument for the pooling window and for the stride.");
+	Log::force("For example, let's perform a max pooling operation on the result of the convolution with a {2,2} window and a {2,2} stride (i.e. no overlap between stride steps):");
+	X.pool_max({ 2,2 }, { 2,2 }).print("\nX.pool_max({2,2},{2,2}) = ");
+
+	X = X.reshape(20); Y = Y.reshape(20);
+	X.fill_range(0, 3); Y.fill_random_int(-2, 2); X = X + Y; // simulating values of a time series
+	X.print("\nLet's now take the following values of a time series: X =");
+	X.stationary().print("\nHere's how this series can be made stationary: e.g. for first order differencing: X.stationary(1) = ");
+	X.stationary_log().print("\nAlternatively, for first order logarithmic stationary transformation (log base 10): X.stationary_log(1,10) = ");
+	Log::force("\nThe Dickey-Fuller test (e.g. with p <= 0.05) can be used to confirm that a series is indeed stationary, e.g. X.stationary_log(1,10).Dickey_Fuller() = ", X.stationary_log(1, 10).Dickey_Fuller(), " (should be <0.05)");
+
+	X.fill_random_int(0, 999);
+	Log::force("\nThe method NGrid::sort() can be used for ascending or descending order sorting (the implementation is based on the even-odd sort ('brick sort') algorithm):");
+	X.print("unsorted X =");
+	X.sort(true).print("ascending: X.sort(true) = ");
+	X.sort(false).print("descending: X.sort(false) = ");
+
+	Log::force("\nThis library supports matrix transpose:");
+	X = X.reshape(4, 7); X.fill_random_int(0, 9);
+	X.print("\n... for X =");
+	X.transpose().print("\nX.transpose() =");
+
+	Log::force("\nThis library supports LU decomposition, which is the basis for calculation the matrix inverse.");
+	X = X.reshape(10, 10); X.fill_random_int(-9, 9);
+	X.print("\n... for X =");
+	Log::force("\nNGrid L, U, P;\nuint32_t swap_count = X.lu_decomp(L, U, P);");
+	NGrid U;
+	uint32_t swap_count = X.lu_decomp(L, U, P);
+	Log::force("\nswap_count = ", swap_count, " row swaps have been performed.");
+	L.print("\nresult for lower triagonal matrix L =");
+	U.print("\nresult for upper triagonal matrix U =");
+	Log::force("\nThe source matrix has a 'rank' (=number of linearly independent rows) of NGrid::rank(U) = ", NGrid::rank(U), " (Note: this is a static method)");
+	Log::force("uint32_t r = X.rank() can be used alternatively when U isn't available (it will then be calculated internally, adding some overhead)");
+	P.print("\nresult for permutation matrix (row swaps) P =");
+	Log::force("\nWe can optionally check if the matrix is invertible by using X.is_invertible() [result = ", X.is_invertible(), "];");
+	Log::force("This method runs LU decomposition internally and checks if the U matrix has no zeros on its diagonal.");
+	Log::force("Alternatively - if the U matrix is already known like in the case above - we can slightly reduce overhead by reusing it in the static method NGrid::is_invertible(const NGrid& U):");
+	Log::force("bool result = NGrid::is_invertible(U); // result = ", NGrid::is_invertible(U));
+
+	X.inverse().print("\nWe can calculate the matrix inverse as follows: X.inverse() =");
+	(X * X.inverse()).print("\nX * X.inverse() should give us the identity matrix (potentially with small rounding errors):");
+
+
+	// +=================================+   
+	// | Statistics                      |
+	// +=================================+
+
+	// ... TODO
+
+	// +=================================+   
+	// | Miscellaneous                   |
+	// +=================================+
+
+	// ... TODO
 }
+

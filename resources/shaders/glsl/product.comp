@@ -11,13 +11,13 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 layout(set = 0, binding = 0) buffer data_buffer {float data[];};
 layout(set = 0, binding = 1) buffer local_results_buffer {float local_result[];};
 
-// push constants
+// setup push constants
 layout(push_constant) uniform push_constants {
     uint N;
 };
 
 // shared variables
-shared float local_sum[gl_WorkGroupSize.x];
+shared float local_product[gl_WorkGroupSize.x];
 
 // main function
 void main() {
@@ -25,29 +25,40 @@ void main() {
     if (gl_GlobalInvocationID.x < N) {
         
         // Local Reduction
-        local_sum[gl_LocalInvocationID.x] = data[gl_GlobalInvocationID.x];
+        local_product[gl_LocalInvocationID.x] = data[gl_GlobalInvocationID.x];
         groupMemoryBarrier();
+        barrier();
+
         for (uint stride = gl_WorkGroupSize.x / 2; stride > 0; stride /= 2) {
-            if (gl_LocalInvocationID.x < stride) {
-                if (gl_GlobalInvocationID.x + stride < N) {
-                    local_sum[gl_LocalInvocationID.x] = local_sum[gl_LocalInvocationID.x] * local_sum[gl_LocalInvocationID.x + stride];
+            if (gl_LocalInvocationID.x < stride && gl_GlobalInvocationID.x + stride < N) {
+
+                float val = local_product[gl_LocalInvocationID.x] * local_product[gl_LocalInvocationID.x + stride];
+                
+                // check for NAN
+                if (isnan(val)) {
+                    val = 0.0;
                 }
+                // check for Infinity
+                else if (isinf(val)) {
+                    if (val > 0.0) {
+                        val = 3.402823466e+38;
+                    } else {
+                        val = -3.402823466e+38;
+                    }
+                }
+
+                local_product[gl_LocalInvocationID.x] = val;
             }
             groupMemoryBarrier();
-        }
-        // store local sum into local_results_buffer
-        if (gl_LocalInvocationID.x == 0) {
-            local_result[gl_WorkGroupID.x] = local_sum[0];
-        }
-
-        // Global Reduction
-        for (uint stride = gl_NumWorkGroups.x / 2; stride > 0 ; stride /= 2) {
-            if (gl_GlobalInvocationID.x < stride) {
-                float val = local_result[gl_GlobalInvocationID.x] * local_result[gl_GlobalInvocationID.x + stride];
-                val = val == 0.0 ? 0.0 : val; // ensure -0.0 is written as 0.0
-                local_result[gl_GlobalInvocationID.x] = val;
-            }
             barrier();
         }
+
+        // store local sum into local_results_buffer
+        if (gl_LocalInvocationID.x == 0) {
+            local_result[gl_WorkGroupID.x] = local_product[0];
+        }
+
+        // this shader has no global reduction!
+        // it has to be invoked several times, until N <= workgroup_size_x
     }
 }

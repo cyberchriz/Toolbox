@@ -1,7 +1,7 @@
 // Vulkan/GLSL compute shader
 // author: Christian Suer (github: 'cyberchriz')
 
-#version 450 core
+#version 450
 
 // setup specialization constants
 // in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
@@ -11,24 +11,15 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 layout(set = 0, binding = 0) buffer data_buffer {float data[];};
 layout(set = 0, binding = 1) buffer result_buffer {float result[];};
 
-// setup push constants
+// setup push constants layout
 layout(push_constant) uniform push_constants {
     uint N;
-    float upper_limit;
-    float lower_limit;
-    float mean;
 };
 
 // main function
 void main() {
     uint idx = gl_GlobalInvocationID.x;
     if (idx < N) {
-        float val = data[idx];
-        if (val > upper_limit || val < lower_limit) {
-            result[idx] = mean;
-        }
-        else {
-            result[idx] = val;
-        }
+        result[idx] = float(isinf(data[idx]));
     }
 }

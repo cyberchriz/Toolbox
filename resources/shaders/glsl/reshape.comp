@@ -28,35 +28,49 @@ layout(push_constant) uniform push_constants {
 // setup global variables
 uint data_array_index[MAX_DIMENSIONS];
 
+// setup shared variables
+shared uint shared_data_shape[MAX_DIMENSIONS];
+shared uint shared_result_shape[MAX_DIMENSIONS];
 
 // main function
 void main() {
     if (gl_GlobalInvocationID.x < result_N) {
+
+        // use shared variables to reduce global memory access for performance
+        if (gl_LocalInvocationID.x == 0) {
+            for (uint i = 0; i < MAX_DIMENSIONS; i++) {
+                shared_data_shape[i] = i < data_dim ? data_shape[i] : 1;
+                shared_result_shape[i] = i < result_dim ? result_shape[i] : 1;
+            }
+        }
+        memoryBarrierShared();
+        barrier();
+
         // get multidimensional index of 'result' for the current invocation
         uint result_flat_index = gl_GlobalInvocationID.x;
         uint result_array_index[MAX_DIMENSIONS];
         for (int i = int(result_dim) - 1; i >= 0; --i) {
-            result_array_index[i] = result_flat_index % result_shape[i];
-            result_flat_index = result_flat_index / result_shape[i];
+            result_array_index[i] = result_flat_index % shared_result_shape[i];
+            result_flat_index = result_flat_index / shared_result_shape[i];
+
+            // check if result index is beyond data boundaries
+            if (result_array_index[i] >= shared_data_shape[i]) {
+                result[gl_GlobalInvocationID.x] = default_value;
+                return;
+            }
         }
+
+        // if we reach this point we can assume that the current result element has a corresponding data element
+        // (therefore the default init value is not used)
 
         // get corresponding flat index of the 'data' array
         uint data_flat_index = 0;
         for (uint i = 0; i < data_dim; i++) {
-            if (i < result_dim) {
-                data_flat_index = data_flat_index * data_shape[i] + result_array_index[i];
-            }
-            else {
-                data_flat_index = 4294967295; // UINT_MAX
-                break;
-            }
+            data_flat_index = data_flat_index * shared_data_shape[i] + result_array_index[i];
         }
-        if (data_flat_index < data_N) {
-            result[gl_GlobalInvocationID.x] = data[data_flat_index];
-        }
-        else {
-            result[gl_GlobalInvocationID.x] = default_value;
-        }
+
+        // assign result
+        result[gl_GlobalInvocationID.x] = data[data_flat_index];
     }
 }
 

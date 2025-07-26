@@ -18,22 +18,32 @@ layout(set = 0, binding = 2) buffer p_buffer    { float P[]; };     // Permutati
                                                                     // but using floats is more convenient for the host application,
                                                                     // since data buffers of NGrid objects are always floats by design
 layout(set = 0, binding = 3) buffer swap_row_buffer {uint swap_row[];};  // stores the row to swap for the current row 'k'
+layout(set = 0, binding = 4) buffer swap_count_buffer {uint swap_count[];}; // stores the number of row swaps performed
                                                                     
 // --- Push Constants ---
 layout(push_constant) uniform push_constants {
     uint rows;
     uint cols;
-    uint k;
+    uint k;     // iteration counter, with elements {k,k} referring to the diagonal; counts from k to rows-1
 };
+
+shared uint swap_row_cpy;
 
 // --- Main Function ---
 void main() {
-    uint swap_row_cpy = swap_row[0]; // copy to local variable to reduce global memory access
+    if (gl_LocalInvocationID.x == 0) {
+        swap_row_cpy = swap_row[0];         // copy to shared local variable to reduce global memory access
+        if (k == 0) { swap_count[0] = 0; }  // initialize counter in first iteration
+    }
+    memoryBarrierShared(); barrier();
+
     uint i = gl_GlobalInvocationID.x;
     uint cols_L = rows; // L is a rows x rows square matrix !
     uint cols_P = rows; // P is a rows x rows square matrix !
     float temp;
     
+    // if swap_row == k: nothing to swap;
+    // else:
     if (swap_row_cpy > k && swap_row_cpy < rows && i < cols) {
 
         // swap ENTIRE row in permutation matrix P
@@ -58,6 +68,12 @@ void main() {
                 L[k * cols_L + i] = L[swap_row_cpy * cols_L + i];
                 L[swap_row_cpy * cols_L + i] = temp;
             }
+        }
+
+        // update swap counter
+        // (only necessary once per row, therefore column k takes care of it exclusively)
+        if (i == k) {
+            swap_count[0]++;
         }
     }
 }

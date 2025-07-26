@@ -30,47 +30,54 @@ layout(push_constant) uniform push_constants {
     uint axis;          // the axis along which the concatenation takes place
 };
 
+// setup shared variables
+shared uint shared_data_shape[MAX_DIMENSIONS];
+shared uint shared_other_shape[MAX_DIMENSIONS];
+shared uint shared_result_shape[MAX_DIMENSIONS];
+
 // main function
 void main() {
     if (gl_GlobalInvocationID.x < result_N) {
+
+        // define shared variable to reduce global memory access and thus improve performance
+        // (local thread 0 takes care of this, so other threads don't have to)
+        if (gl_LocalInvocationID.x == 0) {
+            for (uint i = 0; i < MAX_DIMENSIONS; i++) {
+                shared_data_shape[i] = i < data_dim ? data_shape[i] : 1;
+                shared_other_shape[i] = i < other_dim ? other_shape[i] : 1;
+                shared_result_shape[i] = i < result_dim ? result_shape[i] : 1;
+            }
+        }
+        memoryBarrierShared();
+        barrier();
 
         // get multidimensional index of 'result' for the current invocation
         uint result_array_index[MAX_DIMENSIONS];
         uint result_flat_index = gl_GlobalInvocationID.x;
         for (int i = int(result_dim) - 1; i >= 0; --i) {
-            result_array_index[i] = result_flat_index % result_shape[i];
-            result_flat_index = result_flat_index / result_shape[i];
+            result_array_index[i] = result_flat_index % shared_result_shape[i];
+            result_flat_index = result_flat_index / shared_result_shape[i];
         }
 
         bool source_is_other = false;
-        if (axis > data_dim && result_array_index[axis] > 0) {
-            source_is_other = true;
-        }
-        else {
-            for (uint i = 0; i < data_dim; i++) {
-                if (result_array_index[i] >= data_shape[i]) {
-                    source_is_other = true;
-                }
+        for (uint i = 0; i < result_dim; i++) {
+            if (result_array_index[i] >= shared_data_shape[i]) {
+                source_is_other = true;
             }
         }
 
         if (source_is_other) {
-            if (axis > data_dim && result_array_index[axis] > 0) {
-                result_array_index[axis] -= 1;
-            }
-            else {
-                result_array_index[axis] -= data_shape[axis];
-            }
+            result_array_index[axis] -= shared_data_shape[axis];
             uint other_flat_index = 0;
             for (uint i = 0; i < other_dim; i++) {
-                other_flat_index = other_flat_index * other_shape[i] + result_array_index[i];
+                other_flat_index = other_flat_index * shared_other_shape[i] + result_array_index[i];
             }
             result[gl_GlobalInvocationID.x] = other[other_flat_index];
         }
         else {
             uint data_flat_index = 0;
             for (uint i = 0; i < data_dim; i++) {
-                data_flat_index = data_flat_index * data_shape[i] + result_array_index[i];
+                data_flat_index = data_flat_index * shared_data_shape[i] + result_array_index[i];
             }
             result[gl_GlobalInvocationID.x] = data[data_flat_index];
         }

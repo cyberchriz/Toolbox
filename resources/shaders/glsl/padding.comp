@@ -25,21 +25,40 @@ layout(push_constant) uniform push_constants {
     float init_value;       // initialization value for the padded elements
 };
 
+
+// setup shared variables
+shared uint shared_data_shape[MAX_DIMENSIONS];
+shared uint shared_result_shape[MAX_DIMENSIONS];
+
 // main function
 void main() {
-    if (gl_GlobalInvocationID.x < result_N) {
+    
+    uint idx = gl_GlobalInvocationID.x;
+
+    if (idx < result_N) {
+
+        // use shared variables to reduce global memory access for performance
+        if (gl_LocalInvocationID.x == 0) {
+            for (uint i = 0; i < MAX_DIMENSIONS; i++) {
+                shared_data_shape[i] = i < data_dim ? data_shape[i] : 1;
+                shared_result_shape[i] = i < data_dim ? result_shape[i] : 1;
+            }
+        }
+        memoryBarrierShared();
+        barrier();
+
         // get the multidimensional index for the current invocation
-        uint result_flat_index = gl_GlobalInvocationID.x;
+        uint result_flat_index = idx;
         uint result_array_index[MAX_DIMENSIONS];
         for (int i = int(data_dim) - 1; i >= 0; --i) {
-            result_array_index[i] = result_flat_index % result_shape[i];
-            result_flat_index = result_flat_index / result_shape[i];
+            result_array_index[i] = result_flat_index % shared_result_shape[i];
+            result_flat_index = result_flat_index / shared_result_shape[i];
         }
 
         // check if this invocation falls into the padding zone
         for (uint i = 0; i < data_dim; i++) {
-            if (result_array_index[i] < amount || result_array_index[i] >= data_shape[i] + amount) {
-                result[gl_GlobalInvocationID.x] = init_value;
+            if (result_array_index[i] < amount || result_array_index[i] >= shared_data_shape[i] + amount) {
+                result[idx] = init_value;
                 return;
             }
         }
@@ -50,8 +69,9 @@ void main() {
         }
         uint data_flat_index = 0;
         for (uint i = 0; i < data_dim; i++) {
-            data_flat_index = data_flat_index * data_shape[i] + result_array_index[i];
+            data_flat_index = data_flat_index * shared_data_shape[i] + result_array_index[i];
         }
-        result[gl_GlobalInvocationID.x] = data[data_flat_index];
+        result[idx] = data[data_flat_index];
+
     }
 }

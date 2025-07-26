@@ -42,6 +42,7 @@ void main() {
             shared_offset[i] = offset[i];
         }
     }
+    memoryBarrierShared();
     barrier();
 
     if (gl_GlobalInvocationID.x < other_N) {

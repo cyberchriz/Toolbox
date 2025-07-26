@@ -26,9 +26,35 @@ layout(push_constant) uniform push_constants {
     uint window_N;
 };
 
+// define shared variables
+shared uint shared_data_shape[MAX_DIMENSIONS];
+shared uint shared_window_shape[MAX_DIMENSIONS];
+shared uint shared_result_shape[MAX_DIMENSIONS];
+shared uint shared_stride[MAX_DIMENSIONS];
+
 // main function
 void main() {
     if (gl_GlobalInvocationID.x < result_N) {
+
+        // use shared variable for shapes to reduce global memory access for performance
+        if (gl_LocalInvocationID.x == 0) {
+            for (uint i = 0; i < MAX_DIMENSIONS; i++) {
+                if (i < dimensions) {
+                    shared_data_shape[i] = data_shape[i];
+                    shared_window_shape[i] = window_shape[i];
+                    shared_result_shape[i] = result_shape[i];
+                    shared_stride[i] = stride[i];
+                }
+                else {
+                    shared_data_shape[i] = 1;
+                    shared_window_shape[i] = 1;
+                    shared_result_shape[i] = 1;
+                    shared_stride[i] = 1;      
+                }
+            }
+        }
+        memoryBarrierShared();
+        barrier();
 
         // define local arrays
         uint result_array_index[MAX_DIMENSIONS];
@@ -38,8 +64,8 @@ void main() {
         // get multidimensional index of current item of 'result'
         uint result_flat_index = gl_GlobalInvocationID.x;
         for (int i = int(dimensions) - 1; i >= 0; --i) {
-            result_array_index[i] = result_flat_index % result_shape[i];
-            result_flat_index = result_flat_index / result_shape[i];
+            result_array_index[i] = result_flat_index % shared_result_shape[i];
+            result_flat_index = result_flat_index / shared_result_shape[i];
         }
 
         // cycle over all window elements and retrieve the minimum value within this current window of interest
@@ -49,20 +75,20 @@ void main() {
             // calculate the multidimensional index of the current window element
             uint window_flat_index = i;
             for (int j = int(dimensions) - 1; j >= 0; --j) {
-                window_array_index[j] = window_flat_index % window_shape[j];
-                window_flat_index = window_flat_index / window_shape[j];
+                window_array_index[j] = window_flat_index % shared_window_shape[j];
+                window_flat_index = window_flat_index / shared_window_shape[j];
             }
 
             // calculate the corresponding data index for the current window element
             // (whilst making sure to not exceed the data shape boundaries)
             for (uint j = 0; j < dimensions; j++) {
-                data_array_index[j] = min(result_array_index[j] * stride[j] + window_array_index[j], data_shape[j] - 1);
+                data_array_index[j] = min(result_array_index[j] * shared_stride[j] + window_array_index[j], shared_data_shape[j] - 1);
             }
 
             // calculate the flat index of the data element
             uint data_flat_index = 0;
             for (uint j = 0; j < dimensions; j++) {
-                data_flat_index = data_flat_index * data_shape[j] + data_array_index[j];
+                data_flat_index = data_flat_index * shared_data_shape[j] + data_array_index[j];
             }
 
             // get the min value within the current window of interest

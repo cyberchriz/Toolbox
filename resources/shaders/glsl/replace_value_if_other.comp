@@ -15,7 +15,6 @@ layout(set = 0, binding = 2) buffer condition_buffer {float condition[];};
 // setup push constants layout
 layout(push_constant) uniform push_constants {
     uint N;
-    float factor;
     float replacing_value;
 };
 

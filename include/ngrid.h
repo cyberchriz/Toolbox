@@ -37,6 +37,16 @@
 #include <limits>
 #include <vulkan/vulkan_core.h>
 
+// available activation functions (for neural network applications)
+enum ActFunc {
+	RELU,       // rectified linear unit (ReLU)
+	LRELU,      // leaky rectified linear unit (LReLU)
+	ELU,        // exponential linar unit (ELU)
+	LELU,       // leaky exponential linear unit
+	SIGMOID,    // sigmoid (=logistic)
+	TANH,       // hyperbolic tangent (tanh), with angular unit radians
+	IDENT       // identity function
+};
 
 // data structure class for parallel computing with Vulkan
 class NGrid {
@@ -202,67 +212,18 @@ public:
 	// +=================================+   
 	// | Trigonometric Functions         |
 	// +=================================+
-	NGrid cos(AngularMeasure source_angle_unit = RAD) const;
-	NGrid sin(AngularMeasure source_angle_unit = RAD) const;
-	NGrid tan(AngularMeasure source_angle_unit = RAD) const;
-	NGrid acos(AngularMeasure result_angle_unit = RAD) const;
-	NGrid asin(AngularMeasure result_angle_unit = RAD) const;
-	NGrid atan(AngularMeasure result_angle_unit = RAD) const;
+	NGrid cos(AngularUnit source_angle_unit = RAD) const;
+	NGrid sin(AngularUnit source_angle_unit = RAD) const;
+	NGrid tan(AngularUnit source_angle_unit = RAD) const;
+	NGrid acos(AngularUnit result_angle_unit = RAD) const;
+	NGrid asin(AngularUnit result_angle_unit = RAD) const;
+	NGrid atan(AngularUnit result_angle_unit = RAD) const;
 	NGrid cosh() const;
 	NGrid sinh() const;
 	NGrid tanh() const;
 	NGrid acosh() const;
 	NGrid asinh() const;
 	NGrid atanh() const;
-
-	// +=================================+   
-	// | Find, Replace                   |
-	// +=================================+
-	NGrid replace(const float_t old_value, const float_t new_value) const;
-	NGrid replace_if(const NGrid& condition_map, const NGrid& replacing_map) const;
-	NGrid replace_if(const NGrid& condition_map, const float_t replacing_value) const;
-	uint32_t find(const float_t& value) const;
-	NGrid sign() const;
-
-	// +=================================+   
-	// | Scaling                         |
-	// +=================================+
-	NGrid scale_minmax(float_t range_from = 0.0f, float_t range_to = 1.0f) const;
-	NGrid scale_mean() const;
-	NGrid scale_std() const;
-
-	// +=================================+   
-	// | Activation Functions            |
-	// | (with Derivatives)              |
-	// +=================================+
-
-	// available activation functions
-	enum ActFunc {
-		RELU,       // rectified linear unit (ReLU)
-		LRELU,      // leaky rectified linear unit (LReLU)
-		ELU,        // exponential linar unit (ELU)
-		LELU,       // leaky exponential linear unit
-		SIGMOID,    // sigmoid (=logistic)
-		TANH,       // hyperbolic tangent (tanh), with angular unit radians
-		IDENT       // identity function
-	};
-	NGrid activation(ActFunc activation_function) const;
-	NGrid derivative(ActFunc activation_function) const;
-
-	NGrid ident() const;                                NGrid ident_drv() const;
-	NGrid sigmoid() const;                              NGrid sigmoid_drv() const;
-	NGrid elu(float_t alpha = 0.01) const;              NGrid elu_drv(float_t alpha = 0.01) const;
-	NGrid relu(float_t alpha = 0.01) const;             NGrid relu_drv(float_t alpha = 0.01) const;
-	NGrid tanh_drv() const;
-
-	// +=================================+   
-	// | Outlier Treatment               |
-	// +=================================+
-	NGrid clamp(const float_t min_value, const float_t max_value) const;
-	NGrid outliers_truncate(float_t z_score = 3.0f) const;
-	NGrid outliers_mean_imputation(float_t z_score = 3.0f) const;
-	NGrid outliers_value_imputation(float_t value = 0, float_t z_score = 3.0f) const;
-	NGrid recover() const;
 
 	// +=================================+   
 	// | Elementwise Comparison          |
@@ -290,15 +251,56 @@ public:
 	NGrid operator||(const NGrid& other) const;
 
 	// +=================================+   
-	// | Dynamic Handling & Conversion   |
+	// | Find, Replace                   |
+	// +=================================+
+	NGrid replace(const float_t old_value, const float_t new_value) const;
+	NGrid replace_if(const NGrid& condition_map, const NGrid& replacing_map) const;
+	NGrid replace_if(const NGrid& condition_map, const float_t replacing_value) const;
+	uint32_t find(const float_t& value) const;
+	NGrid sign() const;
+	NGrid isinf() const;
+	NGrid isnan() const;
+
+	// +=================================+   
+	// | Outlier Treatment               |
+	// +=================================+
+	NGrid outliers_clamp_minmax(const float_t min_value, const float_t max_value) const;
+	NGrid outliers_clamp_zscore(const float_t z_score = 3.0f) const;
+	NGrid outliers_mean_imputation(const float_t z_score = 3.0f) const;
+	NGrid outliers_value_imputation(const float_t z_score = 3.0f, const float_t value = 0.0f) const;
+	NGrid recover() const;
+
+	// +=================================+   
+	// | Scaling                         |
+	// +=================================+
+	NGrid scale_minmax(float_t range_from = 0.0f, float_t range_to = 1.0f) const;
+	NGrid scale_mean() const;
+	NGrid scale_zscore(const float_t z_score = 1.0f) const;
+
+	// +=================================+   
+	// | Activation Functions            |
+	// | (with Derivatives)              |
+	// +=================================+
+	NGrid activation(ActFunc activation_function) const;
+	NGrid derivative(ActFunc activation_function) const;
+
+	NGrid ident() const;                                NGrid ident_drv() const;
+	NGrid sigmoid() const;                              NGrid sigmoid_drv() const;
+	NGrid elu(float_t alpha = 0.01) const;              NGrid elu_drv(float_t alpha = 0.01) const;
+	NGrid relu(float_t alpha = 0.01) const;             NGrid relu_drv(float_t alpha = 0.01) const;
+	NGrid tanh_drv() const;
+
+	// +=================================+   
+	// | Advanced Matrix Operations      |
 	// +=================================+
 	NGrid flatten() const;
 	NGrid reshape(const std::vector<uint32_t>& new_shape, float_t default_init_value = 0) const;
 	NGrid reshape(std::initializer_list<uint32_t> new_shape, float_t default_init_value = 0) const;
+	template<typename... Args> NGrid reshape(Args... args) const;
 	NGrid concatenate(const NGrid& other, const uint32_t axis = 0) const;
 	NGrid padding(const uint32_t amount, const float_t init_value = 0.0f) const;
 	NGrid stationary(const uint32_t degree = 1) const;
-	NGrid stationary_log(const float_t log_base = 10, const uint32_t degree = 1) const;
+	NGrid stationary_log(const uint32_t degree = 1, const float_t log_base = 10) const;
 	NGrid sort(const bool ascending = true) const;
 	NGrid pool_max(const std::vector<uint32_t>& window_shape, const std::vector<uint32_t>& stride_shape = {}) const;
 	NGrid pool_max(const std::initializer_list<uint32_t>& window_shape, const std::initializer_list<uint32_t>& stride_shape = {}) const;
@@ -310,10 +312,16 @@ public:
 	NGrid pool_mean(const std::initializer_list<uint32_t>& window_shape, const std::initializer_list<uint32_t>& stride_shape = {}) const;
 	NGrid convolution(const NGrid& kernel, uint32_t padding_amount = 0, float_t padding_value = 0.0f) const;
 	NGrid transpose(const std::vector<uint32_t> target_axis_order = { 1,0 }) const;
-	void  lu_decomp(NGrid& L, NGrid& U, NGrid& P) const;
+	uint32_t lu_decomp(NGrid& L, NGrid& U, NGrid& P) const;
 	NGrid l_inverse() const;
 	NGrid u_inverse() const;
 	NGrid inverse() const;
+	static NGrid inverse(const NGrid& L, const NGrid& U, const NGrid& P);
+	const bool is_invertible() const;
+	static const bool is_invertible(const NGrid& U);
+	float_t determinant() const;
+	const uint32_t rank() const;
+	static const uint32_t rank(const NGrid& U);
 	NGrid mirror(const std::vector<bool>& mirror_axes) const;
 	NGrid mirror(const std::initializer_list<bool>& mirror_axes) const;
 	NGrid mirror() const;
@@ -754,55 +762,15 @@ std::string NGrid::get_shapestring() const {
 }
 
 // slice a subarray out of the parent array
-NGrid NGrid::subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape) const {
-	// convert the initializer_lists to vectors
-	std::vector<uint32_t> source_offset_vector = source_offset;
-	std::vector<uint32_t> subgrid_shape_vector = subgrid_shape;
-
-	// check if the source and result dimensions are equal
-	uint32_t subgrid_dimensions = static_cast<uint32_t>(subgrid_shape.size());
-	if (subgrid_dimensions != this->dimensions) {
-		Log::error("invalid usage of method 'NGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape)' ",
-			"with invalid subgrid_shape, which has ", subgrid_dimensions, " dimension(s), but the source array has ", this->dimensions, " dimension(s)");
-	}
-	for (uint32_t i = 0; i < subgrid_dimensions; i++) {
-		if (subgrid_shape_vector[i] > this->shape[i] - source_offset_vector[i]) {
-			Log::error("invalid usage of method 'NGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> result_size)' with invalid result size; ",
-				"result size is ", subgrid_shape_vector[i], ", but the underlying array has ", this->shape[i], " element(s) in dimension ", i, ", therefore with a source offset of ",
-				source_offset_vector[i], " the result size in this dimensions can't exceed ", shape[i] - subgrid_shape_vector[i]);
-		}
-	}
-	NGrid subgrid(subgrid_shape);
-
-	Buffer<uint32_t> source_offset_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
-	source_offset_buffer.write(source_offset);
-
-	static ShaderModule shader(manager->get_device(), SUBGRID_SPIRV_BIN, SUBGRID_SPIRV_BYTES);
-
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*subgrid.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*subgrid.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(source_offset_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(this->dimensions);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, subgrid.get_elements(), 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
-	return subgrid;
-}
-
 NGrid NGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> subgrid_shape) const {
+
 	// check if the source and result dimensions are equal
 	uint32_t subgrid_dimensions = static_cast<uint32_t>(subgrid_shape.size());
 	if (subgrid_dimensions != this->dimensions) {
 		Log::error("invalid usage of method 'NGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape)' ",
 			"with invalid subgrid_shape, which has ", subgrid_dimensions, " dimension(s), but the source array has ", this->dimensions, " dimension(s)");
 	}
+
 	for (uint32_t i = 0; i < subgrid_dimensions; i++) {
 		if (subgrid_shape[i] > this->shape[i] - source_offset[i]) {
 			Log::error("invalid usage of method 'NGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> result_size)' with invalid result size; ",
@@ -810,13 +778,18 @@ NGrid NGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> 
 				source_offset[i], " the result size in this dimensions can't exceed ", shape[i] - subgrid_shape[i]);
 		}
 	}
+
+	// declare result NGrid
 	NGrid subgrid(subgrid_shape);
 
+	// write offset to a buffer
 	Buffer<uint32_t> source_offset_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
 	source_offset_buffer.write(source_offset);
 
+	// load shader
 	static ShaderModule shader(manager->get_device(), SUBGRID_SPIRV_BIN, SUBGRID_SPIRV_BYTES);
 
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
@@ -826,11 +799,26 @@ NGrid NGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> 
 	set.finalize_layout();
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->dimensions, subgrid.get_elements());
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, subgrid.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	// define push constants
+	PushConstants constants(
+		this->dimensions,
+		subgrid.get_elements(),
+		this->elements
+	);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, subgrid.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
+
 	return subgrid;
+}
+
+NGrid NGrid::subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape) const {
+	// convert the initializer_lists to vectors
+	std::vector<uint32_t> source_offset_vector = source_offset;
+	std::vector<uint32_t> subgrid_shape_vector = subgrid_shape;
+	return this->subgrid(source_offset_vector, subgrid_shape_vector);
 }
 
 // +=================================+   
@@ -1199,22 +1187,43 @@ void NGrid::fill_index() {
 float_t NGrid::min() const {
 	static ShaderModule shader(manager->get_device(), MIN_SPIRV_BIN, MIN_SPIRV_BYTES);
 
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
+	NGrid data_input = this->flatten();
+	NGrid local_results(1);
+	uint32_t input_elements, num_workgroups;
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	do {
+		// calculate number of workgroups required to cover all input elements
+		input_elements = data_input.get_elements();
+		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	descriptor_pool->allocate_set(set);
+		// resize local results NGrid (one element for each workgroup)
+		local_results = local_results.reshape({ num_workgroups });
 
-	PushConstants constants(this->elements);
+		// define descriptor set
+		DescriptorSet set(manager->get_device());
+		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.finalize_layout();
+		descriptor_pool->allocate_set(set);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
+		// define push constants
+		PushConstants constants(data_input.get_elements());
 
-	return local_results.read_element(0);
+		// execute compute pipeline
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
+		descriptor_pool->release_set(set);
+
+		if (num_workgroups > 1) {
+			// turn the local results of this iteration into the input of the next one
+			data_input = local_results;
+		}
+		else {
+			float_t total_min = local_results.get(0);
+			return total_min;
+		}
+
+	} while (num_workgroups > 1);
 }
 
 // returns the highest value of the NGrid,
@@ -1222,22 +1231,43 @@ float_t NGrid::min() const {
 float_t NGrid::max() const {
 	static ShaderModule shader(manager->get_device(), MAX_SPIRV_BIN, MAX_SPIRV_BYTES);
 
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
+	NGrid data_input = this->flatten();
+	NGrid local_results(1);
+	uint32_t input_elements, num_workgroups;
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	do {
+		// calculate number of workgroups required to cover all input elements
+		input_elements = data_input.get_elements();
+		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	descriptor_pool->allocate_set(set);
+		// resize local results NGrid (one element for each workgroup)
+		local_results = local_results.reshape({ num_workgroups });
 
-	PushConstants constants(this->elements);
+		// define descriptor set
+		DescriptorSet set(manager->get_device());
+		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.finalize_layout();
+		descriptor_pool->allocate_set(set);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
+		// define push constants
+		PushConstants constants(data_input.get_elements());
 
-	return local_results.read_element(0);
+		// execute compute pipeline
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
+		descriptor_pool->release_set(set);
+
+		if (num_workgroups > 1) {
+			// turn the local results of this iteration into the input of the next one
+			data_input = local_results;
+		}
+		else {
+			float_t total_max = local_results.get(0);
+			return total_max;
+		}
+
+	} while (num_workgroups > 1);
 }
 
 // returns the value of the NGrid with the highest
@@ -1245,22 +1275,43 @@ float_t NGrid::max() const {
 float_t NGrid::maxabs() const {
 	static ShaderModule shader(manager->get_device(), MAXABS_SPIRV_BIN, MAXABS_SPIRV_BYTES);
 
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
+	NGrid data_input = this->flatten();
+	NGrid local_results(1);
+	uint32_t input_elements, num_workgroups;
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	do {
+		// calculate number of workgroups required to cover all input elements
+		input_elements = data_input.get_elements();
+		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	descriptor_pool->allocate_set(set);
+		// resize local results NGrid (one element for each workgroup)
+		local_results = local_results.reshape({ num_workgroups });
 
-	PushConstants constants(this->elements);
+		// define descriptor set
+		DescriptorSet set(manager->get_device());
+		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.finalize_layout();
+		descriptor_pool->allocate_set(set);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
+		// define push constants
+		PushConstants constants(data_input.get_elements());
 
-	return local_results.read_element(0);
+		// execute compute pipeline
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
+		descriptor_pool->release_set(set);
+
+		if (num_workgroups > 1) {
+			// turn the local results of this iteration into the input of the next one
+			data_input = local_results;
+		}
+		else {
+			float_t total_maxabs = local_results.get(0);
+			return total_maxabs;
+		}
+
+	} while (num_workgroups > 1);
 }
 
 // returns the arrithmetic mean of all values of the NGrid
@@ -1449,11 +1500,10 @@ float_t NGrid::sum() const {
 		}
 		else {
 			total_sum = local_results.get(0);
+			return total_sum;
 		}
 
 	} while (num_workgroups > 1);
-
-	return total_sum;
 }
 
 // elementwise addition of the specified value to all elements of the array
@@ -1481,10 +1531,14 @@ NGrid NGrid::operator+(const float_t value) const {
 
 // returns the resulting array of the elementwise addition of two arrays
 NGrid NGrid::operator+(const NGrid& other) const {
-	NGrid result(this->shape);
 
+	// load shader
 	static ShaderModule shader(manager->get_device(), OPERATOR_PLUS_OTHER_SPIRV_BIN, OPERATOR_PLUS_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
+	NGrid result(this->shape);
+
+	// setup descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
@@ -1492,13 +1546,19 @@ NGrid NGrid::operator+(const NGrid& other) const {
 	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
+	// define push constants
+	PushConstants constants(
+		this->dimensions,
+		other.get_dimensions(),
+		this->elements,
+		other.get_elements()
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -1550,10 +1610,14 @@ NGrid NGrid::operator-(const float_t value) const {
 // returns the resulting array of the elementwise substraction of
 // two array of equal dimensions
 NGrid NGrid::operator-(const NGrid& other) const {
-	NGrid result(this->shape);
 
+	// load shader
 	static ShaderModule shader(manager->get_device(), OPERATOR_MINUS_OTHER_SPIRV_BIN, OPERATOR_MINUS_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
+	NGrid result(this->shape);
+
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
@@ -1561,13 +1625,19 @@ NGrid NGrid::operator-(const NGrid& other) const {
 	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
+	// define push constants
+	PushConstants constants(
+		this->dimensions,
+		other.get_dimensions(),
+		this->elements,
+		other.get_elements()
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute shader
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -1613,22 +1683,44 @@ void NGrid::operator-=(const NGrid& other) {
 float_t NGrid::product() const {
 	static ShaderModule shader(manager->get_device(), PRODUCT_SPIRV_BIN, PRODUCT_SPIRV_BYTES);
 
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
+	NGrid data_input = this->flatten();
+	NGrid local_results(1);
+	uint32_t input_elements, num_workgroups;
+	float_t total_product;
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	do {
+		// calculate number of workgroups required to cover all input elements
+		input_elements = data_input.get_elements();
+		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	descriptor_pool->allocate_set(set);
+		// resize local results NGrid (one element for each workgroup)
+		local_results = local_results.reshape({ num_workgroups });
 
-	PushConstants constants(this->elements);
+		// define descriptor set
+		DescriptorSet set(manager->get_device());
+		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.finalize_layout();
+		descriptor_pool->allocate_set(set);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
+		// define push constants
+		PushConstants constants(data_input.get_elements());
 
-	return local_results.read_element(0);
+		// execute compute pipeline
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
+		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
+		descriptor_pool->release_set(set);
+
+		if (num_workgroups > 1) {
+			// turn the local results of this iteration into the input of the next one
+			data_input = local_results;
+		}
+		else {
+			total_product = local_results.get(0);
+			return total_product;
+		}
+
+	} while (num_workgroups > 1);
 }
 
 // elementwise multiplication with a scalar
@@ -1893,10 +1985,14 @@ void NGrid::operator^=(const float_t exponent) {
 // the corresponding values of the second array;
 // the dimensions of the two array must match!
 NGrid NGrid::pow(const NGrid& other) const {
-	NGrid result(this->shape);
 
+	// load shader
 	static ShaderModule shader(manager->get_device(), POW_OTHER_SPIRV_BIN, POW_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
+	NGrid result(this->shape);
+
+	// setup descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
@@ -1904,11 +2000,17 @@ NGrid NGrid::pow(const NGrid& other) const {
 	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
+	// define push constants
+	PushConstants constants(
+		this->dimensions,
+		other.get_dimensions(),
+		this->elements,
+		other.get_elements()
+	);
 
+	// execute compute pipeline
 	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
 	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
 	descriptor_pool->release_set(set);
@@ -2063,29 +2165,6 @@ NGrid NGrid::abs() const {
 	return result;
 }
 
-// returns a copy of the array that stores the
-// values of the source array clamped in the range between a min and max value
-NGrid NGrid::clamp(const float_t min_value, const float_t max_value) const {
-	NGrid result(this->shape);
-
-	static ShaderModule shader(manager->get_device(), CLAMP_SPIRV_BIN, CLAMP_SPIRV_BYTES);
-
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(this->elements, min_value, max_value);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
-
-	return result;
-}
-
 // +=================================+   
 // | Min, Max                        |
 // +=================================+
@@ -2194,7 +2273,7 @@ NGrid NGrid::max(const NGrid& other) const {
 
 // elementwise application of the cos() function;
 // the result is a dimensionless ratio (adjacent / hypotenuse)
-NGrid NGrid::cos(AngularMeasure source_angle_unit) const {
+NGrid NGrid::cos(AngularUnit source_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, source_angle_unit, RAD));
 	NGrid result(this->shape);
 
@@ -2218,7 +2297,7 @@ NGrid NGrid::cos(AngularMeasure source_angle_unit) const {
 
 // elementwise application of the sin() function;
 // the result is a dimensionless ratio (opposite / hypotenuse)
-NGrid NGrid::sin(AngularMeasure source_angle_unit) const {
+NGrid NGrid::sin(AngularUnit source_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, source_angle_unit, RAD));
 	NGrid result(this->shape);
 
@@ -2242,7 +2321,7 @@ NGrid NGrid::sin(AngularMeasure source_angle_unit) const {
 
 // elementwise application of the tan function;
 // the result is a dimensionless ratio (opposite / adjacent)
-NGrid NGrid::tan(AngularMeasure source_angle_unit) const {
+NGrid NGrid::tan(AngularUnit source_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, source_angle_unit, RAD));
 	NGrid result(this->shape);
 
@@ -2267,7 +2346,7 @@ NGrid NGrid::tan(AngularMeasure source_angle_unit) const {
 // elementwise application of the acos() function;
 // inverse function of cos(), i.e. returns the angle
 // whose cosine equals a given value
-NGrid NGrid::acos(AngularMeasure result_angle_unit) const {
+NGrid NGrid::acos(AngularUnit result_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, RAD, result_angle_unit));
 	NGrid result(this->shape);
 
@@ -2292,7 +2371,7 @@ NGrid NGrid::acos(AngularMeasure result_angle_unit) const {
 // elementwise application of the asin() function;
 // inverse function of sin(), i.e. returns the angle
 // whose sine equals a given value
-NGrid NGrid::asin(AngularMeasure result_angle_unit) const {
+NGrid NGrid::asin(AngularUnit result_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, RAD, result_angle_unit));
 	NGrid result(this->shape);
 
@@ -2317,7 +2396,7 @@ NGrid NGrid::asin(AngularMeasure result_angle_unit) const {
 // elementwise application of the atan function;
 // inverse function of tan(), i.e. returns the angle
 // whose tangens equals a given value
-NGrid NGrid::atan(AngularMeasure result_angle_unit) const {
+NGrid NGrid::atan(AngularUnit result_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, RAD, result_angle_unit));
 	NGrid result(this->shape);
 
@@ -2585,24 +2664,58 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const float_t replacing_valu
 
 // returns the number of occurrences of the specified value;
 uint32_t NGrid::find(const float_t& value) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), FIND_SPIRV_BIN, FIND_SPIRV_BYTES);
 
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
+	// prepare variables
+	NGrid data_input = this->flatten();
+	NGrid local_results(1);
+	uint32_t input_elements, num_workgroups;
+	uint32_t total_findings;
+	uint32_t iteration = 0;
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// main loop
+	do {
+		// calculate number of workgroups required to cover all input elements
+		input_elements = data_input.get_elements();
+		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	descriptor_pool->allocate_set(set);
+		// resize local results NGrid (one element for each workgroup)
+		local_results = local_results.reshape({ num_workgroups });
 
-	PushConstants constants(this->elements, value);
+		// define descriptor set
+		DescriptorSet set(manager->get_device());
+		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.finalize_layout();
+		descriptor_pool->allocate_set(set);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
-	descriptor_pool->release_set(set);
+		// define push constants
+		PushConstants constants(
+			data_input.get_elements(),
+			value,
+			iteration
+		);
 
-	return static_cast<uint32_t>(local_results.read_element(0));
+		// execute compute pipeline
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
+		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
+		descriptor_pool->release_set(set);
+
+		if (num_workgroups > 1) {
+			// turn the local results of this iteration into the input of the next one
+			data_input = local_results;
+
+			// update iteration counter
+			iteration++;
+		}
+		else {
+			total_findings = static_cast<uint32_t>(local_results.get(0));
+			return total_findings;
+		}
+
+	} while (num_workgroups > 1);
 }
 
 // returns a NGrid array of equal dimensions as the source,
@@ -2635,22 +2748,28 @@ NGrid NGrid::sign() const {
 
 // scale to specified range
 NGrid NGrid::scale_minmax(float_t range_from, float_t range_to) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), SCALE_MINMAX_SPIRV_BIN, SCALE_MINMAX_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
-	Buffer<float> local_min_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
-	Buffer<float> local_max_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d)));
 
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_min_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_max_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements, range_from, range_to);
+	// define push constants
+	PushConstants constants(
+		this->elements,
+		range_from,
+		range_to,
+		this->min(),
+		this->max()
+	);
 
 	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
 	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
@@ -2662,55 +2781,64 @@ NGrid NGrid::scale_minmax(float_t range_from, float_t range_to) const {
 // mean normalization scaling, i.e.
 // (x - mean) / (max - min)
 NGrid NGrid::scale_mean() const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), SCALE_MEAN_SPIRV_BIN, SCALE_MEAN_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
-	uint32_t workgroups = static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d));
-	Buffer<float> local_mean_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, workgroups);
-	Buffer<float> local_min_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, workgroups);
-	Buffer<float> local_max_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, workgroups);
 
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_mean_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_min_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_max_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements);
+	// define push constants
+	PushConstants constants(
+		this->elements,
+		this->mean(),
+		this->max() - this->min() // = range
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
 }
 
 // 'standardized' scaling:
-// scaling to zero mean and unit-variance, i.e.
-// (x - mean) / sigma
-NGrid NGrid::scale_std() const {
+// scaling to zero mean and unit-variance (or specified z_score), i.e.
+// ((x - mean) / sigma) * z_score
+NGrid NGrid::scale_zscore(const float_t z_score) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), SCALE_STD_SPIRV_BIN, SCALE_STD_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
-	uint32_t workgroups = static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d));
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, workgroups);
 
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements);
+	// define push constants
+	PushConstants constants(
+		this->elements,
+		this->mean(),
+		this->stdev(),
+		z_score
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2961,76 +3089,134 @@ NGrid NGrid::tanh_drv() const {
 // | Outlier Treatment               |
 // +=================================+
 
-// truncate outliers by z-score mean deviation
-NGrid NGrid::outliers_truncate(float_t z_score) const {
-	static ShaderModule shader(manager->get_device(), OUTLIERS_TRUNCATE_SPIRV_BIN, OUTLIERS_TRUNCATE_SPIRV_BYTES);
-
+// returns a copy of the array that stores the
+// values of the source array clamped in the range between a min and max value
+NGrid NGrid::outliers_clamp_minmax(const float_t min_value, const float_t max_value) const {
 	NGrid result(this->shape);
-	uint32_t workgroups = static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d));
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, workgroups);
+
+	static ShaderModule shader(manager->get_device(), CLAMP_SPIRV_BIN, CLAMP_SPIRV_BYTES);
 
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
 
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements, z_score);
+	PushConstants constants(this->elements, min_value, max_value);
 
 	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
 	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	descriptor_pool->release_set(set);
+
+	return result;
+}
+
+// truncate outliers by z-score mean deviation
+NGrid NGrid::outliers_clamp_zscore(const float_t z_score) const {
+
+	float_t mean = this->mean();
+	float_t sigma = this->stdev();
+	float_t upper_limit = mean + z_score * sigma;
+	float_t lower_limit = mean - z_score * sigma;
+
+	// load shader
+	static ShaderModule shader(manager->get_device(), OUTLIERS_TRUNCATE_SPIRV_BIN, OUTLIERS_TRUNCATE_SPIRV_BYTES);
+
+	// define result NGrid
+	NGrid result(this->shape);
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		this->elements,
+		upper_limit,
+		lower_limit
+	);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
 }
 
 // set outliers (by z-score) to mean
-NGrid NGrid::outliers_mean_imputation(float_t z_score) const {
+NGrid NGrid::outliers_mean_imputation(const float_t z_score) const {
+
+	float_t mean = this->mean();
+	float_t sigma = this->stdev();
+	float_t upper_limit = mean + z_score * sigma;
+	float_t lower_limit = mean - z_score * sigma;
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), OUTLIERS_MEAN_IMPUTATION_SPIRV_BIN, OUTLIERS_MEAN_IMPUTATION_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
-	uint32_t workgroups = static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d));
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, workgroups);
 
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements, z_score);
+	// define push constants
+	PushConstants constants(
+		this->elements,
+		upper_limit,
+		lower_limit,
+		mean
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
 }
 
 // set outliers (by z-score) to value
-NGrid NGrid::outliers_value_imputation(float_t value, float_t z_score) const {
+NGrid NGrid::outliers_value_imputation(const float_t z_score, const float_t value) const {
+
+	float_t mean = this->mean();
+	float_t sigma = this->stdev();
+	float_t upper_limit = mean + z_score * sigma;
+	float_t lower_limit = mean - z_score * sigma;
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), OUTLIERS_VALUE_IMPUTATION_SPIRV_BIN, OUTLIERS_VALUE_IMPUTATION_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
-	uint32_t workgroups = static_cast<uint32_t>(std::ceil(static_cast<float_t>(this->elements) / workgroup_size_1d));
-	Buffer<float> local_results(manager->get_device(), BufferUsage::STORAGE_BUFFER, workgroups);
 
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(local_results, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements, z_score, value);
+	// define push constants
+	PushConstants constants(
+		this->elements,
+		upper_limit,
+		lower_limit,
+		value
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3192,36 +3378,34 @@ NGrid NGrid::operator<=(const float_t value) const {
 
 // elementwise comparison with second NGrid
 NGrid NGrid::operator>(const NGrid& other) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_OTHER_SPIRV_BIN, OPERATOR_GREATER_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
 
-	if (this->dimensions != other.get_dimensions()) {
-		Log::warning("invalid usage of method NGrid::operator>(const NGrid& other) const: dimensions of 'this' and 'other' must match)");
-		result.fill_zero();
-		return result;
-	}
-	for (uint32_t i = 0; i < this->dimensions; i++) {
-		if (this->shape[i] != other.get_shape()[i]) {
-			Log::warning("invalid usage of method NGrid::operator>(const NGrid& other) const: 'this'(", this->get_shapestring(),
-				") and 'other'(", other.get_shapestring(), ") have different shape");
-			result.fill_zero();
-			return result;
-		}
-	}
-
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements);
+	// setup push constants
+	PushConstants constants(
+		this->elements,
+		other.get_elements(),
+		this->dimensions,
+		other.get_dimensions()
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3230,178 +3414,214 @@ NGrid NGrid::operator>(const NGrid& other) const {
 NGrid NGrid::operator>=(const NGrid& other) const {
 	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_EQUAL_OTHER_SPIRV_BIN, OPERATOR_GREATER_EQUAL_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
 
-	if (this->dimensions != other.get_dimensions()) {
-		Log::warning("invalid usage of method NGrid::operator>=(const NGrid& other) const: dimensions of 'this' and 'other' must match)");
-		result.fill_zero();
-		return result;
-	}
-	for (uint32_t i = 0; i < this->dimensions; i++) {
-		if (this->shape[i] != other.get_shape()[i]) {
-			Log::warning("invalid usage of method NGrid::operator>=(const NGrid& other) const: 'this'(", this->get_shapestring(),
-				") and 'other'(", other.get_shapestring(), ") have different shape");
-			result.fill_zero();
-			return result;
-		}
-	}
-
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements);
+	// setup push constants
+	PushConstants constants(
+		this->elements,
+		other.get_elements(),
+		this->dimensions,
+		other.get_dimensions()
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
 }
 
 NGrid NGrid::operator==(const NGrid& other) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), OPERATOR_EQUAL_OTHER_SPIRV_BIN, OPERATOR_EQUAL_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
 
-	if (this->dimensions != other.get_dimensions()) {
-		Log::warning("invalid usage of method NGrid::operator==(const NGrid& other) const: dimensions of 'this' and 'other' must match)");
-		result.fill_zero();
-		return result;
-	}
-	for (uint32_t i = 0; i < this->dimensions; i++) {
-		if (this->shape[i] != other.get_shape()[i]) {
-			Log::warning("invalid usage of method NGrid::operator==(const NGrid& other) const: 'this'(", this->get_shapestring(),
-				") and 'other'(", other.get_shapestring(), ") have different shape");
-			result.fill_zero();
-			return result;
-		}
-	}
-
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements);
+	// setup push constants
+	PushConstants constants(
+		this->elements,
+		other.get_elements(),
+		this->dimensions,
+		other.get_dimensions()
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
 }
 
 NGrid NGrid::operator!=(const NGrid& other) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), OPERATOR_NOT_EQUAL_OTHER_SPIRV_BIN, OPERATOR_NOT_EQUAL_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
 
-	if (this->dimensions != other.get_dimensions()) {
-		Log::warning("invalid usage of method NGrid::operator!=(const NGrid& other) const: dimensions of 'this' and 'other' must match)");
-		result.fill_zero();
-		return result;
-	}
-	for (uint32_t i = 0; i < this->dimensions; i++) {
-		if (this->shape[i] != other.get_shape()[i]) {
-			Log::warning("invalid usage of method NGrid::operator!=(const NGrid& other) const: 'this'(", this->get_shapestring(),
-				") and 'other'(", other.get_shapestring(), ") have different shape");
-			result.fill_zero();
-			return result;
-		}
-	}
-
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements);
+	// setup push constants
+	PushConstants constants(
+		this->elements,
+		other.get_elements(),
+		this->dimensions,
+		other.get_dimensions()
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
 }
 
 NGrid NGrid::operator<(const NGrid& other) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_OTHER_SPIRV_BIN, OPERATOR_SMALLER_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
 
-	if (this->dimensions != other.get_dimensions()) {
-		Log::warning("invalid usage of method NGrid::operator<(const NGrid& other) const: dimensions of 'this' and 'other' must match)");
-		result.fill_zero();
-		return result;
-	}
-	for (uint32_t i = 0; i < this->dimensions; i++) {
-		if (this->shape[i] != other.get_shape()[i]) {
-			Log::warning("invalid usage of method NGrid::operator<(const NGrid& other) const: 'this'(", this->get_shapestring(),
-				") and 'other'(", other.get_shapestring(), ") have different shape");
-			result.fill_zero();
-			return result;
-		}
-	}
-
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements);
+	// setup push constants
+	PushConstants constants(
+		this->elements,
+		other.get_elements(),
+		this->dimensions,
+		other.get_dimensions()
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
 }
 
 NGrid NGrid::operator<=(const NGrid& other) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_EQUAL_OTHER_SPIRV_BIN, OPERATOR_SMALLER_EQUAL_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
 
-	if (this->dimensions != other.get_dimensions()) {
-		Log::warning("invalid usage of method NGrid::operator<=(const NGrid& other) const: dimensions of 'this' and 'other' must match)");
-		result.fill_zero();
-		return result;
-	}
-	for (uint32_t i = 0; i < this->dimensions; i++) {
-		if (this->shape[i] != other.get_shape()[i]) {
-			Log::warning("invalid usage of method NGrid::operator<=(const NGrid& other) const: 'this'(", this->get_shapestring(),
-				") and 'other'(", other.get_shapestring(), ") have different shape");
-			result.fill_zero();
-			return result;
-		}
-	}
-
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
+	// setup push constants
+	PushConstants constants(
+		this->elements,
+		other.get_elements(),
+		this->dimensions,
+		other.get_dimensions()
+	);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+
+	return result;
+}
+
+NGrid NGrid::isinf() const {
+	NGrid result(this->shape);
+
+	// load shader
+	static ShaderModule shader(manager->get_device(), ISINF_SPIRV_BIN, ISINF_SPIRV_BYTES);
+
+	// setup descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// setup push constants
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+
+	return result;
+}
+
+NGrid NGrid::isnan() const {
+	NGrid result(this->shape);
+
+	// load shader
+	static ShaderModule shader(manager->get_device(), ISNAN_SPIRV_BIN, ISNAN_SPIRV_BYTES);
+
+	// setup descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// setup push constants
+	PushConstants constants(this->elements);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3457,33 +3677,30 @@ NGrid NGrid::operator!() const {
 }
 
 NGrid NGrid::operator&&(const NGrid& other) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), OPERATOR_AND_OTHER_SPIRV_BIN, OPERATOR_AND_OTHER_SPIRV_BYTES);
 
+	// setup result NGrid
 	NGrid result(this->shape);
 
-	if (this->dimensions != other.get_dimensions()) {
-		Log::warning("invalid usage of method NGrid::operator&&(const NGrid& other) const: dimensions of 'this' and 'other' must match)");
-		result.fill_zero();
-		return result;
-	}
-	for (uint32_t i = 0; i < this->dimensions; i++) {
-		if (this->shape[i] != other.get_shape()[i]) {
-			Log::warning("invalid usage of method NGrid::operator&&(const NGrid& other) const: 'this'(", this->get_shapestring(),
-				") and 'other'(", other.get_shapestring(), ") have different shape");
-			result.fill_zero();
-			return result;
-		}
-	}
-
+	// setup descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
 
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements);
+	PushConstants constants(
+		this->elements,
+		other.get_elements(),
+		this->dimensions,
+		other.get_dimensions()
+	);
 
 	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
 	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
@@ -3493,42 +3710,41 @@ NGrid NGrid::operator&&(const NGrid& other) const {
 }
 
 NGrid NGrid::operator||(const NGrid& other) const {
+
+	// load shader
 	static ShaderModule shader(manager->get_device(), OPERATOR_OR_OTHER_SPIRV_BIN, OPERATOR_OR_OTHER_SPIRV_BYTES);
 
+	// define result NGrid
 	NGrid result(this->shape);
 
-	if (this->dimensions != other.get_dimensions()) {
-		Log::warning("invalid usage of method NGrid::operator||(const NGrid& other) const: dimensions of 'this' and 'other' must match)");
-		result.fill_zero();
-		return result;
-	}
-	for (uint32_t i = 0; i < this->dimensions; i++) {
-		if (this->shape[i] != other.get_shape()[i]) {
-			Log::warning("invalid usage of method NGrid::operator||(const NGrid& other) const: 'this'(", this->get_shapestring(),
-				") and 'other'(", other.get_shapestring(), ") have different shape");
-			result.fill_zero();
-			return result;
-		}
-	}
-
+	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
 	descriptor_pool->allocate_set(set);
 
-	PushConstants constants(this->elements);
+	// setup push constants
+	PushConstants constants(
+		this->elements,
+		other.get_elements(),
+		this->dimensions,
+		other.get_dimensions()
+	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
 }
 
 // +=================================+   
-// | dynamic handling                |
+// | Advanced Matrix Operations      |
 // +=================================+
 
 // conversion to 1d array
@@ -3550,7 +3766,7 @@ NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, float_t default_ini
 	}
 	else {
 		// load shader
-		static ShaderModule shader(manager->get_device(), RESIZE_SPIRV_BIN, RESIZE_SPIRV_BYTES);
+		static ShaderModule shader(manager->get_device(), RESHAPE_SPIRV_BIN, RESHAPE_SPIRV_BYTES);
 
 		// bind buffers to a descriptor set
 		DescriptorSet set(manager->get_device());
@@ -3583,14 +3799,28 @@ NGrid NGrid::reshape(std::initializer_list<uint32_t> new_shape, float_t default_
 	return this->reshape(new_shape_vec, default_init_value);
 }
 
+template<typename... Args> NGrid NGrid::reshape(Args... args) const {
+	std::vector<uint32_t> new_shape_vec = { static_cast<uint32_t>(args)... };
+	return this->reshape(new_shape_vec, 0.0f); // initialize added elements with 0 by default
+}
+
 // stitch two NGrid arrays together along the specified axis
 NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 	// check valid axis argument
-	if (axis > this->dimensions + 1) {
+	if (axis > this->dimensions) {
 		Log::warning("invalid call of NGrid::concatenate() along axis ", axis, "; the array so far only has ",
-			this->dimensions, " dimensions (shape ", this->get_shapestring(), "), returning 'this' as unmodified");
+			this->dimensions, " dimensions (shape ", this->get_shapestring(), "), axis indexing starts from 0, ",
+			"max valid concatenation axis is ", this->dimensions, "; returning 'this' as unmodified");
 		return *this;
 	}
+
+	if (axis > other.get_dimensions()) {
+		Log::warning("invalid call of NGrid::concatenate() along axis ", axis, "; the 'other' array so far only has ",
+			other.get_dimensions(), " dimensions (shape ", other.get_shapestring(), "), axis indexing starts from 0, ",
+			"max valid concatenation axis is ", other.get_dimensions(), "; returning 'this' as unmodified");
+		return *this;
+	}
+
 	// check valid sizes
 	for (uint32_t i = 0; i < this->dimensions; i++) {
 		if (i != axis) {
@@ -3606,10 +3836,15 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 	static ShaderModule shader(manager->get_device(), CONCATENATE_SPIRV_BIN, CONCATENATE_SPIRV_BYTES);
 
 	std::vector<uint32_t> result_shape = this->shape;
-	if (axis == this->dimensions + 1) {
+	if (axis == this->dimensions) {
 		result_shape.push_back(1);
 	}
-	result_shape[axis] += other.get_dimensions() <= axis ? 1 : other.get_shape()[axis];
+	if (axis == other.get_dimensions()) {
+		result_shape[axis]++;
+	}
+	else {
+		result_shape[axis] += other.get_shape()[axis];
+	}
 
 	NGrid result(result_shape);
 
@@ -4087,11 +4322,12 @@ NGrid NGrid::transpose(const std::vector<uint32_t> target_axis_order) const {
 	return result;
 }
 
-void  NGrid::lu_decomp(NGrid& L, NGrid& U, NGrid& P) const {
+// performs LU decomposition, returns the number of row swaps performed
+uint32_t  NGrid::lu_decomp(NGrid& L, NGrid& U, NGrid& P) const {
 	// check if the grid is a 2d matrix
 	if (this->dimensions != 2) {
 		Log::warning("invalid usage of NGrid::lu_decomp: only 2d matrices can be decomposed, returning unmodified grids");
-		return;
+		return 0;
 	}
 
 	// initialize matrices
@@ -4104,12 +4340,16 @@ void  NGrid::lu_decomp(NGrid& L, NGrid& U, NGrid& P) const {
 	// add a buffer to store the row to be swapped for current row 'k'
 	Buffer<uint32_t> swap_row(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1);
 
+	// add a buffer to count the number of performed row swaps
+	Buffer<uint32_t> swap_count(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1);
+
 	// define descriptor set
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*L.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*U.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*P.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(swap_row, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(swap_count, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
 	descriptor_pool->allocate_set(set);
 
@@ -4134,7 +4374,7 @@ void  NGrid::lu_decomp(NGrid& L, NGrid& U, NGrid& P) const {
 		command_buffer->compute(check_swap_pipeline, this->shape[0], 1, 1, false, 0, true);
 
 		// perform row swap (=if needed)
-		// (horizontal 1d dispatch with one thread for each column)
+		// (1d dispatch with one thread for each column)
 		static ShaderModule perform_swap_shader(manager->get_device(), LU_DECOMP_PERFORM_ROWSWAP_SPIRV_BIN, LU_DECOMP_PERFORM_ROWSWAP_SPIRV_BYTES);
 		ComputePipeline perform_swap_pipeline(manager->get_device(), perform_swap_shader, constants, set, workgroup_size_1d, 1, 1);
 		command_buffer->compute(perform_swap_pipeline, this->shape[1], 1, 1, false, 0, true);
@@ -4151,6 +4391,8 @@ void  NGrid::lu_decomp(NGrid& L, NGrid& U, NGrid& P) const {
 		command_buffer->compute(u_update_pipeline, U.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	}
 	descriptor_pool->release_set(set);
+
+	return swap_count.read_element(0);
 }
 
 // get the inverse of a lower triangular matrix L (using forward substitution)
@@ -4237,10 +4479,9 @@ NGrid NGrid::inverse() const {
 
 	// case 1: square matrix
 	if (this->shape[0] == this->shape[1]) {
-		NGrid L, U, P, A_inv;
+		NGrid L, U, P;
 		this->lu_decomp(L, U, P);
-		A_inv = U.u_inverse() * L.l_inverse() * P;
-		return A_inv;
+		return inverse(L, U, P);
 	}
 
 	// case 2: 'tall' matrix (m x n, with m > n)
@@ -4255,6 +4496,72 @@ NGrid NGrid::inverse() const {
 		return this->transpose() * (*this * this->transpose()).inverse(); // A+ = A^T * (A * A^T)^-1
 	}
 	return *this;
+}
+
+// calculate the inverse of a square matrix based on the provided upper and lower triangular matrix,
+// as well as the permutation matrix;
+// this method has a built-in check if the source matrix's determinant is non-zero to confirm the matrix is invertible
+NGrid NGrid::inverse(const NGrid& L, const NGrid& U, const NGrid& P) {
+	if (!NGrid::is_invertible(U)) {
+		Log::warning("invalid call of NGrid::inverse(L,U,P): the inverse is not defined because U contains zeros in its diagonal, ",
+			"therefore the determinant of U is zero (implying that the determinant of the source matrix is also zero)");
+		NGrid result(U.get_shape());
+		result.fill(NAN);
+		return result;
+	}
+	return U.u_inverse() * L.l_inverse() * P;
+}
+
+// checks if the inverse of a square matrix exists;
+// if it doesn't the Moore_Penrose pseudo-inverse (for non-square matrices) may still exist!
+const bool NGrid::is_invertible() const {
+	// check if matrix is 2d
+	if (this->dimensions != 2) {
+		return false;
+	}
+	// check if matrix is square
+	if (this->shape[0] != this->shape[1]) {
+		return false;
+	}
+
+	// for a square matrix to be invertible the determinant of the U matrix must not be zero;
+	// the determinant of a triangular matrix is the product of all diagonal elements;
+	// in case of the upper triangular matrix we can set all non-diagonal elements to 1 and then calculate the total product
+	NGrid L, U, P;
+	this->lu_decomp(L, U, P);
+	NGrid U_identity_mask(U.get_shape());
+	U_identity_mask.fill_identity();
+	float_t det_U = U.replace_if(!U_identity_mask, 1.0f).product(); // using the NOT operator inverts the identity mask to a zero diagonal, with all other elements being ones
+	// return false if det_U is NAN 
+	if (det_U != det_U) {
+		return false;
+	}
+	else {
+		return det_U != 0.0f;
+	}
+
+	return true;
+}
+
+// check if a matrix is invertible based on its corresponding upper triangular matrix
+const bool NGrid::is_invertible(const NGrid& U) {
+
+	// for a square matrix to be invertible the determinant of the U matrix must not be zero;
+	// the determinant of a triangular matrix is the product of all diagonal elements;
+	// in case of the upper triangular matrix we can set all non-diagonal elements to 1 and then calculate the total product
+	NGrid U_identity_mask(U.get_shape());
+	U_identity_mask.fill_identity();
+	float_t det_U = U.replace_if(!U_identity_mask, 1.0f).product(); // using the NOT operator inverts the identity mask to a zero diagonal, with all other elements being ones
+
+	// return false if det_U is NAN 
+	if (det_U != det_U) {
+		return false;
+	}
+	else {
+		return det_U != 0.0f;
+	}
+
+	return true;
 }
 
 // reverse sorting (=mirror, =flip) of the grid along the specified axes
@@ -4606,7 +4913,7 @@ NGrid::RegressionResult NGrid::regression(const NGrid& other, const bool sample,
 	uint32_t cols_X = X_2d.get_shape()[1]; // number of columns in X (k)
 	uint32_t rows_X = X_2d.get_shape()[0]; // number of rows in X (N)
 
-	// simple or linear or multivariate linear regression: add the X_2d matrix as a column(s) to the design matrix
+	// simple linear or multivariate linear regression: add the X_2d matrix as a column(s) to the design matrix
 	if (degree == 1) {
 		X_design = X_design.concatenate(X_2d, 1); // concatenate along the second axis (columns)
 	}
@@ -4781,24 +5088,17 @@ NGrid::RegressionResult NGrid::regression(const NGrid& other, const bool sample,
 // If the p-value is less than a chosen significance level (usually 0.05),
 // then the null hypothesis is rejected and it is concluded that the
 // time series dataset does not have a unit root and is stationary.
-// The method for differencing is set to first order integer by default,
-// but can be changed to other methods via the method's arguments
 float_t NGrid::Dickey_Fuller() const {
-	if (this->dimensions != 1 || (this->dimensions == 2 && this->shape[1] != 1)) {
+	// check if 'this' is a 1d vector
+	if (this->dimensions > 2 || (this->dimensions == 2 && (this->shape[0] != 1 && this->shape[1] != 1))) {
 		Log::warning("NGrid::Dickey_Fuller() is only valid for 1d vectors, returning NAN");
 		return float_t(NAN);
 	}
 	// correlate a copy of the array with a stationary transformation of itself
 	// (i.e. first degree differencing)
 	// The first element is omitted in this copy is because the stationary transformation also has one element less
-	NGrid copy;
-	if (this->dimensions == 1) {
-		copy = this->subgrid({ 1 }, { this->shape[0] - 1 });
-	}
-	else {
-		copy = this->subgrid({ 1, 0 }, { this->shape[0] - 1, 1 });
-	}
-	auto regression_result = copy.regression(this->stationary());
+	NGrid copy = this->flatten().subgrid({ 1 }, { this->elements - 1 });
+	auto regression_result = copy.regression(this->stationary(1));
 	float R = regression_result.get_Pearson_R();
 
 	// calculate final result
@@ -4826,30 +5126,25 @@ float_t NGrid::Engle_Granger(const NGrid& other) const {
 // e.g. for time series data;
 NGrid NGrid::stationary(const uint32_t degree) const {
 
+	// check if 'this' is a 1d vector
+	if (this->dimensions > 2 || (this->dimensions == 2 && (this->shape[0] != 1 && this->shape[1] != 1))) {
+		Log::warning("NGrid::stationary() is only valid for 1d vectors (or 2d with shape {m,1} or {1,n}), but 'this' has shape ", this->get_shapestring(), "; returning 'this' unmodified");
+		return *this;
+	}
+
+	// Check if we have enough elements to difference
+	if (this->elements < 2) {
+		Log::warning("NGrid::stationary(): Not enough elements to perform differencing ('this' has only ", this->elements, " elements), returning 'this' unmodified.");
+		return *this;
+	}
+
 	// base Case: if degree is 0, return a copy of the original data
 	if (degree == 0) {
 		return *this;
 	}
 
 	// create the result NGrid with one less element
-	NGrid differenced_result;
-	if (this->dimensions == 1) {
-		differenced_result.reshape({ this->shape[0] - 1 });
-	}
-	else if (this->dimensions == 2 && this->shape[1] == 1) {
-		differenced_result.reshape({ this->shape[0] - 1, 1 });
-	}
-	else {
-		// invalid input dimensions
-		Log::warning("NGrid::stationary() is only valid for 1d vectors, but 'this' has shape ", this->get_shapestring(), "; result will be empty.");
-		return differenced_result;
-	}
-
-	// Check if we have enough elements to difference
-	if (this->elements < 2) {
-		Log::warning("NGrid::stationary(): Not enough elements to perform differencing ('this' has only ", this->elements, " elements), result will be empty.");
-		return differenced_result;
-	}
+	NGrid differenced_result(this->elements - 1);
 
 	// Recursive Step: Perform one degree of differencing
 	static ShaderModule shader(manager->get_device(), STATIONARY_SPIRV_BIN, STATIONARY_SPIRV_BYTES);
@@ -4857,52 +5152,51 @@ NGrid NGrid::stationary(const uint32_t degree) const {
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*differenced_result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
 
 	PushConstants constants(
 		differenced_result.get_elements()
 	);
 
 	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, differenced_result.get_elements(), 1, 1, true, fence_timeout_nanosec, true); // dispatch with fence and buffer memory barriers
+	command_buffer->compute(pipeline, differenced_result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	// Recursive Call for Higher Degrees
 	if (degree > 1) {
 		return differenced_result.stationary(degree - 1);
 	}
-	else { // degree == 1 (this is the final step for degree 1)
-		return differenced_result;
-	}
+
+	// if we reached this point, degree == 1 (this is the final and only step for degree 1)
+	return differenced_result;
 }
 
 // returns a stationary transformation of the vector data,
 // using first degree logreturn differencing
 // e.g. for time series data;
-NGrid NGrid::stationary_log(const float_t log_base, const uint32_t degree) const {
+NGrid NGrid::stationary_log(const uint32_t degree, const float_t log_base) const {
+
+	// check if 'this' is a 1d vector
+	if (this->dimensions > 2 || (this->dimensions == 2 && (this->shape[0] != 1 && this->shape[1] != 1))) {
+		Log::warning("NGrid::stationary() is only valid for 1d vectors (or 2d with shape {m,1} or {1,n}), but 'this' has shape ", this->get_shapestring(), "; returning 'this' unmodified");
+		return *this;
+	}
+
+	// Check if we have enough elements to difference
+	if (this->elements < 2) {
+		Log::warning("NGrid::stationary(): Not enough elements to perform differencing ('this' has only ", this->elements, " elements), returning 'this' unmodified.");
+		return *this;
+	}
+
 	// base Case: if degree is 0, return a copy of the original data
 	if (degree == 0) {
 		return *this;
 	}
 
 	// create the result NGrid with one less element
-	NGrid differenced_result;
-	if (this->dimensions == 1) {
-		differenced_result.reshape({ this->shape[0] - 1 });
-	}
-	else if (this->dimensions == 2 && this->shape[1] == 1) {
-		differenced_result.reshape({ this->shape[0] - 1, 1 });
-	}
-	else {
-		// invalid input dimensions
-		Log::warning("NGrid::stationary() is only valid for 1d vectors, but 'this' has shape ", this->get_shapestring(), "; result will be empty.");
-		return differenced_result;
-	}
-
-	// Check if we have enough elements to difference
-	if (this->elements < 2) {
-		Log::warning("NGrid::stationary(): Not enough elements to perform differencing ('this' has only ", this->elements, " elements), result will be empty.");
-		return differenced_result;
-	}
+	NGrid differenced_result(this->elements - 1);
 
 	// Recursive Step: Perform one degree of differencing
 	static ShaderModule shader(manager->get_device(), STATIONARY_LOG_SPIRV_BIN, STATIONARY_LOG_SPIRV_BYTES);
@@ -4910,6 +5204,8 @@ NGrid NGrid::stationary_log(const float_t log_base, const uint32_t degree) const
 	DescriptorSet set(manager->get_device());
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*differenced_result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
 
 	PushConstants constants(
 		differenced_result.get_elements(),
@@ -4917,16 +5213,16 @@ NGrid NGrid::stationary_log(const float_t log_base, const uint32_t degree) const
 	);
 
 	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, differenced_result.get_elements(), 1, 1, true, fence_timeout_nanosec, true); // dispatch with fence and buffer memory barriers
+	command_buffer->compute(pipeline, differenced_result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	// Recursive Call for Higher Degrees
 	if (degree > 1) {
 		return differenced_result.stationary(degree - 1);
 	}
-	else { // degree == 1 (this is the final step for degree 1)
-		return differenced_result;
-	}
+
+	// if we reached this point, degree == 1 (this is the final and only step for degree 1)
+	return differenced_result;
 }
 
 // even-odd sorting algorithm for 1d vectors
@@ -4963,6 +5259,70 @@ float_t NGrid::covariance(const NGrid& other) const {
 	return (*this - this->mean()).scalar_product(other - other.mean()) / this->elements;
 }
 
+float_t NGrid::determinant() const {
+	if (this->dimensions != 2) {
+		Log::warning("Invalid use of NGrid::determinant(). The matrix must be 2d but is ", this->dimensions, " with shape ", this->get_shapestring());
+		return float_t(NAN);
+	}
+	if (this->shape[0] != this->shape[1]) {
+		Log::warning("Invalid use of NGrid::determinant(). The matrix must square but has shape ", this->get_shapestring());
+		return float_t(NAN);
+	}
+
+	// simple case: 2x2 square matrix
+	// (not using LU decomposition in the case, because this would be unnecessary overhead for such a simple scenario)
+	if (this->shape[0] == 2) {
+		return this->get(flat_index({ 0,0 })) * this->get(flat_index({ 1,1 })) -
+			this->get(flat_index({ 1,0 })) * this->get(flat_index({ 0,1 }));
+	}
+
+	// larger square matrix
+	else {
+		NGrid L, U, P;
+		uint32_t swap_count = this->lu_decomp(L, U, P);
+
+		// The determinant of a permutation matrix is either 1 or −1:
+		// It's 1 if the number of row swaps(transpositions) is even, and −1 if the number of row swaps is odd.
+		float_t det_P = swap_count % 2 == 0 ? 1.0f : -1.0f;
+
+		// For a triangular matrix, the determinant is the product of its diagonal elements,
+		// Therefore in case of the lower triangular (which has all ones for the diagonal):
+		constexpr float_t det_L = 1;
+
+		// In case of the upper triangular, we can set all non-diagonal elements to 1 and then calculate the total product of all elements
+		NGrid U_identity_mask(U.get_shape());
+		U_identity_mask.fill_identity();
+		float_t det_U = U.replace_if(!U_identity_mask, 1.0f).product(); // using the NOT operator inverts the identity mask to a zero diagonal, with all other elements being ones
+
+		// return final result
+		return det_P * det_L * det_U;
+	}
+}
+
+// return the rank of a 2d matrix, i.e. the number of linearly independent row vectors;
+// this is achieved by counting the non-zero elements in the diagonal of U
+const uint32_t NGrid::rank() const {
+	if (this->dimensions != 2) {
+		Log::warning("invalid use of method NGrid::rank() on a non-2d matrix with shape ", this->get_shapestring());
+		return NAN;
+	}
+	NGrid L, U, P;
+	NGrid U_identity_mask(U.get_shape());
+	this->lu_decomp(L, U, P);
+	U_identity_mask.fill_identity();
+	return uint32_t(std::round((U && U_identity_mask).sum()));
+}
+
+// return the rank of a 2d matrix, i.e. the number of linearly independent row vectors;
+// this is achieved by counting the non-zero elements in the diagonal of U;
+// this static version of the method makes use of reusing U in case it's already available
+// when LU decomposition has already been performed
+// (thus reducing additional overhead by repeting this step)
+const uint32_t NGrid::rank(const NGrid& U) {
+	NGrid U_identity_mask(U.get_shape());
+	U_identity_mask.fill_identity();
+	return uint32_t(std::round((U && U_identity_mask).sum()));
+}
 
 // +=================================+   
 // | Output                          |
@@ -4971,7 +5331,44 @@ float_t NGrid::covariance(const NGrid& other) const {
 // print the vector or array to the console
 // use precision argument for decimal places (use negative number for unformatted full available precision)
 void NGrid::print(std::string comment, std::string delimiter, bool with_indices, bool rows_inline, int32_t precision) const {
-	uint32_t decimals = std::pow(10, precision);
+
+	uint32_t fract_significant_digits = precision < 0 ? std::numeric_limits<float_t>::max_digits10 : precision;
+
+	// load shader
+	static ShaderModule shader(manager->get_device(), PRINTFORMAT_SPIRV_BIN, PRINTFORMAT_SPIRV_BYTES);
+
+	// define helper NGrid for element properties
+	NGrid required_digits(this->elements);
+	NGrid make_scientific(this->elements);
+	NGrid has_fractional(this->elements);
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*required_digits.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*make_scientific.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*has_fractional.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		this->elements,
+		fract_significant_digits
+	);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+
+	// get the minimum width required to display all values
+	uint32_t value_digits = static_cast<uint32_t>(required_digits.max());
+
+	// get the minimum width to display the indices
+	uint32_t index_digits_x = uint32_t(log10(this->shape[0]) + 1);
+	uint32_t index_digits_y = this->dimensions >= 2 ? uint32_t(log10(this->shape[1]) + 1) : 0;
+	uint32_t index_digits_z = this->dimensions == 3 ? uint32_t(log10(this->shape[2]) + 1) : 0;
 
 	if (comment != "") {
 		std::cout << comment;
@@ -4979,11 +5376,34 @@ void NGrid::print(std::string comment, std::string delimiter, bool with_indices,
 	}
 
 	if (this->dimensions == 1) {
+
 		for (uint32_t x = 0; x < this->shape[0]; x++) {
 			if (with_indices) {
-				std::cout << "[" << x << "]=";
+				std::cout << "[" << std::setprecision(0) << std::setw(index_digits_x) << x << "]=";
 			}
-			std::cout << this->get(x);
+
+			// get next value
+			float_t value = this->get(x);
+
+			// output value
+			if (static_cast<bool>(make_scientific.get(x))) {
+				if (static_cast<bool>(has_fractional.get(x))) {
+					std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+				}
+				else {
+					std::cout << std::scientific << std::setprecision(0) << std::setw(value_digits) << value;
+				}
+			}
+			else {
+				if (static_cast<bool>(has_fractional.get(x))) {
+					std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+				}
+				else {
+					std::cout << std::fixed << std::setprecision(0) << std::setw(value_digits) << value;
+				}
+			}
+
+			// add delimiter or line break
 			if (x != this->shape[0] - 1) {
 				if (rows_inline) {
 					std::cout << delimiter;
@@ -5000,17 +5420,37 @@ void NGrid::print(std::string comment, std::string delimiter, bool with_indices,
 			for (uint32_t y = 0; y < this->shape[1]; y++) {
 				if (this->dimensions == 2 || this->shape[2] == 1) {
 					if (with_indices) {
-						if (this->dimensions == 1) {
-							std::cout << "[" << x << "]=";
+						std::cout << "[";
+
+						// output index x
+						std::cout << std::setprecision(0) << std::setw(index_digits_x) << x << "][";
+
+						// output index y
+						std::cout << std::setprecision(0) << std::setw(index_digits_y) << y << "]=";
+					}
+
+					// get next value
+					uint32_t index = flat_index({ x, y });
+					float value = this->get(index);
+
+					// output value
+					if (static_cast<bool>(make_scientific.get(index))) {
+						if (static_cast<bool>(has_fractional.get(index))) {
+							std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
 						}
 						else {
-							std::cout << "[" << x << "][" << y << "]=";
+							std::cout << std::scientific << std::setprecision(0) << std::setw(value_digits) << value;
 						}
 					}
-					uint32_t index = flat_index({ x, y });
-					float value = (precision > 0 ? std::round(this->get(index) * decimals) / decimals : this->get(index));
-					value = value == 0.0 ? 0.0f : value; // avoid printing -0.0
-					std::cout << value;
+					else {
+						if (static_cast<bool>(has_fractional.get(index))) {
+							std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+						}
+						else {
+							std::cout << std::fixed << std::setprecision(0) << std::setw(value_digits) << value;
+						}
+					}
+
 					// add delimiter before next column
 					if (y != shape[1] - 1) {
 						std::cout << delimiter;
@@ -5020,12 +5460,41 @@ void NGrid::print(std::string comment, std::string delimiter, bool with_indices,
 					std::cout << "{";
 					for (uint32_t z = 0; z < this->shape[2]; z++) {
 						if (with_indices) {
-							std::cout << "[" << x << "][" << y << "][" << z << "]=";
+							std::cout << "[";
+
+							// output index x
+							std::cout << std::setprecision(0) << std::setw(index_digits_x) << x << "][";
+
+							// output index y
+							std::cout << std::setprecision(0) << std::setw(index_digits_y) << y << "][";
+
+							// output index z
+							std::cout << std::setprecision(0) << std::setw(index_digits_z) << z << "]=";
 						}
+
+						// get next value
 						uint32_t index = flat_index({ x, y, z });
-						float value = (precision > 0 ? std::round(this->get(index) * decimals) / decimals : this->get(index));
-						value = value == 0.0 ? 0.0f : value; // avoid printing -0.0
-						std::cout << value;
+						float value = this->get(index);
+
+						// output value
+						if (static_cast<bool>(make_scientific.get(index))) {
+							if (static_cast<bool>(has_fractional.get(index))) {
+								std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+							}
+							else {
+								std::cout << std::scientific << std::setprecision(0) << std::setw(value_digits) << value;
+							}
+						}
+						else {
+							if (static_cast<bool>(has_fractional.get(index))) {
+								std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+							}
+							else {
+								std::cout << std::fixed << std::setprecision(0) << std::setw(value_digits) << value;
+							}
+						}
+
+						// add delimiter
 						if (z != this->shape[2] - 1) {
 							std::cout << delimiter;
 						}
@@ -5044,7 +5513,9 @@ void NGrid::print(std::string comment, std::string delimiter, bool with_indices,
 			// add line break before next row
 			std::cout << "\n";
 		}
-		// flush to console
+		// reset format presets and flush to console
+		std::cout << std::noshowpos;
+		std::cout.unsetf(std::ios_base::floatfield);
 		std::cout << std::flush;
 	}
 }

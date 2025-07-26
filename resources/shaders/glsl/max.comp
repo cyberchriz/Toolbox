@@ -17,7 +17,7 @@ layout(push_constant) uniform push_constants {
 };
 
 // shared variables
-shared float local_maxima[gl_WorkGroupSize.x];
+shared float local_max[gl_WorkGroupSize.x];
 
 // main function
 void main() {
@@ -25,27 +25,24 @@ void main() {
     if (gl_GlobalInvocationID.x < N) {
         
         // Local Reduction
-        local_maxima[gl_LocalInvocationID.x] = data[gl_GlobalInvocationID.x];
+        local_max[gl_LocalInvocationID.x] = data[gl_GlobalInvocationID.x];
         groupMemoryBarrier();
+        barrier();
+
         for (uint stride = gl_WorkGroupSize.x / 2; stride > 0; stride /= 2) {
-            if (gl_LocalInvocationID.x < stride) {
-                if (gl_GlobalInvocationID.x + stride < N) {
-                    local_maxima[gl_LocalInvocationID.x] = max(local_maxima[gl_LocalInvocationID.x], local_maxima[gl_LocalInvocationID.x + stride]);
-                }
+            if (gl_LocalInvocationID.x < stride && gl_GlobalInvocationID.x + stride < N) {
+                local_max[gl_LocalInvocationID.x] = max(local_max[gl_LocalInvocationID.x], local_max[gl_LocalInvocationID.x + stride]);
             }
             groupMemoryBarrier();
-        }
-        // store local maximum into local_results_buffer
-        if (gl_LocalInvocationID.x == 0) {
-            local_result[gl_WorkGroupID.x] = local_maxima[0];
-        }
-
-        // Global Reduction
-        for (uint stride = gl_NumWorkGroups.x / 2; stride > 0 ; stride /= 2) {
-            if (gl_GlobalInvocationID.x < stride) {
-                local_result[gl_GlobalInvocationID.x] = max(local_result[gl_GlobalInvocationID.x], local_result[gl_GlobalInvocationID.x + stride]);
-            }
             barrier();
         }
+
+        // store local max into local_results_buffer
+        if (gl_LocalInvocationID.x == 0) {
+            local_result[gl_WorkGroupID.x] = local_max[0];
+        }
+
+        // this shader has no global reduction!
+        // it has to be invoked several times, until N <= workgroup_size_x
     }
 }

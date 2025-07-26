@@ -2,6 +2,7 @@
 // author: Christian Suer (github: 'cyberchriz')
 
 #version 450
+#define MAX_DIMENSIONS 10
 
 // setup specialization constants
 // in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
@@ -9,17 +10,58 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // setup buffers
 layout(set = 0, binding = 0) buffer data_buffer {float data[];};
-layout(set = 0, binding = 1) buffer other_buffer {float other[];};
-layout(set = 0, binding = 2) buffer result_buffer {float result[];};
+layout(set = 0, binding = 1) buffer data_shape_buffer {uint data_shape[];};
+layout(set = 0, binding = 2) buffer other_buffer {float other[];};
+layout(set = 0, binding = 3) buffer other_shape_buffer {uint other_shape[];};
+layout(set = 0, binding = 4) buffer result_buffer {float result[];};
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
-    uint N;
+    uint data_N;
+    uint other_N;
+    uint data_dimensions;
+    uint other_dimensions;
 };
+
+// setup shared variables
+shared uint shared_data_shape[MAX_DIMENSIONS];
+shared uint shared_other_shape[MAX_DIMENSIONS];
 
 // main function
 void main() {
-    if (gl_GlobalInvocationID.x < N) {
-        result[gl_GlobalInvocationID.x] = float(data[gl_GlobalInvocationID.x] > other[gl_GlobalInvocationID.x]);
+    if (gl_GlobalInvocationID.x < data_N) {
+
+        // use shared variables for array shapes in order to reduce global memory access and improve performance
+        // (local thread 0 takes care of this, so the other threads don't have to)
+        if (gl_LocalInvocationID.x == 0) {
+            for (uint i = 0; i < MAX_DIMENSIONS; i++) {
+                shared_data_shape[i] = i < data_dimensions ? data_shape[i] : 1;
+                shared_other_shape[i] = i < other_dimensions ? other_shape[i] : 1;
+            }
+        }
+        memoryBarrierShared();
+        barrier();
+
+        // get the multidimensional index of the source array
+        uint data_array_index[MAX_DIMENSIONS];
+        uint flat_index = gl_GlobalInvocationID.x;
+        for (int i = int(data_dimensions) - 1; i >= 0; --i) {
+            data_array_index[i] = flat_index % shared_data_shape[i];
+            flat_index = flat_index / shared_data_shape[i];
+        }
+
+        // get corresponding flat index of the 'other' array
+        // based on the subspace sizes of 'other'
+        uint other_flat_index = 0;
+        for (uint i = 0; i < other_dimensions; i++) {
+            other_flat_index = other_flat_index * shared_other_shape[i] + data_array_index[i];
+        }
+
+        if (other_flat_index < other_N) {
+            result[gl_GlobalInvocationID.x] = float(data[gl_GlobalInvocationID.x] > other[other_flat_index]);
+        }
+        else {
+            result[gl_GlobalInvocationID.x] = 0.0;
+        }
     }
 }

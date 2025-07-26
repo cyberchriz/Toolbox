@@ -19,36 +19,53 @@ layout(set = 0, binding = 4) buffer source_offset_buffer {uint source_offset[];}
 // setup push constants layout
 layout(push_constant) uniform push_constants {
     uint dimensions;
-    uint N;
+    uint subgrid_N;
+    uint data_N;
 };
+
+// setup shared variables
+shared uint shared_data_shape[MAX_DIMENSIONS];
+shared uint shared_subgrid_shape[MAX_DIMENSIONS];
+shared uint shared_offset[MAX_DIMENSIONS];
 
 // main function
 void main() {
-    if (gl_GlobalInvocationID.x < N) {
+    if (gl_GlobalInvocationID.x < subgrid_N) {
+
+        // define shared variables (to reduce global memory access and thus improve performance)
+        // this is done only by local thread 0
+        if (gl_LocalInvocationID.x == 0) {
+            for (uint i = 0; i < dimensions; i++) {
+                shared_data_shape[i] = shape[i];
+                shared_subgrid_shape[i] = subgrid_shape[i];
+                shared_offset[i] = source_offset[i];
+            }
+        }
+        memoryBarrierShared();
+        barrier();
 
         // convert flat index to multidimensional index
         uint subgrid_multi_index[MAX_DIMENSIONS];
         uint flat_index = gl_GlobalInvocationID.x;
         for (int i = int(dimensions) - 1; i >= 0; --i) {
-            subgrid_multi_index[i] = flat_index % subgrid_shape[i];
-            flat_index = flat_index / subgrid_shape[i];
+            subgrid_multi_index[i] = flat_index % shared_subgrid_shape[i];
+            flat_index = flat_index / shared_subgrid_shape[i];
         }
 
         // get corresponding multidimensional index of the source data array
         uint data_multi_index[MAX_DIMENSIONS];
-        bool out_of_bounds = false;
         for (uint i = 0; i < dimensions; ++i) {
-            data_multi_index[i] = subgrid_multi_index[i] + source_offset[i];
-            out_of_bounds = data_multi_index[i] >= shape[i];
+            data_multi_index[i] = subgrid_multi_index[i] + shared_offset[i];
         }
 
-        if (!out_of_bounds) {
-            // convert multidimensional source array index back to flat index
-            uint data_flat_index = 0;
-            for (uint i = 0; i < dimensions; i++) {
-                data_flat_index = data_flat_index * shape[i] + data_multi_index[i];
-            }
-            // write data to the subgrid
+        // convert multidimensional source array index back to flat index
+        uint data_flat_index = 0;
+        for (uint i = 0; i < dimensions; i++) {
+            data_flat_index = data_flat_index * shape[i] + data_multi_index[i];
+        }
+
+        // write data to the subgrid
+        if (data_flat_index < data_N) {
             subgrid[gl_GlobalInvocationID.x] = data[data_flat_index];
         }
     }

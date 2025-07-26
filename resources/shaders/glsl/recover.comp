@@ -22,11 +22,11 @@ void main() {
         float val = data[gl_GlobalInvocationID.x];
 
         // check for NAN
-        if (val != val) {
+        if (isnan(val)) {
             result[gl_GlobalInvocationID.x] = 0.0;
         }
         // check for Infinity
-        else if (abs(val) == float(1.0/0.0)) {
+        else if (isinf(val)) {
             if (val > 0.0) {
                 result[gl_GlobalInvocationID.x] = 3.402823466e+38;
             } else {

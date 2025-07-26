@@ -3135,6 +3135,8 @@ public:
 	VkDescriptorSet get() const { return set; }
 	const VkDescriptorSet* get_ptr() const { return &set; }
 	const VkDescriptorSetLayout& get_layout() const { return layout; }
+	const bool finalized() const { return layout_finalized; }
+	const bool allocated() const { return allocated_to_pool; }
 	const std::vector<BufferBindingInfo>& get_buffer_bindings() const { return buffer_bindings; }
 	const std::vector<ImageBindingInfo>& get_image_bindings() const { return image_bindings; }
 
@@ -3168,6 +3170,7 @@ protected:
 	VkDescriptorSet set = nullptr;
 	VkDescriptorSetLayout layout = nullptr;
 	bool layout_finalized = false;
+	bool allocated_to_pool = false;
 };
 
 // DescriptorPool manages descriptor sets and their memory allocation
@@ -3264,13 +3267,14 @@ public:
 	}
 
 	// releases a single descriptor sets from the pool
-	uint32_t release_set(const DescriptorSet& set) {
+	uint32_t release_set(DescriptorSet& set) {
 		if (sets.empty()) { return 0; }
 
 		// remove from VkDescriptorSet vector of the pool
 		for (uint32_t i = 0; i < sets.size(); i++) {
 			if (sets[i] == set.get()) {
 				sets.erase(sets.begin() + i);
+				set.allocated_to_pool = false;
 			}
 		}
 
@@ -3307,6 +3311,7 @@ public:
 		Log::debug("adding new descriptor set (set index = ", index, ") to descriptor pool (pool handle: ", pool, ")");
 		sets.push_back(descriptor_set.set);
 		descriptor_set.update();
+		descriptor_set.allocated_to_pool = true;
 		return index;
 	}
 
@@ -3591,6 +3596,13 @@ public:
 		this->workgroup_size_x = workgroup_size_x;
 		this->workgroup_size_y = workgroup_size_y;
 		this->workgroup_size_z = workgroup_size_z;
+
+		if (!set->finalized()) {
+			Log::error("Invalid call of ComputePipeline constructor: descriptor set layout must be finalized. Call method DesriptorSet::finalize_layout() first!");
+		}
+		if (!set->allocated()) {
+			Log::error("Invalid call of ComputePipeline constructor: descriptor set has not been allocated to any descriptor pool. Call method DescriptorPool::allocate_set() first!");
+		}
 
 		// setup specialization constants for the workgroup dimensions
 		std::vector<uint32_t> specialization_data = { workgroup_size_x, workgroup_size_y, workgroup_size_z };

@@ -17,9 +17,9 @@ _Note: This library relies on a custom Vulkan wrapper ([`vkcontext.h`](../includ
 
 ---
 
-## 🛠️ Classes and Methods
+## Classes and Methods
 
-### Constructors & Destructors ###
+### 🧱 Constructors & Destructors
 These methods handle the creation, copying, moving, and destruction of `NGrid` objects.
 
 | **Method**| **Description**|
@@ -34,7 +34,7 @@ These methods handle the creation, copying, moving, and destruction of `NGrid` o
 | `~NGrid()` | Destructor that cleans up and releases all associated GPU resources. |
 
 ---
-### Assignment ###
+### 🟰 Assignment
 Methods for assigning data to an existing `NGrid` instance.
 
 | **Method**| **Description**|
@@ -45,7 +45,7 @@ Methods for assigning data to an existing `NGrid` instance.
 | `operator=(const float_t* data)` | Assigns data from a raw C-style array to the grid. Alias for `set()`. |
 
 ---
-### Getters & Setters ###
+### ✔️ Getters & Setters
 Methods for retrieving information and data from the grid or setting specific values.
 
 | **Method**| **Description**|
@@ -65,7 +65,7 @@ Methods for retrieving information and data from the grid or setting specific va
 | `subgrid(offset, shape)` | Extracts a new `NGrid` view from a region of the current grid. |
 
 ---
-### 🎲 Fill Operations ###
+### 🎲 Fill Operations
 Quickly populate the entire grid with specific values or random distributions.
 
 | **Method**| **Description**|
@@ -85,7 +85,7 @@ Quickly populate the entire grid with specific values or random distributions.
 | `fill_index()` | Fills each element with its flattened 1D index. |
 
 ---
-### 🧠 Neural Net Weight Initialization ###
+### 🧠 Neural Net Weight Initialization
 Specialized methods to initialize weight matrices for neural networks, based on common techniques.
 
 | **Method**| **Description**|
@@ -97,7 +97,7 @@ Specialized methods to initialize weight matrices for neural networks, based on 
 | `weightinit_elu(fan_in)` | He normal initialization for ELU activation. |
 
 ---
-### 📊 Distribution Properties ###
+### 📊 Distribution Properties & Statistics
 Calculates statistical properties of the grid's data, reducing the entire grid to a single value.
 
 | **Method**| **Description**|
@@ -113,9 +113,13 @@ Calculates statistical properties of the grid's data, reducing the entire grid t
 | `skew()` | Returns the skewness of the distribution. |
 | `sum()` | Returns the sum of all elements. |
 | `product()` | Returns the product of all elements. |
+| `regression()` | Returns regression and correlation results of 'this' vs 'other' as a custom struct; Can be used for simple linear, multivariate linear, polynomial or multivariate polynomial regression.|
+| `Dickey_Fuller()`| Performs an augmented Dickey-Fuller test (=unit root test for stationarity) on a 1d NGrid. Returns a p-value as type `float_t`.|
+| `Engle_Granger(other)`|Performs an Engle-Granger test for cointegration (=long-term relationship) of 'this' vs 'other'. Returns a p-value as type `float_t`.|
+| `covariance(other)`||
 
 ---
-### Arithmetic Operations ###
+### ➕ Arithmetic Operations
 Element-wise and scalar arithmetic using convenient operator overloads.
 
 | **Method**| **Description**|
@@ -130,84 +134,9 @@ Element-wise and scalar arithmetic using convenient operator overloads.
 | `operator*=(factor)` / `operator/=(quotient)`| In-place scalar multiplication/division. |
 | `operator%(num)` / `operator%=(value)` | Computes element-wise or in-place modulo with a scalar. |
 
----
-### Matrix & Vector Operations ###
-Handles dot products, matrix multiplications, and element-wise products.
-
-| **Method**| **Description**|
-| :--- | :--- |
-| `operator*(other)` | Alias for `matrix_product`. |
-| `operator*=(other)` | In-place matrix product. Modifies the current grid. |
-| `scalar_product(other)` | Computes the dot/scalar product with another grid. Returns a `float_t`. |
-| `matrix_product(other)` | Computes the matrix product (matmul). |
-| `Hadamard_product(other)` | Computes the element-wise (Hadamard) product. |
-| `Hadamard_division(other)` | Computes the element-wise (Hadamard) division. |
-| `operator/(other)` | Alias for matrix product with the inverse of `other`. |
-
----
-### Mathematical Functions ###
-Applies common mathematical functions to each element of the grid.
-
-| **Method**| **Description**|
-| :--- | :--- |
-| `pow(exponent)` / `operator^(exponent)` | Raises each element to a scalar power. |
-| `pow(other)` / `operator^(other)` | Performs element-wise exponentiation with another grid as the exponent. |
-| `sqrt()` | Computes the square root of each element. |
-| `log(base)` | Computes the logarithm of each element for a given base. |
-| `exp()` | Computes `e` raised to the power of each element. |
-| `round()` / `floor()` / `ceil()` | Rounds, floors, or ceils each element. |
-| `abs()` | Computes the absolute value of each element. |
-| `sign()` | Returns the sign of each element (`-1`, `0`, or `1`). |
-| `min(value)` / `max(value)` | Computes element-wise min/max against a scalar value. |
-| `min(other)` / `max(other)` | Computes element-wise min/max against another grid. |
-
----
-### 📐 Trigonometric Functions ###
-Applies trigonometric and hyperbolic functions to each element.
-
-| **Method**| **Description**|
-| :--- | :--- |
-| `cos(unit)` / `sin(unit)` / `tan(unit)` | Computes cosine, sine, or tangent. Input can be specified as `RAD`, `DEG`, `HOURS12`/`HOURS24`(12h/24h time angle), `GON`(geodetic, full circle = 400), `PERCENT` (full circle = 100) or `NORMAL` (full circle = 1.0)). |
-| `acos(unit)`/`asin(unit)`/`atan(unit)` | Computes arc-cosine, arc-sine, or arc-tangent. Output unit can be specified. |
-| `cosh()` / `sinh()` / `tanh()` | Computes hyperbolic cosine, sine, or tangent. |
-| `acosh()` / `asinh()` / `atanh()` | Computes inverse hyperbolic cosine, sine, or tangent. |
-
----
-### Activation Functions & Derivatives ###
-A suite of common neural network activation functions and their corresponding derivatives. The `ActFunc` enum (`RELU`, `LRELU`, `ELU`, `LELU`, `SIGMOID`, `TANH`, `IDENT`) can be used with the generic methods.
-
-| **Method**| **Description**|
-| :--- | :--- |
-| `activation(ActFunc)` | Applies a specified activation function element-wise. |
-| `derivative(ActFunc)` | Computes the derivative of a specified activation function element-wise. |
-| `ident()` / `ident_drv()` | Identity function (`f(x) = x`) and its derivative (`1`). |
-| `sigmoid()` / `sigmoid_drv()` | Sigmoid activation and its derivative. |
-| `relu(alpha)` / `relu_drv(alpha)` | (Leaky) Rectified Linear Unit and its derivative. |
-| `elu(alpha)` / `elu_drv(alpha)` | (Leaky) Exponential Linear Unit and its derivative. |
-| `tanh()` / `tanh_drv()` | Hyperbolic tangent activation and its derivative. |
-
----
-### Dynamic Handling & Conversion ###
-Methods for transforming the grid's shape, structure, and content.
-
-| **Method**| **Description**|
-| :--- | :--- |
-| `flatten()` | Reshapes the grid into a 1D vector. |
-| `reshape(new_shape, ...)` | Changes the grid's shape whilst preserving elements which overlap with the previous shape. Can also be used for resizing. |
-| `concatenate(other, axis)` | Joins another grid along a specified axis. |
-| `padding(amount, value)` | Adds padding of a certain value around the grid. |
-| `transpose(target_axis_order)` | Reorders the dimensions of the grid. |
-| `convolution(kernel, ...)` | Performs a 2D convolution with a given kernel. |
-| `pool_max(window, stride)` | Performs max pooling over a window. |
-| `pool_mean(window, stride)` | Performs average pooling over a window. |
-| `sort(ascending)` | Sorts the elements of a 1D grid in ascending or descending order. |
-| `lu_decomp(L, U, P)` | Performs LU decomposition with partial pivoting. |
-| `inverse()` | Computes the inverse of a square matrix (or pseudo-inverse in case of non-square 2d grids). |
-| `mirror(axes)` | Flips the grid along the specified axes. |
-
----
-### Elementwise Comparison & Logical Operations ###
-These operators return a new `NGrid` where each element is `1.0f` if the condition is true and `0.0f` if false.
+___
+### ⚖️ Elementwise Comparison & Logical Operations
+These operators return a new `NGrid` where each element is `1` if the condition is true and `0` if false.
 
 | **Method**| **Description**|
 | :--- | :--- |
@@ -222,7 +151,114 @@ These operators return a new `NGrid` where each element is `1.0f` if the conditi
 | `operator!()` | Element-wise logical NOT. |
 
 ---
-### Miscellaneous ###
+### 🔢 Matrix & Vector Operations
+Handles dot products, matrix multiplications, and element-wise products.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `operator*(other)` | Alias for `matrix_product`. |
+| `operator*=(other)` | In-place matrix product. Modifies the current grid. |
+| `scalar_product(other)` | Computes the dot/scalar product with another grid. Returns a `float_t`. |
+| `matrix_product(other)` | Computes the matrix product (matmul). |
+| `Hadamard_product(other)` | Computes the element-wise (Hadamard) product. |
+| `Hadamard_division(other)` | Computes the element-wise (Hadamard) division. |
+| `operator/(other)` | Alias for matrix product with the inverse of `other`. |
+
+---
+### 🧮 Mathematical Functions
+Applies common mathematical functions to each element of the grid.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `pow(exponent)` / `operator^(exponent)` | Raises each element to a scalar power. |
+| `pow(other)` / `operator^(other)` | Performs element-wise exponentiation with another grid as the exponent. |
+| `sqrt()` | Computes the square root of each element. |
+| `log(base)` | Computes the logarithm of each element for a given base. Default is base `e`. |
+| `exp()` | Computes `e` raised to the power of each element. |
+| `round()` / `floor()` / `ceil()` | Rounds, floors, or ceils each element. |
+| `abs()` | Computes the absolute value of each element. |
+| `sign()` | Returns the sign of each element (`-1`, `0`, or `1`). |
+| `min(value)` / `max(value)` | Computes element-wise min/max against a scalar value. |
+| `min(other)` / `max(other)` | Computes element-wise min/max against another grid. |
+| `isinf()` | Returns `1.0` for all elements equal to `+INF` or `-INF`, `0` for all other elements.|
+| `isnan()` | Returns `1.0` for all `NAN` elements ('not a number'), `0` for all other elements.|
+
+---
+### 📐 Trigonometry Functions
+Applies trigonometric and hyperbolic functions to each element.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `cos(unit)` / `sin(unit)` / `tan(unit)` | Computes cosine, sine, or tangent. Input can be specified as `RAD`, `DEG`, `HOURS12`/`HOURS24`(12h/24h time angle), `GON`(geodetic, full circle = 400), `PERCENT` (full circle = 100) or `NORMAL` (full circle = 1.0)). |
+| `acos(unit)`/`asin(unit)`/`atan(unit)` | Computes arc-cosine, arc-sine, or arc-tangent. Output unit can be specified. |
+| `cosh()` / `sinh()` / `tanh()` | Computes hyperbolic cosine, sine, or tangent. |
+| `acosh()` / `asinh()` / `atanh()` | Computes inverse hyperbolic cosine, sine, or tangent. |
+
+___
+### 🔎 Find, Replace
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `replace(query,replacement)`| Replaces all findings of a value with the replacement value. |
+| `replace_if(condition_map, replacing_map)`| Replaces elementwise with the values of the replacing NGrid depending on the corresponding element of the condition map being true (i.e. !=0).|
+| `replace_if(condition_map, value)`| Replaces all elements with the specified value where the corresponding element in the condition map is true (i.e. !=0).|
+| `find(value)`| returns the number of occurences of the specified value within the source NGrid.|
+
+---
+### Activation Functions & Derivatives
+A suite of common neural network activation functions and their corresponding derivatives. The `ActFunc` enum (`RELU`, `LRELU`, `ELU`, `LELU`, `SIGMOID`, `TANH`, `IDENT`) can be used with the generic methods.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `activation(ActFunc)` | Applies a specified activation function element-wise. |
+| `derivative(ActFunc)` | Computes the derivative of a specified activation function element-wise. |
+| `ident()` / `ident_drv()` | Identity function (`f(x) = x`) and its derivative (`1`). |
+| `sigmoid()` / `sigmoid_drv()` | Sigmoid activation and its derivative. |
+| `relu(alpha)` / `relu_drv(alpha)` | (Leaky) Rectified Linear Unit and its derivative. |
+| `elu(alpha)` / `elu_drv(alpha)` | (Leaky) Exponential Linear Unit and its derivative. |
+| `tanh()` / `tanh_drv()` | Hyperbolic tangent activation and its derivative. |
+
+---
+### 🛠️ Advance Matrix Operations
+Methods for transforming the grid's shape, structure, and content.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `flatten()` | Reshapes the grid into a 1D vector. |
+| `reshape(new_shape, ...)` | Changes the grid's shape whilst preserving elements which overlap with the previous shape. Can also be used for resizing. |
+| `concatenate(other, axis)` | Joins another grid along a specified axis. |
+| `padding(amount, value)` | Adds padding of a certain value around the grid. |
+| `stationary(degree)` | Performs a stationary transformation to the specified degree of differencing. |
+| `stationary_log(base,degree)`| Performs a logarithmic stationary transformation to the specified degree.|
+| `transpose(target_axis_order)` | Reorders the dimensions of the grid. |
+| `convolution(kernel, ...)` | Performs a 2D convolution with a given kernel. |
+| `pool_max(window, stride)`, `pool_min(window, stride)` | Performs max/min pooling over a window. |
+| `pool_mean(window, stride)` | Performs average pooling over a window. |
+| `sort(ascending)` | Sorts the elements of a 1D grid in ascending or descending order. |
+| `lu_decomp(L, U, P)` | Performs LU decomposition with partial pivoting. Returns the number of row swaps performed. |
+| `inverse()` | Computes the inverse of a square matrix (or pseudo-inverse in case of non-square 2d grids). |
+| `is_invertible()` / `is_invertible(U)`| Checks if 'this' 2d square NGrid is invertible or if a matrix which has the corresponding provided Upper Triangular matrix U is invertible.|
+| `rank()` / `rank(U)`| Returns the 'rank' of a 2d matrix (=number of linearly independent rows) or of a 2D matrix which has the corresponding provided Upper Triangular matrix U.|
+| `determinant()`| Computes the determinant of a square matrix.|
+| `mirror(axes)` | Flips the grid along the specified axes. |
+| `remap(index_map)` | Reassigns each element to a new position as specified in the target index map (holding the target's flat indices). |
+
+---
+### 🩹 Data Preprocessing
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `scale_minmax(range_from, range_to)` | Shift the minimum and strech/compress the range to fit within [min,max]. |
+| `scale_mean()` | Shift to zero mean and stretch/compress to not exceed range[-1,1]. |
+| `scale_zscore()` | Shift to zero mean and strech/compress to match unit-variance (i.e. z_score = 1.0 = default) or the specified z_score. |
+| `outliers_clamp_minmax(min,max)` | Clamps the values of the array within range [min,max]. |
+| `outliers_clamp_zscore(z_score)` | Truncates outliers based on z_score. |
+| `outliers_mean_imputation(z_score)` | Replaces outliers which exceed +/- z_score*sigma by the arrithmetic mean of the values. |
+| `outliers_value_imputation(z_score)` | Replaces outliers which exceed +/- z_score*sigma by the specified value. |
+| `recover()` | 'Recovers' invalid data by replacing +INF with FLOAT_MAX, -INF with -FLOAT_MAX and NAN with 0. |
+
+---
+### 🎁 Miscellaneous
 Utility and configuration methods.
 
 | **Method**| **Description**|
