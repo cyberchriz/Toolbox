@@ -1,0 +1,35 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for Gauss-Jordan elimination to obtain the reduced row echelon form (RREF);
+// it keeps track of the multipliers in column k within range [k+1, rows-1]
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+layout(set = 0, binding = 0) buffer data_buffer         { float data[]; };      // 'left' part, to be transformed to the identity matrix
+layout(set = 0, binding = 1) buffer augment_buffer      { float augment[]; };   // 'right' part, to be transformed to the solution
+layout(set = 0, binding = 2) buffer swap_row_buffer     { uint swap_row[];};    // stores the row to swap for the current row 'k'
+layout(set = 0, binding = 3) buffer multipliers_buffer  { float multipliers[];};// stores the multipliers in column 'k'
+                                                                    
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;          // number of rows (is equal for left part and augmentation part)
+    uint data_cols;     // source matrix columns
+    uint aug_cols;      // augmentation matrix columns
+    uint k;             // pivot iterator, with elements {k,k} referring to the diagonal; counts from k to rows-1
+};
+
+
+
+// --- Main Function ---
+void main() {
+    uint row = gl_GlobalInvocationID.x;
+    if (row < rows) {
+        multipliers[row] = data[row * data_cols + k];
+    }
+}

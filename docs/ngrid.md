@@ -12,7 +12,8 @@ _Note: This library relies on a custom Vulkan wrapper ([`vkcontext.h`](../includ
 - **GPU Accelerated**: All mathematical operations are executed on the GPU via Vulkan compute shaders for maximum parallelism and speed.
 - **Rich Mathematical Toolkit**: An extensive set of operations including linear algebra, statistical functions, random number generation, and element-wise calculations.
 - **Neural Network Support**: Includes specialized functions for weight initialization, activation functions, and their derivatives.
-- **Dynamic Manipulation**: Easily reshape, concatenate, pad, transpose, and perform complex transformations like convolution and pooling.
+- **Dynamic Manipulation**: Easily reshape, concatenate, pad, sort, flatten and perform complex transformations like convolution, pooling and stationary transformation.
+- **Advanced Matrix Operations**: Includes matrix multiplication, inverse, transpose, determinant, rank, LU decomposition, Gauss-Jordan elimination (reduced row echelon form)
 - **High-Level Abstraction**: Simplifies complex GPU operations into intuitive C++ method calls and operator overloads.
 
 ---
@@ -238,6 +239,7 @@ Methods for transforming the grid's shape, structure, and content.
 | `lu_decomp(L, U, P)` | Performs LU decomposition with partial pivoting. Returns the number of row swaps performed. |
 | `inverse()` | Computes the inverse of a square matrix (or pseudo-inverse in case of non-square 2d grids). |
 | `is_invertible()` / `is_invertible(U)`| Checks if 'this' 2d square NGrid is invertible or if a matrix which has the corresponding provided Upper Triangular matrix U is invertible.|
+| `rref()` / `rref_split()`| Performs Gauss-Jordan elimination to obtain the reduced row echelon form (RREF); useful as an alterantive method to get the inverse or for solving systems of linear equations.|
 | `rank()` / `rank(U)`| Returns the 'rank' of a 2d matrix (=number of linearly independent rows) or of a 2D matrix which has the corresponding provided Upper Triangular matrix U.|
 | `determinant()`| Computes the determinant of a square matrix.|
 | `mirror(axes)` | Flips the grid along the specified axes. |

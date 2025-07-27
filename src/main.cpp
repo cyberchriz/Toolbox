@@ -1,6 +1,17 @@
 #include <log.h>
 #include <ngrid.h>
 
+
+// THIS "MAIN" FILE IS ONLY FOR THE PURPOSES OF DEMONSTRATION, TESTING AND DEBUGGING OF THE ngrid.h LIBRARY
+
+// NGrid is a class for parallel floating point data structure computations, including advanced matrix operations, on the GPU (using Vulkan).
+// The ngrid.h library can be inluded as a tool in any other other program. This "main" file is not necessary for it to work.
+
+// Dependencies: standard library, plus the following custom headers:
+// angular.h, log.h, vkcontext.h, spirv_bin.h (or spirv_bin_precompiled.h)
+
+// Please make sure Vulkan is also installed (vulkan/vulkan_core.h).
+
 int main() {
 	// +=================================+   
 	// | Introduction                    |
@@ -540,7 +551,23 @@ int main() {
 	Log::force("bool result = NGrid::is_invertible(U); // result = ", NGrid::is_invertible(U));
 
 	X.inverse().print("\nWe can calculate the matrix inverse as follows: X.inverse() =");
-	(X * X.inverse()).print("\nX * X.inverse() should give us the identity matrix (potentially with small rounding errors):");
+
+	Log::force("\nAnother approach to obtain the inverse is by augmenting the matrix by the identity matrix and then calculate the reduced row echelon form (achieved via Gauss-Jordan elimination).");
+	Log::force("The 'right' part of the RREF then becomes the inverse:");
+	NGrid Xaug(X.get_shape()[0], X.get_shape()[1]); Xaug.fill_identity();
+	Xaug.print("\nXaug = ");
+	X.rref(Xaug).print("\nX.rref(Xaug) = ");
+	Log::force("\nFrom this result, we could extract the inverse by using the subgrid method. However, there's an easier approach by using the method NGrid::rref_split():");
+	auto [left, solution] = X.rref_split(Xaug);
+	Log::force("auto [left, solution] = X.rref_split(Xaug);");
+	solution.print("solution =");
+
+	Log::force("The methods NGrid::rref() and NGrid::rref_split() can also be used to get the solution of a system of linear equations.");
+	Xaug = Xaug.reshape(X.get_shape()[0]); Xaug.fill_random_int(-9, 9);
+	Xaug.print("\nLet's say we augment X by the following vector:");
+	X.rref(Xaug).print("\nThe RREF then becomes: X.rref(Xaug) =");
+	auto [left2, solution2] = X.rref_split(Xaug);
+	solution2.print("Or easier: auto [left2, solution2] = X.rref_split(Xaug); solution2 = ");
 
 
 	// +=================================+   

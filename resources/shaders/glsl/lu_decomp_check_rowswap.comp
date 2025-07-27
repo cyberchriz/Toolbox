@@ -24,12 +24,12 @@ layout(set = 0, binding = 4) buffer swap_count_buffer {uint swap_count[];}; // s
 layout(push_constant) uniform push_constants {
     uint rows;
     uint cols;
-    uint k;
+    uint k;     // pivot iterator
 };
 
 // --- Main Function ---
 void main() {
-    uint j = gl_GlobalInvocationID.x;
+    uint row = gl_GlobalInvocationID.x;
     
     // initialize swap_row with current row k (done by local thread 0)
     if (gl_LocalInvocationID.x == 0) {
@@ -39,10 +39,10 @@ void main() {
     }
     barrier();
 
-    if (j >= k) {
-        // search for highest absolute value in column k (at or below row k)
-        while (U[j * cols + k] > U[swap_row[0] * cols + k]) {
-            atomicExchange(swap_row[0], j);
+    if (row > k && row < rows) {
+        // search for highest absolute value in column k (below row k)
+        while (U[row * cols + k] > U[swap_row[0] * cols + k]) {
+            atomicExchange(swap_row[0], row);
         }
     }
     memoryBarrierBuffer();

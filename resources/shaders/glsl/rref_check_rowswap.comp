@@ -1,0 +1,46 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for Gauss-Jordan elimination to obtain the reduced row echelon form (RREF)
+// it checks if a row swap is needed for the current row 'k'
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+layout(set = 0, binding = 0) buffer data_buffer         { float data[]; };      // 'left' part, to be transformed to the identity matrix
+layout(set = 0, binding = 1) buffer augment_buffer      { float augment[]; };   // 'right' part, to be transformed to the solution
+layout(set = 0, binding = 2) buffer swap_row_buffer     { uint swap_row[];};    // stores the row to swap for the current row 'k'
+layout(set = 0, binding = 3) buffer multipliers_buffer  { float multipliers[];};// stores the multipliers in column 'k'
+                                                                    
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;          // number of rows (is equal for left part and augmentation part)
+    uint data_cols;     // source matrix columns
+    uint aug_cols;      // augmentation matrix columns
+    uint k;             // pivot iterator
+};
+
+// --- Main Function ---
+void main() {
+    uint row = gl_GlobalInvocationID.x;
+    
+    // initialize swap_row with current row k (done by local thread 0)
+    if (gl_LocalInvocationID.x == 0) {
+        while (swap_row[0] < k) {
+            atomicExchange(swap_row[0], k);
+        }
+    }
+    barrier();
+
+    if (row > k && row < rows) {
+        // search for highest absolute value in column k (below row k)
+        while (abs(data[row * data_cols + k]) > abs(data[swap_row[0] * data_cols + k])) {
+            atomicExchange(swap_row[0], row);
+        }
+    }
+    memoryBarrierBuffer();
+}

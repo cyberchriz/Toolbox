@@ -1,0 +1,62 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for Gauss-Jordan elimination to obtain the reduced row echelon form (RREF)
+// it performs the row swaps, if needed, as determined before by the rref_check_rowswap.comp shader;
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+layout(set = 0, binding = 0) buffer data_buffer         { float data[]; };      // 'left' part, to be transformed to the identity matrix
+layout(set = 0, binding = 1) buffer augment_buffer      { float augment[]; };   // 'right' part, to be transformed to the solution
+layout(set = 0, binding = 2) buffer swap_row_buffer     { uint swap_row[];};    // stores the row to swap for the current row 'k'
+layout(set = 0, binding = 3) buffer multipliers_buffer  { float multipliers[];};// stores the multipliers in column 'k'
+                                                                    
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;          // number of rows (is equal for left part and augmentation part)
+    uint data_cols;     // source matrix columns
+    uint aug_cols;      // augmentation matrix columns
+    uint k;             // pivot iterator, with elements {k,k} referring to the diagonal; counts from k to rows-1
+};
+
+shared uint swap_row_cpy;
+
+// --- Main Function ---
+void main() {
+
+    // copy swap row to shared local variable to reduce global memory access
+    if (gl_LocalInvocationID.y == 0) {
+        swap_row_cpy = swap_row[0];
+    }
+    memoryBarrierShared(); barrier();
+
+    uint col = gl_GlobalInvocationID.y; // col refers to the column index of the entire RREF, i.e. including the augmented part
+    uint rref_cols = data_cols + aug_cols;
+    
+    // if swap_row == k: nothing to swap
+    // else:
+    
+    if (swap_row_cpy > k) {
+        
+        // swap row elements in left part
+        if (col < data_cols) {
+            float temp = data[k * data_cols + col];
+            data[k * data_cols + col] = data[swap_row_cpy * data_cols + col];
+            data[swap_row_cpy * data_cols + col] = temp;
+        }
+
+        // swap row elements in augmentation part
+        else if (col < rref_cols) {
+            uint aug_col = col - data_cols;
+            float temp = augment[k * aug_cols + aug_col];
+            augment[k * aug_cols + aug_col] = augment[swap_row_cpy * aug_cols + aug_col];
+            augment[swap_row_cpy * aug_cols + aug_col] = temp;
+        }
+
+    }
+}

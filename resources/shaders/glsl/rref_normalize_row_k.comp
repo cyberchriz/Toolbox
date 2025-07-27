@@ -1,0 +1,62 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for Gauss-Jordan elimination to obtain the reduced row echelon form (RREF)
+// it updates normalizes the pivot row k by dividing all its elements by the pivot value (thus turning element {k,k} to 1)
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+layout(set = 0, binding = 0) buffer data_buffer         { float data[]; };      // 'left' part, to be transformed to the identity matrix
+layout(set = 0, binding = 1) buffer augment_buffer      { float augment[]; };   // 'right' part, to be transformed to the solution
+layout(set = 0, binding = 2) buffer swap_row_buffer     { uint swap_row[];};    // stores the row to swap for the current row 'k'
+layout(set = 0, binding = 3) buffer multipliers_buffer  { float multipliers[];};// stores the multipliers in column 'k'
+                                                                    
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;          // number of rows (is equal for left part and augmentation part)
+    uint data_cols;     // source matrix columns
+    uint aug_cols;      // augmentation matrix columns
+    uint k;             // pivot iterator, with elements {k,k} referring to the diagonal; counts from k to rows-1
+};
+
+shared float pivot_value;
+
+// --- Main Function ---
+void main() {
+
+    // copy pivot value to shared local variable to reduce global memory access
+    if (gl_LocalInvocationID.y == 0) {
+        pivot_value = multipliers[k];
+    }
+    memoryBarrierShared(); barrier();
+
+    // avoid zero division
+    if (pivot_value == 0) {
+        return;
+    }
+
+    uint col = gl_GlobalInvocationID.y; // col refers to the column index of the entire RREF, i.e. including the augmented part
+    uint rref_cols = data_cols + aug_cols;
+
+    if (col == k) {
+        data[k * data_cols + col] = 1.0f;
+    }
+    else if (col > k && col < rref_cols) {
+        
+        // normalize left part
+        if (col < data_cols) {
+            data[k * data_cols + col] /= pivot_value;
+        }
+
+        // normalize augmented part
+        else {
+            uint aug_col = col - data_cols;
+            augment[k * aug_cols + aug_col] /= pivot_value;
+        }
+    }
+}

@@ -24,7 +24,7 @@ layout(set = 0, binding = 4) buffer swap_count_buffer {uint swap_count[];}; // s
 layout(push_constant) uniform push_constants {
     uint rows;
     uint cols;
-    uint k;     // iteration counter, with elements {k,k} referring to the diagonal; counts from k to rows-1
+    uint k;     // pivot iterator, with elements {k,k} referring to the diagonal; counts from k to rows-1
 };
 
 shared uint swap_row_cpy;

@@ -319,6 +319,8 @@ public:
 	static NGrid inverse(const NGrid& L, const NGrid& U, const NGrid& P);
 	const bool is_invertible() const;
 	static const bool is_invertible(const NGrid& U);
+	std::pair<NGrid, NGrid> rref_split(const NGrid& augment) const;
+	NGrid rref(const NGrid& augment) const;
 	float_t determinant() const;
 	const uint32_t rank() const;
 	static const uint32_t rank(const NGrid& U);
@@ -4562,6 +4564,135 @@ const bool NGrid::is_invertible(const NGrid& U) {
 	}
 
 	return true;
+}
+
+// perform Gauss-Jordan elimination to obtain the reduced row echelon form,
+// split into a 'left' part (typically the identity matrix) and the 'right' solution part;
+// can be used to solve systems of linear equations;
+// if the 'augment' input argument is the identity matrix, the solution will be equal to the inverse of the input matrix;
+// returns as std::pair<NGrid,NGrid> with the first element referring to the left part of the reduced echelon form and the second element being the solution;
+// Either use structured bindings to assign the return values or use method std::get<0>(return_val) and std::get<1>(return_val).
+// The NGrid::concatenate() method can be used to stich the return values together in order to obtain the complete row echelon form, if needed.
+std::pair<NGrid, NGrid> NGrid::rref_split(const NGrid& augment) const {
+	if (this->dimensions != 2) {
+		Log::error("invalid use of method NGrid::rref(). The input matrix must be 2d but has shape ", this->get_shapestring());
+	}
+	if (augment.get_shape()[0] != this->shape[0]) {
+		Log::error("invalid use of method NGrid::rref() / NGrid::ref_split(). The input matrix and the augmentation matrix must have the same number of rows. 'this' has shape ",
+			this->get_shapestring(), ", whereas the passed augmentation matrix has shape ", augment.get_shapestring());
+	}
+	if (augment.get_dimensions() > 2) {
+		Log::error("invalid use of method NGrid::rref() / NGrid::ref_split(). The passed augmentation matrix has more than 2 dimensions with shape ", augment.get_shapestring());
+	}
+
+	uint32_t aug_cols = augment.get_dimensions() == 1 ? 1 : augment.get_shape()[1];
+
+	// make copies of the augmentation matrix and 'this' to keep the originals unmodified
+	NGrid augment_cpy = augment;
+	NGrid data_cpy = *this;
+
+	// add a buffer to store the row to be swapped for current row 'k'
+	Buffer<uint32_t> swap_row(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1);
+
+	// add a buffer to keep track of the multipliers in column 'k'
+	Buffer<float_t> multipliers(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->shape[0]);
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*data_cpy.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*augment_cpy.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(swap_row, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(multipliers, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	uint32_t k = 0;
+	PushConstants constants(
+		this->shape[0],	// rows (is equal for left part and augmentation part)
+		this->shape[1],	// source matrix columns
+		aug_cols,		// augmentation matrix columns
+		k				// pivot iterator
+	);
+
+	// === LOAD SHADERS & DEFINE PIPELINES ===
+
+	// check if row swap is needed
+	static ShaderModule check_swap_shader(manager->get_device(), RREF_CHECK_ROWSWAP_SPIRV_BIN, RREF_CHECK_ROWSWAP_SPIRV_BYTES);
+	ComputePipeline check_swap_pipeline(manager->get_device(), check_swap_shader, constants, set, workgroup_size_1d, 1, 1);
+
+	// perform row swap (=if needed) and normalize the new row k to obtain a leading '1'
+	static ShaderModule perform_swap_shader(manager->get_device(), RREF_PERFORM_ROWSWAP_SPIRV_BIN, RREF_PERFORM_ROWSWAP_SPIRV_BYTES);
+	ComputePipeline perform_swap_pipeline(manager->get_device(), perform_swap_shader, constants, set, 1, workgroup_size_1d, 1);
+
+	// keep track of multipliers (elements {row, k})
+	static ShaderModule track_multipliers_shader(manager->get_device(), RREF_TRACK_MULTIPLIERS_SPIRV_BIN, RREF_TRACK_MULTIPLIERS_SPIRV_BYTES);
+	ComputePipeline track_multipliers_pipeline(manager->get_device(), track_multipliers_shader, constants, set, workgroup_size_1d, 1, 1);
+
+	// normalize row k (this turning element {k,k} to 1
+	static ShaderModule normalize_row_k_shader(manager->get_device(), RREF_NORMALIZE_ROW_K_SPIRV_BIN, RREF_NORMALIZE_ROW_K_SPIRV_BYTES);
+	ComputePipeline normalize_row_k_pipeline(manager->get_device(), normalize_row_k_shader, constants, set, 1, workgroup_size_1d, 1);
+
+	// update rows below k
+	static ShaderModule update_rows_shader(manager->get_device(), RREF_UPDATE_ROWS_SPIRV_BIN, RREF_UPDATE_ROWS_SPIRV_BYTES);
+	ComputePipeline update_rows_pipeline(manager->get_device(), update_rows_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
+
+	// perform backsubstitution
+	static ShaderModule backsubstitution_shader(manager->get_device(), RREF_BACKSUBSTITUTION_SPIRV_BIN, RREF_BACKSUBSTITUTION_SPIRV_BYTES);
+	ComputePipeline backsubstitution_pipeline(manager->get_device(), backsubstitution_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
+
+	// main loop: iterate over pivots 'k' within range [0,rows-1]
+	for (k = 0; k < this->shape[0]; k++) {
+
+		// update k in push constants (at offset 12 bytes)
+		// please note that once created pipelines are immutable, but an in-place update (uses memcpy)
+		// without changing the memory location or range of the push constants should work:
+		constants.add_values(k, 12);
+
+		// find row for swap
+		command_buffer->compute(check_swap_pipeline, this->shape[0], 1, 1, false, 0, true);	// (1d dispatch with one thread for each row)
+
+		// perform row swap
+		command_buffer->compute(perform_swap_pipeline, 1, this->shape[1] + aug_cols, 1, false, 0, true); // (1d dispatch with one thread for each column)
+
+		// track multipliers column (elements {row,k})
+		command_buffer->compute(track_multipliers_pipeline, this->shape[0], 1, 1, false, 0, true); // (1d dispatch with one thread for each row)
+
+		// normalize row k (thus turning element {k,k} to 1
+		command_buffer->compute(normalize_row_k_pipeline, 1, this->shape[1] + aug_cols, 1, false, 0, true); // (1d dispatch with one thread for each column)
+
+		// update rows below k
+		command_buffer->compute(update_rows_pipeline, this->shape[0], this->shape[1] + aug_cols, 1, true, fence_timeout_nanosec, true); // (2d dispatch with fence)
+	}
+
+	// perform back substitution to eliminate the upper triangle
+	// iterate over rows k in reverse order within range [0,rows-1]
+	for (int32_t k = this->shape[0] - 1; k >= 0; k--) {
+
+		// update k in push constants (at offset 12 bytes)
+		constants.add_values(k, 12);
+
+		// track multipliers column (elements {row,k})
+		command_buffer->compute(track_multipliers_pipeline, this->shape[0], 1, 1, false, 0, true); // (1d dispatch with one thread for each row)
+
+		// backsubstitute
+		command_buffer->compute(backsubstitution_pipeline, this->shape[0], this->shape[1] + aug_cols, 1, true, fence_timeout_nanosec, true); // (2d dispatch with fence)
+	}
+
+	descriptor_pool->release_set(set);
+
+	return std::make_pair(data_cpy, augment_cpy);
+}
+
+// perform Gauss-Jordan elimination to obtain the reduced row echelon form,
+// can be used to solve systems of linear equations;
+// if the 'augment' input argument is the identity matrix, the solution will be equal to the inverse of the input matrix;
+// returns the complete "reduced row echelon form (RREF)", with the 'left' part (typically the identity matrix)
+// and the 'right' solution part concatenated together along the column axis
+NGrid NGrid::rref(const NGrid& augment) const {
+	auto [identity_part, solution_part] = rref_split(augment);
+	// stitch left part and solution together along the column axis
+	return identity_part.concatenate(solution_part, 1);
 }
 
 // reverse sorting (=mirror, =flip) of the grid along the specified axes

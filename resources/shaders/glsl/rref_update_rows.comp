@@ -1,0 +1,56 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for Gauss-Jordan elimination to obtain the reduced row echelon form (RREF)
+// it updates the rows below the pivot k by substracting a multiple of row k and thereby eliminating the
+// element {row,k}, i.e. making it zero
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+layout(set = 0, binding = 0) buffer data_buffer         { float data[]; };          // 'left' part, to be transformed to the identity matrix
+layout(set = 0, binding = 1) buffer augment_buffer      { float augment[]; };       // 'right' part, to be transformed to the solution
+layout(set = 0, binding = 2) buffer swap_row_buffer     { uint swap_row[];};        // stores the row to swap for the current row 'k'
+layout(set = 0, binding = 3) buffer multipliers_buffer  { float multipliers[];};    // stores the multipliers in column 'k'
+                                                                    
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;          // number of rows (is equal for left part and augmentation part)
+    uint data_cols;     // source matrix columns
+    uint aug_cols;      // augmentation matrix columns
+    uint k;             // pivot iterator, with elements {k,k} referring to the diagonal; counts from k to rows-1
+    float pivot_value;  // value of element {swap_row,k} before swap (becomes {k,k} after swap)
+};
+
+// --- Main Function ---
+void main() {
+    uint row = gl_GlobalInvocationID.x;
+    uint col = gl_GlobalInvocationID.y;
+    uint rref_cols = data_cols + aug_cols;
+
+    if (row > k && row < rows) {
+        
+        if (col == k) {
+            data[row * data_cols + k] = 0.0f;
+        }
+
+        else if (col > k) {
+            
+            // update row elements in left part
+            if (col < data_cols) {
+                // substract a multiple of row k
+                data[row * data_cols + col] -= multipliers[row] * data[k * data_cols + col];
+            }
+
+            // update row elements in augmented part
+            else if (col < rref_cols) {
+                uint aug_col = col - data_cols;
+                augment[row * aug_cols + aug_col] -= multipliers[row] * augment[k * aug_cols + aug_col];
+            }
+        }
+    }
+}
