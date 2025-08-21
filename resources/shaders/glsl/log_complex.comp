@@ -1,0 +1,76 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_real_buffer { float data_real[]; };
+layout(set = 0, binding = 1) buffer data_imag_buffer { float data_imag[]; };
+layout(set = 0, binding = 2) buffer result_real_buffer { float result_real[]; };
+layout(set = 0, binding = 3) buffer result_imag_buffer { float result_imag[]; };
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N;
+    float base_real;
+    float base_imag;
+};
+
+// main function
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
+    if (idx < N) {
+        float z_real = data_real[idx];
+        float z_imag = data_imag[idx];
+
+        // Handle the special case where the number is zero
+        if (z_real == 0.0 && z_imag == 0.0) {
+            // log(0) is undefined, representing negative infinity.
+            // We can represent this with a large negative number or a specific
+            // value to indicate an error/special case.
+            // Using -infinity is a common representation.
+            result_real[idx] = -1.0 / 0.0; // Represents -infinity
+            result_imag[idx] = 0.0;
+        } else {
+            // Calculate the modulus (r) and argument (theta) of the complex number
+            float r = sqrt(z_real * z_real + z_imag * z_imag);
+            float theta = atan(z_imag, z_real);
+
+            // Calculate the real part of the complex logarithm
+            float log_r = log(r);
+
+            // Check if the logarithm base is real (b_imag = 0)
+            if (base_imag == 0.0) {
+                // For a real base, use the change of base formula: log_b(z) = ln(z) / ln(b)
+                float log_base_real = log(base_real);
+                result_real[idx] = log_r / log_base_real;
+                result_imag[idx] = theta / log_base_real;
+            } else {
+                // For a complex base, use the change of base formula: log_b(z) = ln(z) / ln(b)
+                // 1. Calculate the complex logarithm of the number z
+                float ln_z_real = log_r;
+                float ln_z_imag = theta;
+
+                // 2. Calculate the complex logarithm of the complex base
+                float b_modulus = sqrt(base_real * base_real + base_imag * base_imag);
+                float b_arg = atan(base_imag, base_real);
+                float ln_b_real = log(b_modulus);
+                float ln_b_imag = b_arg;
+
+                // 3. Perform complex division: (ln_z_real + i*ln_z_imag) / (ln_b_real + i*ln_b_imag)
+                float denominator = ln_b_real * ln_b_real + ln_b_imag * ln_b_imag;
+                
+                result_real[idx] = (ln_z_real * ln_b_real + ln_z_imag * ln_b_imag) / denominator;
+                result_imag[idx] = (ln_z_imag * ln_b_real - ln_z_real * ln_b_imag) / denominator;
+            }
+        }
+    }
+    
+    // Memory barrier to ensure results are visible to other threads if needed
+    memoryBarrierBuffer(); barrier();
+}

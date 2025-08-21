@@ -74,4 +74,5 @@ void main() {
         result[idx] = data[data_flat_index];
 
     }
+    memoryBarrierBuffer(); barrier();
 }

@@ -13,7 +13,7 @@ _Note: This library relies on a custom Vulkan wrapper ([`vkcontext.h`](../includ
 - **Rich Mathematical Toolkit**: An extensive set of operations including linear algebra, statistical functions, random number generation, and element-wise calculations.
 - **Neural Network Support**: Includes specialized functions for weight initialization, activation functions, and their derivatives.
 - **Dynamic Manipulation**: Easily reshape, concatenate, pad, sort, flatten and perform complex transformations like convolution, pooling and stationary transformation.
-- **Advanced Matrix Operations**: Includes matrix multiplication, inverse, transpose, determinant, rank, LU decomposition, Gauss-Jordan elimination (reduced row echelon form)
+- **Advanced Matrix Operations**: Includes matrix multiplication, inverse, transpose, determinant, rank, Eigenvalues, LU decomposition, QR decomposition, Gauss-Jordan elimination (reduced row echelon form)
 - **High-Level Abstraction**: Simplifies complex GPU operations into intuitive C++ method calls and operator overloads.
 
 ---
@@ -53,6 +53,7 @@ Methods for retrieving information and data from the grid or setting specific va
 | :--- | :--- |
 | `set(index, value)` | Sets the element at a specific multi-dimensional index to a given value. |
 | `set(data, ...)` | Sets grid contents from a `std::vector`, C-style array, or another `NGrid`. |
+| `set(const NGrid& other, ..)`| Construct the grid as full or partial copy of 'other'. |
 | `get(flat_index)` | Retrieves a single `float_t` value from a flattened 1D index. |
 | `get()` | Retrieves all grid elements as a `std::vector<float_t>`. |
 | `get(read_elements, offset)` | Retrieves a specific slice of the grid data into a `std::vector<float_t>`. |
@@ -236,12 +237,16 @@ Methods for transforming the grid's shape, structure, and content.
 | `pool_max(window, stride)`, `pool_min(window, stride)` | Performs max/min pooling over a window. |
 | `pool_mean(window, stride)` | Performs average pooling over a window. |
 | `sort(ascending)` | Sorts the elements of a 1D grid in ascending or descending order. |
-| `lu_decomp(L, U, P)` | Performs LU decomposition with partial pivoting. Returns the number of row swaps performed. |
+| `qr()`| Performs a QR decomposition and returns the results as a custom struct.|
+| `hess()`| Returns the Hessenberg form of the matrix (same as `qr(true)`).|
+| `eigen()`| Returns the eigenvalues of the matrix (may include complex numbers, therefore the result is type `CGrid`).|
+| `lu()` | Performs LU decomposition with partial pivoting. Returns the L, U, P and swap_count as a struct. |
 | `inverse()` | Computes the inverse of a square matrix (or pseudo-inverse in case of non-square 2d grids). |
 | `is_invertible()` / `is_invertible(U)`| Checks if 'this' 2d square NGrid is invertible or if a matrix which has the corresponding provided Upper Triangular matrix U is invertible.|
-| `rref()` / `rref_split()`| Performs Gauss-Jordan elimination to obtain the reduced row echelon form (RREF); useful as an alterantive method to get the inverse or for solving systems of linear equations.|
-| `rank()` / `rank(U)`| Returns the 'rank' of a 2d matrix (=number of linearly independent rows) or of a 2D matrix which has the corresponding provided Upper Triangular matrix U.|
+| `rref()`| Performs Gauss-Jordan elimination to obtain the reduced row echelon form (RREF); useful as an alterantive method to get the inverse or for solving systems of linear equations.|
+| `rank()` / `rank(U)` / `rank(LUresult)`| Returns the 'rank' of a 2d matrix (=number of linearly independent rows) or of a 2D matrix which has the corresponding provided Upper Triangular matrix U.|
 | `determinant()`| Computes the determinant of a square matrix.|
+| `diagonal()`| Returns the diagonal elements as a vector (1d `NGrid`).|
 | `mirror(axes)` | Flips the grid along the specified axes. |
 | `remap(index_map)` | Reassigns each element to a new position as specified in the target index map (holding the target's flat indices). |
 
@@ -269,3 +274,4 @@ Utility and configuration methods.
 | `set_workgroup_size_1d(size)` | Sets the default Vulkan workgroup size for 1D dispatches. |
 | `set_workgroup_size_2d(size)` | Sets the default Vulkan workgroup size (x & y) for 2D dispatches. |
 | `set_fence_timeout_nanosec(timeout)`| Sets the GPU synchronization fence timeout in nanoseconds. |
+| `flat_index(multi_index)`| Returns the flat index representation of a multidimensional index (row-major).|

@@ -1,0 +1,69 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_real_buffer {float data_real[];};
+layout(set = 0, binding = 1) buffer data_imag_buffer {float data_imag[];};
+layout(set = 0, binding = 2) buffer result_real_buffer {float result_real[];};
+layout(set = 0, binding = 3) buffer result_imag_buffer {float result_imag[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N;
+    float exponent_real;
+    float exponent_imag;
+};
+
+// main function
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
+    if (idx < N) {
+        
+        float base_real = data_real[idx];
+        float base_imag = data_imag[idx];
+
+        // Handle the special case where the base is zero to avoid log(0)
+        if (base_real == 0.0 && base_imag == 0.0) {
+            // (0 + 0i)^n is generally 0, unless n=0, in which case it's 1.
+            if (exponent_real == 0.0 && exponent_imag == 0.0) {
+                // (0+0i)^0 = 1
+                result_real[idx] = 1.0;
+                result_imag[idx] = 0.0;
+            } else {
+                // (0+0i)^n = 0 for n != 0
+                result_real[idx] = 0.0;
+                result_imag[idx] = 0.0;
+            }
+        }
+
+        else {
+
+            // 1. Convert the complex base to polar form
+            float r = sqrt(base_real * base_real + base_imag * base_imag);
+            float theta = atan(base_imag, base_real);
+
+            // 2. Calculate the complex natural logarithm of the base
+            float log_r = log(r);
+
+            // 3. Perform complex multiplication of the exponent and the logarithm
+            float new_real = exponent_real * log_r - exponent_imag * theta;
+            float new_imag = exponent_real * theta + exponent_imag * log_r;
+
+            // 4. Calculate the complex exponential of the result
+            float final_modulus = exp(new_real);
+
+            // Get the final real and imaginary parts
+            result_real[idx] = final_modulus * cos(new_imag);
+            result_imag[idx] = final_modulus * sin(new_imag);
+        }
+
+        memoryBarrierBuffer(); barrier();
+    }
+}

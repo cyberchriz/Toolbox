@@ -31,4 +31,5 @@ void main() {
         // adding global invocation id to seed in order to get different random numbers for each thread
         data[gl_GlobalInvocationID.x] = random(seed + gl_GlobalInvocationID.x) < ratio ? 0.0 : data[gl_GlobalInvocationID.x];
     }
+    memoryBarrierBuffer(); barrier();
 }

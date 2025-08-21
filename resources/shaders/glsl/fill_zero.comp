@@ -20,4 +20,5 @@ void main() {
     if (gl_GlobalInvocationID.x < N) {
         data[gl_GlobalInvocationID.x] = 0;
     }
+    memoryBarrierBuffer(); barrier();
 }

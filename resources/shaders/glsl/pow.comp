@@ -108,4 +108,5 @@ void main() {
 
         result[idx] = x;
     }
+    memoryBarrierBuffer(); barrier();
 }

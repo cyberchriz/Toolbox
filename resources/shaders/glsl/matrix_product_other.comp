@@ -55,4 +55,6 @@ void main() {
         sum = sum == 0.0 ? 0.0 : sum; // ensure -0.0 is written as 0.0
         result[result_index] = sum;
     }
+
+    memoryBarrierBuffer(); barrier();
 }

@@ -98,4 +98,5 @@ void main() {
         // write the mean value to the result buffer
         result[gl_GlobalInvocationID.x] = sum / window_N;
     }
+    memoryBarrierBuffer(); barrier();
 }

@@ -1,5 +1,3 @@
-#include <log.h>
-#include <ngrid.h>
 
 
 // THIS "MAIN" FILE IS ONLY FOR THE PURPOSES OF DEMONSTRATION, TESTING AND DEBUGGING OF THE ngrid.h LIBRARY
@@ -7,12 +5,17 @@
 // NGrid is a class for parallel floating point data structure computations, including advanced matrix operations, on the GPU (using Vulkan).
 // The ngrid.h library can be inluded as a tool in any other other program. This "main" file is not necessary for it to work.
 
-// Dependencies: standard library, plus the following custom headers:
+// Dependencies: standard library, plus the following custom headers (these are all header-only files, no .cpp required):
 // angular.h, log.h, vkcontext.h, spirv_bin.h (or spirv_bin_precompiled.h)
 
 // Please make sure Vulkan is also installed (vulkan/vulkan_core.h).
 
+#include <ngrid.h>
+
 int main() {
+	NGrid::set_workgroup_size_1d(256);
+	NGrid::set_workgroup_size_2d(16);
+
 	// +=================================+   
 	// | Introduction                    |
 	// +=================================+
@@ -21,6 +24,8 @@ int main() {
 
 	Log::force("\n'NGrid' in this case is used as a typename for n-dimensional data-structures.");
 	Log::force("\nAll values are by default stored as 32bit floating point");
+	Log::force("Most of the following examples are printed only up to 3 decimals for better readability, but the actual values are still 32bit.");
+
 	Log::force("\nPlease note that there is no theoretical limit to the max number of dimensions for base cases,");
 	Log::force("but some of the used compute shaders have a hard-coded limit to handle max 10 dimensions.");
 
@@ -32,6 +37,7 @@ int main() {
 	Log::force("A = A.pow(2);");
 	Log::force("A = A * 2");
 	Log::force("A += 0.5            ...etc");
+
 	Log::force("\nThe outputs in the following examples are made by using the NGrid::print() method.");
 	Log::force("For readability reasons, the following examples will use relatively small data structures");
 	Log::force("with no more than 1-3 dimensions, but they could of course in theory hold millions of values.");
@@ -427,23 +433,23 @@ int main() {
 	X.print();
 
 	Log::force("\nWe have the following scaling options:");
-	X.scale_minmax(10, 20).print("\nMinMax-Scaling: shift the minimum and stretch/compress the range to fit within [min,max], e.g.: X.scale_minmax(10,20) = ", "|", false, true, 2);
-	X.scale_mean().print("\nShift to zero mean, stretch/compress to range to fit within [-1,1], e.g. X.scale_mean() = ", "|", false, true, 2);
-	X.scale_zscore().print("\nShift to zero mean, strech/compress to match unit-variance (i.e. z_score = 1.0 = default) or the specified z_score, e.g. X.scale_zscore(1.0f) = ", "|", false, true, 2);
+	X.scale_minmax(10, 20).print("\nMinMax-Scaling: shift the minimum and stretch/compress the range to fit within [min,max], e.g.: X.scale_minmax(10,20) = ", 2);
+	X.scale_mean().print("\nShift to zero mean, stretch/compress to range to fit within [-1,1], e.g. X.scale_mean() = ", 2);
+	X.scale_zscore().print("\nShift to zero mean, strech/compress to match unit-variance (i.e. z_score = 1.0 = default) or the specified z_score, e.g. X.scale_zscore(1.0f) = ", 2);
 	Log::force("Let's verify the standard deviation of this result (it should be ~1.0): X.scale_score(1).stdev() = ", X.scale_zscore().stdev());
 
 	Log::force("\nWe have the following options for outlier treatment:");
 	X.outliers_clamp_minmax(10, 20).print("\nClamp the values of the array within range [min,max], e.g. X.outliers_clamp_minmax(10,20) = ");
-	X.outliers_clamp_zscore(1.0f).print("\nClamp the values within a specified z-score, e.g. in order to limit to +/- 1 standard deviation: X.outliers_clamp_score(1.0f) = ", "|", false, true, 2);
-	X.outliers_mean_imputation(1.0f).print("\nSet all values that exceed the specified z-score by the arrithmetic mean of all values, e.g. X.outliers_mean_imputation(1.0f) = ", "|", false, true, 2);
-	X.outliers_value_imputation(1.0f, 0.0f).print("\nSet all values that exceed the specified z-score with the specified value, e.g. replace outliers that exceed +/- 1 sigma by 0: X.outliers_value_imputation(2.0f, 0.0f) = ", "|", false, true, 2);
+	X.outliers_clamp_zscore(1.0f).print("\nClamp the values within a specified z-score, e.g. in order to limit to +/- 1 standard deviation: X.outliers_clamp_score(1.0f) = ", 2);
+	X.outliers_mean_imputation(1.0f).print("\nSet all values that exceed the specified z-score by the arrithmetic mean of all values, e.g. X.outliers_mean_imputation(1.0f) = ", 2);
+	X.outliers_value_imputation(1.0f, 0.0f).print("\nSet all values that exceed the specified z-score with the specified value, e.g. replace outliers that exceed +/- 1 sigma by 0: X.outliers_value_imputation(2.0f, 0.0f) = ", 2);
 	Log::force("\nNGrid::recover(): 'Recovers' invalid data by replacing +INF with FLOAT_MAX, -INF with -FLOAT_MAX and NAN with 0.");
 	Log::force("To test this, let's set some of the values intentionally to NAN or INF:");
 	Y = X.replace_if(X % 3 == 0, std::numeric_limits<float>::quiet_NaN());
 	Y = Y.replace_if(X % 4 == 0, std::numeric_limits<float>::infinity());
 	Y *= -1;
-	Y.print("Y = ", "|", false);
-	Y.recover().print("Y.recover() =", "|", false, true, 3);
+	Y.print("Y = ");
+	Y.recover().print("Y.recover() =");
 
 	// +=================================+   
 	// | Activation Functions            |
@@ -534,41 +540,69 @@ int main() {
 	X.transpose().print("\nX.transpose() =");
 
 	Log::force("\nThis library supports LU decomposition, which is the basis for calculation the matrix inverse.");
-	X = X.reshape(10, 10); X.fill_random_int(-9, 9);
+	X = X.reshape(7, 7); X.fill_random_int(-9, 9);
 	X.print("\n... for X =");
-	Log::force("\nNGrid L, U, P;\nuint32_t swap_count = X.lu_decomp(L, U, P);");
-	NGrid U;
-	uint32_t swap_count = X.lu_decomp(L, U, P);
-	Log::force("\nswap_count = ", swap_count, " row swaps have been performed.");
-	L.print("\nresult for lower triagonal matrix L =");
-	U.print("\nresult for upper triagonal matrix U =");
-	Log::force("\nThe source matrix has a 'rank' (=number of linearly independent rows) of NGrid::rank(U) = ", NGrid::rank(U), " (Note: this is a static method)");
+	Log::force("\nuint32_t swap_count = X.lu().swap_count;");
+	auto lu_result = X.lu();
+	Log::force("\nswap_count = ", lu_result.swap_count, " row swaps have been performed.");
+	lu_result.L.print("\nresult for lower triagonal matrix L =");
+	lu_result.U.print("\nresult for upper triagonal matrix U =");
+	Log::force("\nThe source matrix has a 'rank' (=number of linearly independent rows) of NGrid::rank(U) = ", NGrid::rank(lu_result.U), " (Note: this is a static method)");
 	Log::force("uint32_t r = X.rank() can be used alternatively when U isn't available (it will then be calculated internally, adding some overhead)");
 	P.print("\nresult for permutation matrix (row swaps) P =");
 	Log::force("\nWe can optionally check if the matrix is invertible by using X.is_invertible() [result = ", X.is_invertible(), "];");
 	Log::force("This method runs LU decomposition internally and checks if the U matrix has no zeros on its diagonal.");
 	Log::force("Alternatively - if the U matrix is already known like in the case above - we can slightly reduce overhead by reusing it in the static method NGrid::is_invertible(const NGrid& U):");
-	Log::force("bool result = NGrid::is_invertible(U); // result = ", NGrid::is_invertible(U));
+	Log::force("bool result = NGrid::is_invertible(U); // result = ", NGrid::is_invertible(lu_result.U));
 
 	X.inverse().print("\nWe can calculate the matrix inverse as follows: X.inverse() =");
 
 	Log::force("\nAnother approach to obtain the inverse is by augmenting the matrix by the identity matrix and then calculate the reduced row echelon form (achieved via Gauss-Jordan elimination).");
 	Log::force("The 'right' part of the RREF then becomes the inverse:");
-	NGrid Xaug(X.get_shape()[0], X.get_shape()[1]); Xaug.fill_identity();
-	Xaug.print("\nXaug = ");
-	X.rref(Xaug).print("\nX.rref(Xaug) = ");
-	Log::force("\nFrom this result, we could extract the inverse by using the subgrid method. However, there's an easier approach by using the method NGrid::rref_split():");
-	auto [left, solution] = X.rref_split(Xaug);
-	Log::force("auto [left, solution] = X.rref_split(Xaug);");
-	solution.print("solution =");
+	NGrid X_ident(X.get_shape()[0], X.get_shape()[1]); X_ident.fill_identity();
+	X_ident.print("\nX_ident = ");
+	X.concatenate(X_ident, 1).print("\nBEFORE the operation, the augmented matrix [X|X_ident] would look like this:  X.concatenate(X_ident, 1) = ");
+	X.rref(X_ident).rref.print("\nThe concatenation (=augmented matrix) above was only for clarification; we don't have to do this manually. To get the RREF we can simply write directly: X.rref(X_ident).rref = ");
+	Log::force("\nFrom this result, we could extract the inverse by using the subgrid method. However, this is unnecessary, because it's directly available as a struct member:");
+	X.rref(X_ident).solution.print("\nX.rref(X_ident).solution =");
+	X.rref(X_ident).coeffs.print("\nX.rref(X_ident).coeffs = ");
+	Log::force("\nThe method NGrid::rref() can also be used to get the solution of a system of linear equations.");
+	Y = Y.reshape(X.get_shape()[0]); Y.fill_random_int(-9, 9);
+	Y.print("\nLet's say we augment X by the following vector Y:");
+	X.rref(Y).rref.print("\nThe RREF then becomes: X.rref(Y).rref =");
+	X.rref(Y).solution.print("Or directly for the solution: X.rref(Y).solution = ");
 
-	Log::force("The methods NGrid::rref() and NGrid::rref_split() can also be used to get the solution of a system of linear equations.");
-	Xaug = Xaug.reshape(X.get_shape()[0]); Xaug.fill_random_int(-9, 9);
-	Xaug.print("\nLet's say we augment X by the following vector:");
-	X.rref(Xaug).print("\nThe RREF then becomes: X.rref(Xaug) =");
-	auto [left2, solution2] = X.rref_split(Xaug);
-	solution2.print("Or easier: auto [left2, solution2] = X.rref_split(Xaug); solution2 = ");
+	Log::force("\nThis library supports QR decomposition: auto qr_result = X.qr();");
+	X = X.reshape(6, 6); X.fill_random_int(1, 9);
+	X.print("\n... for X =");
+	auto qr_result = X.qr();
+	qr_result.Q.print("\nQ =");
+	qr_result.R.print("\nR =");
+	qr_result.Tau.print("\nTau = ");
+	qr_result.V.print("\nV =");
 
+	Log::force("\nLet's verify that these results are actually correct:");
+
+	(qr_result.Q.transpose() * qr_result.Q).print("\nqr_result.Q.transpose() * qr_result.Q should give us the identity matrix:");
+	(qr_result.Q * qr_result.Q.transpose()).print("\nqr_result.Q * qr_result.Q.transpose() should also give us the identity matrix (if Q is indeed an orthogonal matrix:");
+	(qr_result.Q * qr_result.R).print("\nqr_result.Q * qr_result.R should be equal to the source matrix X (potentially with small rounding errors:");
+
+	Log::force("\nThis library support Hessenberg transformation:");
+	X.print("\nFor a test, let's reuse the same source matrix as above, i.e. X =");
+	Log::force("\n... we get auto hess_result = X.hess() (or .. =qr(true)) with:");
+	auto hess_result = X.hess();
+	hess_result.R.print("\nhess_result.R = ");
+	hess_result.Q.print("\nhess_result.Q = ");
+	hess_result.Tau.print("\nhess_result.Tau = ");
+	hess_result.V.print("\nhess_result.V =");
+
+	Log::force("\nIf the result are correct and the source matrix is square (which it is), then Q*R*Q^T should give us the original matrix X.");
+	(hess_result.Q * hess_result.R * hess_result.Q.transpose()).print("\nhess_result.Q * hess_result.R * hess_result.Q.transpose() =");
+
+	(hess_result.Q * hess_result.Q.transpose()).print("\nQ * Q.transpose should give us the identity matrix:");
+
+	Log::force("\nLet's now calculate the eigenvalues of X: auto eigen_result = X.eigen();");
+	X.eigen(10000, 1e-08).print("\n Eigen values: ");
 
 	// +=================================+   
 	// | Statistics                      |

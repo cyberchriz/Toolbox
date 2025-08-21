@@ -13,6 +13,7 @@ on the Operating System in use.
 ___
 #   `Core`
 ### [______`NGrid`: n-dimensional data structures for GPU compute](docs/ngrid.md)
+### [______`CGrid`: extension of the `NGrid` class with support for complex numbers](docs/ngrid.md)
 ### [______`VkContext`: high-level wrapper for Vulkan objects](docs/vkcontext.md)
 _Note: Only tested for GPU compute; Graphics functionality is implemented for the most part, but not yet tested (TODO!)_
 ___ 

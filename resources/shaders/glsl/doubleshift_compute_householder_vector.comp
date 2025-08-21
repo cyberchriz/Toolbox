@@ -1,0 +1,103 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer H_buffer        {float H[];};                   // flat representation of shape {rows, rows}
+layout(set = 0, binding = 1) buffer v_k_buffer      {float v_k[];};                 // elements 0-2 store v_k, element 3 is for tau_k
+layout(set = 0, binding = 2) buffer Temp_y_buffer   {float Temp_y[];};              // shape: {current_size}
+layout(set = 0, binding = 3) buffer Temp_w_buffer   {float Temp_w[];};              // shape: {current_size}
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint k;             // iterator
+    uint start_offset;  // beginning of the current subproblem within H
+    uint end_offset;    // end of the current subproblem within H
+    uint size_H;        // full size of H (needed for correct indexing)
+    float alpha_poly;
+    float beta_poly;
+};
+
+// avoid NAN/INF
+float valid(float value) {
+    const float FLOAT_MAX = 3.40282347e+38;
+    const float FLT_EPSILON = 1e-06; //or: 1.19209e-07;
+    if (isnan(value)) { return 0.0f; }
+    else if (isinf(value)) { return (value > 0.0f) ? FLOAT_MAX : -FLOAT_MAX; }
+    else { return (abs(value) <= FLT_EPSILON) ? 0.0f : value; }
+}
+
+// main function
+void main() {
+    // ==============================================================================================
+
+    // Read the 3 elements of the vector from the H buffer
+    vec3 x;
+
+    if (k == 0) { // initiate the bulge
+        float h00 = H[start_offset * size_H + start_offset];
+        float h01 = H[start_offset * size_H + (start_offset + 1)];
+        float h10 = H[(start_offset + 1) * size_H + start_offset];
+        float h11 = H[(start_offset + 1) * size_H + (start_offset + 1)];
+        float h21 = start_offset + 2 >= end_offset ? 0.0f : H[(start_offset + 2) * size_H + (start_offset + 1)];
+
+        /* // standard approach without overflow protection
+        x.x = (h00 * h00) + (h01 * h10) - (alpha_poly * h00) + beta_poly;
+        x.y = (h10 * h00) + (h11 * h10) - (alpha_poly * h10);
+        x.z = h21 * h10; 
+        */
+
+        // Use temporary variables to prevent intermediate overflow
+        float temp_x_val = (h00 * h00) + (h01 * h10);
+        float temp_x_shift = (alpha_poly * h00);
+        x.x = temp_x_val - temp_x_shift + beta_poly;
+        
+        float temp_y_val = (h10 * h00) + (h11 * h10);
+        float temp_y_shift = (alpha_poly * h10);
+        x.y = temp_y_val - temp_y_shift;
+        
+        x.z = h21 * h10;
+        
+        // Scale the vector to prevent overflow in norm calculation
+        float max_abs = max(abs(x.x), max(abs(x.y), abs(x.z)));
+        if (max_abs > 0.0f) {
+            x /= max_abs;
+        }
+    }
+    else { // bulge chase
+        uint current_size = end_offset - start_offset;
+        x.x = H[(start_offset + k) * size_H + (start_offset + k - 1)];
+        x.y = H[(start_offset + k + 1) * size_H + (start_offset + k - 1)];
+        x.z = k < current_size - 2 ? H[(start_offset + k + 2) * size_H + (start_offset + k - 1)] : 0.0f;
+    }
+
+    // Compute norm of x
+    float norm_x = valid(sqrt(dot(x, x)));
+
+    // Compute alpha
+    float alpha = -sign(x.x) * norm_x;
+    
+    // Compute the Householder vector v_k
+    vec3 v_k_vec;
+    v_k_vec.x = x.x - alpha;
+    v_k_vec.y = x.y;
+    v_k_vec.z = x.z;
+
+    // save v_k_vec to storage buffer
+    v_k[0] = v_k_vec.x;
+    v_k[1] = v_k_vec.y;
+    v_k[2] = v_k_vec.z;
+
+    // Compute tau using a numerically stable formula
+    // This avoids dividing by a potentially tiny number
+    v_k[3] = valid(1.0f / (norm_x * (norm_x + abs(x.x))));
+
+    memoryBarrierBuffer();
+    // ==============================================================================================
+}
+

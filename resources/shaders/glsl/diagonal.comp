@@ -1,0 +1,61 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// default constants
+#define MAX_DIMENSIONS 10
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_buffer {float data[];};
+layout(set = 0, binding = 1) buffer data_shape_buffer {uint data_shape[];};
+layout(set = 0, binding = 2) buffer result_buffer {float result[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint size;
+    uint data_dimensions;
+};
+
+// setup shared variables
+shared uint shared_data_shape[MAX_DIMENSIONS];
+
+// main function
+void main() {
+
+    uint idx = gl_GlobalInvocationID.x;
+
+    if (idx < size) {
+
+        // use shared variable for data array shape in order to reduce global memory access and improve performance
+        // (local thread 0 takes care of this, so the other threads don't have to)
+        if (gl_LocalInvocationID.x == 0) {
+            for (uint i = 0; i < MAX_DIMENSIONS; i++) {
+                shared_data_shape[i] = i < data_dimensions ? data_shape[i] : 1;
+            }
+        }
+        memoryBarrierShared();
+        barrier();
+
+        // get multidimensional index of the diagonal element
+        uint data_array_index[MAX_DIMENSIONS];
+        for (uint i = 0; i < data_dimensions; i++) {
+            data_array_index[i] = idx;
+        }
+
+        // convert multidimensional index back to flat index
+        uint data_flat_index = 0;
+        for (uint i = 0; i < data_dimensions; i++) {
+            data_flat_index = data_flat_index * shared_data_shape[i] + data_array_index[i];
+        }
+
+        // write diagonal element to result buffer
+        result[idx] = data[data_flat_index];
+
+    }
+    memoryBarrierBuffer(); barrier();
+}

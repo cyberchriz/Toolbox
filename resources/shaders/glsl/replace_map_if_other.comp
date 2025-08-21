@@ -23,4 +23,5 @@ void main() {
     if (gl_GlobalInvocationID.x < N) {
         result[gl_GlobalInvocationID.x] = bool(condition[gl_GlobalInvocationID.x]) ? replacement[gl_GlobalInvocationID.x] : data[gl_GlobalInvocationID.x];
     }
+    memoryBarrierBuffer(); barrier();
 }

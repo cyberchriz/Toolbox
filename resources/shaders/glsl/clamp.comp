@@ -23,4 +23,5 @@ void main() {
     if (gl_GlobalInvocationID.x < N) {
         result[gl_GlobalInvocationID.x] = clamp(data[gl_GlobalInvocationID.x], min_value, max_value);
     }
+    memoryBarrierBuffer(); barrier();
 }

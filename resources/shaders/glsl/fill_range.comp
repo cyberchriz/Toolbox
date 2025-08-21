@@ -45,4 +45,5 @@ void main() {
         // assign highest index to the data array
         data[gl_GlobalInvocationID.x] = start + float(max_index) * step;
     }
+    memoryBarrierBuffer(); barrier();
 }

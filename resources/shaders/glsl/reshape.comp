@@ -72,5 +72,6 @@ void main() {
         // assign result
         result[gl_GlobalInvocationID.x] = data[data_flat_index];
     }
+    memoryBarrierBuffer(); barrier();
 }
 

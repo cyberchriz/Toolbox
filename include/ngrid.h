@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <angular.h>            // custom class for angular units
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
@@ -37,19 +38,20 @@
 #include <limits>
 #include <vulkan/vulkan_core.h>
 
-// available activation functions (for neural network applications)
-enum ActFunc {
-	RELU,       // rectified linear unit (ReLU)
-	LRELU,      // leaky rectified linear unit (LReLU)
-	ELU,        // exponential linar unit (ELU)
-	LELU,       // leaky exponential linear unit
-	SIGMOID,    // sigmoid (=logistic)
-	TANH,       // hyperbolic tangent (tanh), with angular unit radians
-	IDENT       // identity function
-};
+// forward declarations
+enum ActFunc;
+struct LUresult;
+struct LUresultComplex;
+struct QRresult;
+struct HESSresult;
+struct RREF;
+struct EIGENresult;
+class CGrid;
 
 // data structure class for parallel computing with Vulkan
+// (for real number only; use CGrid for complex numbers)
 class NGrid {
+	friend class CGrid;
 public:
 	// +=================================+   
 	// | Constructors & Destructors      |
@@ -68,7 +70,6 @@ public:
 	// +=================================+
 	NGrid& operator=(const NGrid& other);           // copy assignment
 	NGrid& operator=(NGrid&& other) noexcept;       // move assignment
-
 	void operator=(const std::vector<float_t>& data); // alias for set(const std::vector<float_t>& data)
 	void operator=(const float_t* data);            // alias for set(const float_t* data)
 
@@ -83,6 +84,7 @@ public:
 	void set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset);
 	void set(const NGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
 	float_t get(const uint32_t flat_index) const;
+	float_t get(const std::initializer_list<uint32_t> index) const;
 	std::vector<float_t> get() const;
 	std::vector<float_t> get(const uint32_t read_elements, const uint32_t source_offset_elements) const;
 	Buffer<float_t>* get_buffer() const;
@@ -91,6 +93,8 @@ public:
 	uint32_t get_size(uint32_t dimension = 0) const;
 	uint32_t get_elements() const;
 	std::vector<uint32_t> get_shape() const;
+	uint32_t rows() const;
+	uint32_t cols() const;
 	std::string get_shapestring() const;
 	NGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape) const;
 	NGrid subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> subgrid_shape) const;
@@ -101,6 +105,7 @@ public:
 	void fill(const float_t value);
 	void fill_zero();
 	void fill_identity();
+	static NGrid identity(const uint32_t size);
 	void fill_random_gaussian(const float_t mu = 0.0f, const float_t sigma = 1.0f);
 	void fill_random_uniform(const float_t min = 0.0f, const float_t max = 1.0f);
 	void fill_random_uniform_int(const int32_t min = 0, const int32_t max = 9);
@@ -170,9 +175,9 @@ public:
 	// +=================================+   
 	// | Division                        |
 	// +=================================+
-	NGrid operator/(const float_t quotient) const;
-	void operator/=(const float_t quotient);
-	NGrid Hadamard_division(const NGrid& other);
+	NGrid operator/(const float_t divisor) const;
+	void operator/=(const float_t divisor);
+	NGrid Hadamard_division(const NGrid& other) const;
 	NGrid operator/(const NGrid& other) const; // alias for the matrix product with the inverse of 'other'
 
 	// +=================================+   
@@ -312,18 +317,22 @@ public:
 	NGrid pool_mean(const std::initializer_list<uint32_t>& window_shape, const std::initializer_list<uint32_t>& stride_shape = {}) const;
 	NGrid convolution(const NGrid& kernel, uint32_t padding_amount = 0, float_t padding_value = 0.0f) const;
 	NGrid transpose(const std::vector<uint32_t> target_axis_order = { 1,0 }) const;
-	uint32_t lu_decomp(NGrid& L, NGrid& U, NGrid& P) const;
+	QRresult qr(const bool hessenberg = false) const;
+	QRresult hess() const;
+	CGrid eigen(const uint32_t max_iterations_multiplier = 100, const float_t tolerance = 1e-06) const;
+	LUresult lu() const;
 	NGrid l_inverse() const;
 	NGrid u_inverse() const;
 	NGrid inverse() const;
-	static NGrid inverse(const NGrid& L, const NGrid& U, const NGrid& P);
+	static NGrid inverse(const LUresult& LUP);
 	const bool is_invertible() const;
 	static const bool is_invertible(const NGrid& U);
-	std::pair<NGrid, NGrid> rref_split(const NGrid& augment) const;
-	NGrid rref(const NGrid& augment) const;
+	RREF rref(const NGrid& augment) const;
 	float_t determinant() const;
 	const uint32_t rank() const;
 	static const uint32_t rank(const NGrid& U);
+	static const uint32_t rank(const LUresult LUP);
+	NGrid diagonal() const;
 	NGrid mirror(const std::vector<bool>& mirror_axes) const;
 	NGrid mirror(const std::initializer_list<bool>& mirror_axes) const;
 	NGrid mirror() const;
@@ -341,10 +350,13 @@ public:
 	// +=================================+   
 	// | Miscellaneous                   |
 	// +=================================+
-	void print(std::string comment = "", std::string delimiter = "|", bool with_indices = false, bool rows_inline = true, int32_t precision = 3) const;
+	void print(std::string comment = "", int32_t precision = 3, bool with_indices = false, bool rows_inline = true, std::string delimiter = "|") const;
 	static void set_workgroup_size_1d(uint32_t size);
 	static void set_workgroup_size_2d(uint32_t size);
 	static void set_fence_timeout_nanosec(uint64_t timeout);
+	operator CGrid() const;
+	uint32_t flat_index(std::initializer_list<uint32_t> multi_index) const;
+	uint32_t flat_index(const std::vector<uint32_t>& multi_index) const;
 
 protected:
 
@@ -353,68 +365,351 @@ protected:
 	// +=================================+
 	static VulkanManager* manager;              // shared singleton manager for instance, device and command pool
 	static DescriptorPool* descriptor_pool;	    // shared singleton descriptor pool for command buffer
+	static CommandBuffer* command_buffer;		// shared singleton command buffer for compute operations
 	static uint32_t workgroup_size_1d;          // default workgroup size for 1d dispatch
 	static uint32_t workgroup_size_2d;          // default workgroup size for 2d dispatch
 	static uint64_t fence_timeout_nanosec;      // timeout for waiting for the fence to be signaled
 	std::vector<uint32_t> shape = {};           // shape of the array
 	uint32_t dimensions = 0;                    // number of dimensions
 	uint32_t elements = 0;                      // total number of elements
-	CommandBuffer* command_buffer = nullptr;
 	Buffer<float_t>* data_buffer = nullptr;
 	Buffer<uint32_t>* shape_buffer = nullptr;
 
 	// helper methods
 	void create(const std::vector<uint32_t>& shape); // instance creation helper method, shared among constructors
 	static void release_descriptor_pool();      // static method for cleanup of the shared descriptor pool
-	uint32_t flat_index(std::initializer_list<uint32_t> multi_index) const;
-	uint32_t flat_index(const std::vector<uint32_t>& multi_index) const;
+	static void release_command_buffer();       // static method for cleanup of the shared command buffer
+	void doubleshift_bulge_chase(const float_t alpha, const float_t beta, uint32_t start_row, uint32_t end_row);
 };
 
+
+
+
+
+
+
+// ==================================================================================================================================================================================
+
+
+// +=================================+   
+// | Complex Data Structures         |
+// +=================================+
+class CGrid {
+public:
+	NGrid real;
+	NGrid imag;
+
+	// +=================================+   
+	// | Constructors & Destructors      |
+	// +=================================+
+	CGrid();                                        // default constructor (initilizes an empty array)
+	template<typename... Args> CGrid(Args... args); // parametric default constructor for multi-dimensional array, overload for variadic template
+	CGrid(const std::vector<uint32_t>& shape);      // parametric default constructor for multi-dimensional array, overload for std::vector
+	CGrid(std::initializer_list<uint32_t> shape);   // parametric default constructor for multi-dimensional array, overload for std::initializer_list
+	CGrid(std::vector<float_t> source_vector);      // construct 1d array and directly fill it with the contents of a std::vector<float_t>
+	CGrid(NGrid&& other) noexcept;                  // move constructor
+	CGrid(CGrid&& other) noexcept;                  // move constructor
+	CGrid(const NGrid& other);                      // copy constructor
+	CGrid(const CGrid& other);                      // copy constructor
+	~CGrid();                                       // destructor
+
+	// +=================================+   
+	// | Assignment                      |
+	// +=================================+
+	CGrid& operator=(const NGrid& other);           // copy assignment
+	CGrid& operator=(const CGrid& other);           // copy assignment
+	CGrid& operator=(NGrid&& other) noexcept;       // move assignment
+	CGrid& operator=(CGrid&& other) noexcept;       // move assignment
+
+	void operator=(const std::vector<float_t>& data); // alias for set(const std::vector<float_t>& data)
+	void operator=(const std::vector<std::complex<float_t>>& data); // alias for set(const std::vector<complex<float_t>>& data)
+	void operator=(const float_t* data);            // alias for set(const float_t* data)
+
+	// +=================================+   
+	// | getters & setters               |
+	// +=================================+
+	void set(std::initializer_list<uint32_t> index, const float_t value);
+	void set(std::initializer_list<uint32_t> index, const std::complex<float_t> complex_value);
+	void set(const std::vector<uint32_t>& index, const float_t value);
+	void set(const std::vector<uint32_t>& index, const std::complex<float_t> complex_value);
+	void set(const std::vector<float_t>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	void set(const std::vector<std::complex<float_t>>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	void set(const float_t* data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	void set(const NGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	void set(const CGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	void set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset);
+	void set(const CGrid& other, const std::vector<uint32_t>& target_origin_offset);
+	void set(const NGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
+	void set(const CGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
+	std::complex<float_t> get(const uint32_t flat_index) const;
+	std::complex<float_t> get(const std::initializer_list<uint32_t> index) const;
+	std::vector<std::complex<float_t>> get() const;
+	std::vector<std::complex<float_t>> get(const uint32_t read_elements, const uint32_t source_offset_elements) const;
+	uint32_t get_dimensions() const;
+	uint32_t get_size(uint32_t dimension = 0) const;
+	uint32_t get_elements() const;
+	std::vector<uint32_t> get_shape() const;
+	uint32_t rows() const;
+	uint32_t cols() const;
+	std::string get_shapestring() const;
+	CGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape) const;
+	CGrid subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> subgrid_shape) const;
+
+	// +=================================+   
+	// | Fill                            |
+	// +=================================+
+	void fill(const float_t value);
+	void fill(const std::complex<float_t> complex_value);
+	void fill_zero();
+
+	// +=================================+   
+	// | Addition                        |
+	// +=================================+
+	std::complex<float_t> sum() const; // returns the sum of all array elements
+	CGrid operator+(const float_t value) const;
+	CGrid operator+(const std::complex<float_t> complex_value) const;
+	CGrid operator+(const NGrid& other) const;
+	CGrid operator+(const CGrid& other) const;
+	CGrid& operator++(); // prefix increment
+	CGrid operator++(int); // postfix increment
+	void operator+=(const float_t value);
+	void operator+=(const std::complex<float_t> complex_value);
+	void operator+=(const NGrid& other);
+	void operator+=(const CGrid& other);
+
+	// +=================================+   
+	// | Substraction                    |
+	// +=================================+
+	CGrid operator-(const float_t value) const;
+	CGrid operator-(const std::complex<float_t> complex_value) const;
+	CGrid operator-(const NGrid& other) const;
+	CGrid operator-(const CGrid& other) const;
+	CGrid& operator--(); // prefix decrement
+	CGrid operator--(int); // postfix decrement
+	void operator-=(const float_t value);
+	void operator-=(const std::complex<float_t> complex_value);
+	void operator-=(const NGrid& other);
+	void operator-=(const CGrid& other);
+
+	// +=================================+   
+	// | Multiplication                  |
+	// +=================================+
+	std::complex<float_t> product() const;
+	CGrid operator*(const float_t factor) const;
+	CGrid operator*(const std::complex<float_t> complex_factor) const;
+	void operator*=(const float_t factor);
+	void operator*=(const std::complex<float_t> complex_factor);
+	CGrid operator*(const NGrid& other) const;  // alias for matrix product (of a complex matrix with real matrix)
+	CGrid operator*(const CGrid& other) const;  // alias for matrix product (of two complex matrices)
+	void operator*=(const NGrid& other);        // "equals matrix product"
+	void operator*=(const CGrid& other);        // "equals matrix product"
+	std::complex<float_t> scalar_product(const NGrid& other) const;
+	std::complex<float_t> scalar_product(const CGrid& other) const;
+	CGrid matrix_product(const NGrid& other) const;
+	CGrid matrix_product(const CGrid& other) const;
+	CGrid Hadamard_product(const NGrid& other) const;
+	CGrid Hadamard_product(const CGrid& other) const;
+
+	// +=================================+   
+	// | Division                        |
+	// +=================================+
+	CGrid operator/(const float_t divisor) const;
+	CGrid operator/(const std::complex<float_t> divisor) const;
+	void operator/=(const float_t divisor);
+	void operator/=(const std::complex<float_t> divisor);
+	CGrid Hadamard_division(const NGrid& other) const;
+	CGrid Hadamard_division(const CGrid& other) const;
+	CGrid operator/(const NGrid& other) const;
+	CGrid operator/(const CGrid& other) const;
+
+	// +=================================+   
+	// | Exponentiation & Logarithm      |
+	// +=================================+
+	CGrid pow(const float_t exponent = 2.0f) const;
+	CGrid pow(const std::complex<float_t> exponent) const;
+	CGrid operator^(const float_t exponent) const;
+	CGrid operator^(const std::complex<float_t> exponent) const;
+	void operator^=(const float_t exponent);
+	void operator^=(const std::complex<float_t> exponent);
+	CGrid pow(const NGrid& other) const;
+	CGrid pow(const CGrid& other) const;
+	CGrid operator^(const NGrid& other) const;
+	CGrid operator^(const CGrid& other) const;
+	CGrid sqrt() const;
+	CGrid log(const float_t base = 2.718282) const;
+	CGrid log(const std::complex<float_t> base) const;
+	CGrid exp() const;
+
+	// +=================================+   
+	// | Advanced Matrix Operations      |
+	// +=================================+
+	CGrid flatten() const;
+	CGrid reshape(const std::vector<uint32_t>& new_shape, float_t default_init_value = 0) const;
+	CGrid reshape(const std::vector<uint32_t>& new_shape, std::complex<float_t> default_complex_init_value) const;
+	CGrid reshape(std::initializer_list<uint32_t> new_shape, float_t default_init_value = 0) const;
+	CGrid reshape(std::initializer_list<uint32_t> new_shape, std::complex<float_t> default_complex_init_value) const;
+	template<typename... Args> CGrid reshape(Args... args) const;
+	CGrid concatenate(const NGrid& other, const uint32_t axis = 0) const;
+	CGrid concatenate(const CGrid& other, const uint32_t axis = 0) const;
+	CGrid padding(const uint32_t amount, const float_t init_value = 0.0f) const;
+	CGrid padding(const uint32_t amount, const std::complex<float_t> init_value) const;
+	CGrid convolution(const NGrid& kernel, uint32_t padding_amount = 0, float_t padding_value = 0.0f) const;
+	CGrid convolution(const NGrid& kernel, uint32_t padding_amount, std::complex<float_t> padding_value) const;
+	CGrid convolution(const CGrid& kernel, uint32_t padding_amount = 0, float_t padding_value = 0.0f) const;
+	CGrid convolution(const CGrid& kernel, uint32_t padding_amount, std::complex<float_t> padding_value) const;
+	CGrid transpose(const std::vector<uint32_t> target_axis_order = { 1,0 }) const;
+	LUresultComplex lu() const;
+	CGrid l_inverse() const;
+	CGrid u_inverse() const;
+	const bool is_invertible() const;
+	static const bool is_invertible(const CGrid& U);
+	static CGrid inverse(const LUresultComplex& LUP);
+	CGrid inverse() const;
+	CGrid mirror(const std::vector<bool>& mirror_axes) const;
+	CGrid mirror(const std::initializer_list<bool>& mirror_axes) const;
+	CGrid mirror() const;
+	CGrid remap(const NGrid& target_index_map) const;
+	NGrid magnitude() const;
+	NGrid abs() const; // alias for CGrid::magnitude()
+
+	// +=================================+   
+	// | Miscellaneous                   |
+	// +=================================+
+	operator NGrid() const;
+	static void set_workgroup_size_1d(uint32_t size);
+	static void set_workgroup_size_2d(uint32_t size);
+	static void set_fence_timeout_nanosec(uint64_t timeout);
+	void print(std::string comment = "", int32_t precision = 3, bool with_indices = false, bool rows_inline = true, std::string delimiter = "|") const;
+
+protected:
+	// protected class members
+	static VulkanManager* manager;              // shared singleton manager for instance, device and command pool
+	static DescriptorPool* descriptor_pool;	    // shared singleton descriptor pool for command buffer
+	static CommandBuffer* command_buffer;		// shared singleton command buffer for compute operations
+	static uint32_t workgroup_size_1d;          // default workgroup size for 1d dispatch
+	static uint32_t workgroup_size_2d;          // default workgroup size for 2d dispatch
+	static uint64_t fence_timeout_nanosec;      // timeout for waiting for the fence to be signaled
+
+	// helper methods
+	CGrid pow(const float_t exponent_real, const float_t exponent_imag) const; // helper method for pow(real) and pow(complex)
+	CGrid pow(const NGrid& other_real, const NGrid& other_imag, bool other_is_complex) const; // helper method for pow(NGrid) and pow(CGrid)
+	CGrid log(const float_t base_real, const float_t base_imag) const; // helper method for log(real) and log(complex)
+	static void init_static_members();
+};
 
 // +=================================+   
 // | Static Member Initializations   |
 // +=================================+
 VulkanManager* NGrid::manager = nullptr;
 DescriptorPool* NGrid::descriptor_pool = nullptr;
+CommandBuffer* NGrid::command_buffer = nullptr;
 uint32_t NGrid::workgroup_size_1d = DEFAULT_WORKGROUP_SIZE_1D;
 uint32_t NGrid::workgroup_size_2d = DEFAULT_WORKGROUP_SIZE_2D;
-UINT64 NGrid::fence_timeout_nanosec = 1000000000; // default: 1 second timeout for waiting for the fence to be signaled
+UINT64 NGrid::fence_timeout_nanosec = 1e09; // default: 1 second timeout for waiting for the fence to be signaled
 
+VulkanManager* CGrid::manager = nullptr;
+DescriptorPool* CGrid::descriptor_pool = nullptr;
+CommandBuffer* CGrid::command_buffer = nullptr;
+uint32_t CGrid::workgroup_size_1d = DEFAULT_WORKGROUP_SIZE_1D;
+uint32_t CGrid::workgroup_size_2d = DEFAULT_WORKGROUP_SIZE_2D;
+UINT64 CGrid::fence_timeout_nanosec = 1e09; // default: 1 second timeout for waiting for the fence to be signaled
 
+// +=================================+   
+// | Enums & Helper Structs          |
+// +=================================+
 
+// available activation functions (for neural network applications)
+enum ActFunc {
+	RELU,       // rectified linear unit (ReLU)
+	LRELU,      // leaky rectified linear unit (LReLU)
+	ELU,        // exponential linar unit (ELU)
+	LELU,       // leaky exponential linear unit
+	SIGMOID,    // sigmoid (=logistic)
+	TANH,       // hyperbolic tangent (tanh), with angular unit radians
+	IDENT       // identity function
+};
 
-// DEFINITIONS
-// ===============================================================================================================================
+// structure to store the results of Gauss-Jordan elimination (reduced row echelon form)
+struct RREF {
+	NGrid coeffs;	// 'left' part of the reduced row echelon form (typically becomes the identity matrix)
+	NGrid solution;	// 'right' (=augmented) part of the reduced row echelon form
+	NGrid rref;		// left and right part of the reduced row echelon form concatenated into an augmented single matrix
+};
 
+// structure for the result of LU decomposition
+struct LUresult {
+	NGrid L; // lower triangular matrix
+	NGrid U; // upper triangular matrix
+	NGrid P; // permutation matrix (identity matrix if no row swaps were performed)
+	uint32_t swap_count; // number of row swaps performed during the decomposition
+};
+
+// structure for the result of LU decomposition for matrices with complex numbers
+struct LUresultComplex {
+	CGrid L; // lower triangular matrix
+	CGrid U; // upper triangular matrix
+	NGrid P; // permutatiion matrix (identity matrix if no row swaps were performed)
+	uint32_t swap_count; // number of row swaps performed during the decomposition
+};
+
+// structure for the result of QR decomposition
+struct QRresult {
+	NGrid Q;	// orthogonal matrix Q, which is the product of all Householder transformations
+	NGrid R;	// matrix R, which is upper triangular (or Hessenberg) ofter the QR decomposition
+	NGrid V;	// holds the householder vectors v_k in its columns, with zeros above the diagonal
+	NGrid Tau;	// vector of scalars tau_k, which are used to construct the Householder transformations
+
+	// return a single householder vector v_k
+	NGrid get_v(const uint32_t k) const {
+		uint32_t rows_V = V.get_shape()[0];
+		uint32_t cols_V = V.get_shape()[1];
+		if (k >= cols_V) {
+			Log::error("invalid call of method NGrid::QRresult::get_v(k): k is out of bounds with k=", k,
+				". For the given QR result, k must be in range [0:", cols_V - 1, "].");
+		}
+		bool is_hess = cols_V < R.get_shape()[1]; // the Hessenberg form has two columns less; we can take this property for distinction
+
+		// extract single vector v_k from V matrix
+		if (is_hess) {
+			return V.subgrid({ k + 1,k }, { rows_V - (k + 1), 1 }).flatten();
+		}
+		else {
+			return V.subgrid({ k,k }, { rows_V - k, 1 }).flatten();
+		}
+	}
+};
+
+// ==================================================================================================================================================================================
+// DEFINITIONS (NGRID CLASS)
 
 // +=================================+   
 // | Constructors & Destructors      |
 // +=================================+
 
-// default constructor (initializes an empty array)
+// NGrid default constructor (initializes an empty array)
 NGrid::NGrid() {
 	std::vector<uint32_t> shape_vec = {};
 	this->create(shape_vec);
 }
 
-// parametric default constructor for multi-dimensional array, overloaded for variadic template
+// NGrid parametric default constructor for multi-dimensional array, overloaded for variadic template
 template<typename... Args> NGrid::NGrid(Args... args) {
 	std::vector<uint32_t> shape_vec = { static_cast<uint32_t>(args)... };
 	this->create(shape_vec);
 }
 
-// parametric constructor for multi-dimensional array, overloaded for std::vector
+// NGrid parametric constructor for multi-dimensional array, overloaded for std::vector
 NGrid::NGrid(const std::vector<uint32_t>& shape_vec) {
 	this->create(shape_vec);
 }
 
-// parametric constructor for multi-dimensional array, overloaded for std::initializer_list
+// NGrid parametric constructor for multi-dimensional array, overloaded for std::initializer_list
 NGrid::NGrid(std::initializer_list<uint32_t> shape) {
 	std::vector<uint32_t> shape_vec(shape);
 	this->create(shape_vec);
 }
 
-// parametric constructor for 1d array:
+// NGrid parametric constructor for 1d array:
 // construct and directly fill it with the contents of a given std::vector<float_t>
 NGrid::NGrid(std::vector<float_t> source_vector) {
 	uint32_t copied_elements = static_cast<uint32_t>(source_vector.size());
@@ -447,7 +742,7 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 		manager = VulkanManager::get_singleton();
 	}
 
-	// create a descriptor pool for the command buffer
+	// create a shared singleton descriptor pool for the command buffer
 	if (descriptor_pool == nullptr) {
 		std::vector<VkDescriptorPoolSize> max_buffers = {
 			{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20},
@@ -462,8 +757,9 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 	}
 
 	// create a command buffer
-	if (this->command_buffer == nullptr) {
+	if (command_buffer == nullptr) {
 		command_buffer = new CommandBuffer(manager->get_device(), manager->get_command_pool_compute());
+		std::atexit(&NGrid::release_command_buffer);
 	}
 
 	if (this->elements != 0) {
@@ -495,7 +791,7 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 	}
 }
 
-// move constructor
+// NGrid move constructor
 NGrid::NGrid(NGrid&& other) noexcept {
 	Log::debug("NGrid move constructor invoked");
 	this->elements = other.elements;                            other.elements = 0;
@@ -506,10 +802,9 @@ NGrid::NGrid(NGrid&& other) noexcept {
 	}
 	this->data_buffer = std::move(other.data_buffer);           other.data_buffer = nullptr;
 	this->shape_buffer = std::move(other.shape_buffer);         other.shape_buffer = nullptr;
-	this->command_buffer = std::move(other.command_buffer);		other.command_buffer = nullptr;
 }
 
-// copy constructor
+// NGrid copy constructor
 NGrid::NGrid(const NGrid& other) {
 	Log::debug("NGrid copy constructor invoked");
 	this->create(other.get_shape());
@@ -528,11 +823,7 @@ NGrid::~NGrid() {
 		delete this->data_buffer;
 		this->data_buffer = nullptr;
 	}
-	if (this->command_buffer != nullptr) {
-		delete this->command_buffer;
-		this->command_buffer = nullptr;
-	}
-	// Note: 'manager' and 'descriptor_pool' are static objects, shared across multiple instances of NGrid,
+	// Note: 'manager', 'command_buffer' and 'descriptor_pool' are static objects, shared across multiple instances of NGrid,
 	// therefore they shouldn't be destroyed by any object destructors which are meant for single instances
 }
 
@@ -540,7 +831,7 @@ NGrid::~NGrid() {
 // | Assignment                      |
 // +=================================+
 
-// copy assignment operator
+// NGrid copy assignment operator
 NGrid& NGrid::operator=(const NGrid& other) {
 	Log::debug("NGrid copy assignment invoked, copying from other (handle: ", other.data_buffer, ") to this (handle: ", this->data_buffer, ")");
 	if (this != &other) {
@@ -552,7 +843,7 @@ NGrid& NGrid::operator=(const NGrid& other) {
 	return *this;
 }
 
-// move assignment operator
+// NGrid move assignment operator
 NGrid& NGrid::operator=(NGrid&& other) noexcept {
 	Log::debug("NGrid move assignment invoked, moving from other (handle: ", other.data_buffer, ") to this (handle: ", this->data_buffer, ")");
 	if (this != &other) {
@@ -561,10 +852,8 @@ NGrid& NGrid::operator=(NGrid&& other) noexcept {
 		this->shape = std::move(other.shape);                       other.shape.clear();
 		delete this->data_buffer;
 		delete this->shape_buffer;
-		delete this->command_buffer;
 		this->data_buffer = std::move(other.data_buffer);           other.data_buffer = nullptr;
 		this->shape_buffer = std::move(other.shape_buffer);         other.shape_buffer = nullptr;
-		this->command_buffer = std::move(other.command_buffer);		other.command_buffer = nullptr;
 	}
 	return *this;
 }
@@ -573,41 +862,72 @@ NGrid& NGrid::operator=(NGrid&& other) noexcept {
 // | getters & setters               |
 // +=================================+
 
-// assigns a value to a data element via multi-dimensional index;
+// assigns a value to an NGrid data element via multi-dimensional index;
 // overload with index as std::initializer_list<uint32_t>
 void NGrid::set(std::initializer_list<uint32_t> index, const float_t value) {
 	this->data_buffer->write_element(flat_index(index), value);
 }
 
-// assigns a value to a data element via multi-dimensional index;
+// assigns a value to an NGrid data element via multi-dimensional index;
 // overload with index as std::vector<uint32_t>
 void NGrid::set(const std::vector<uint32_t>& index, const float_t value) {
 	this->data_buffer->write_element(flat_index(index), value);
 }
 
-// alias for set(const std::vector<float_t>& data)
+// alias for NGrid::set(const std::vector<float_t>& data)
 void NGrid::operator=(const std::vector<float_t>& data) {
 	*this = this->reshape({ uint32_t(data.size()) });
 	this->set(data);
 }
 
-// alias for set(const float_t* data)
+// alias for NGrid::set(const float_t* data)
 void NGrid::operator=(const float_t* data) {
 	this->set(data, this->elements);
 }
 
+// alias for CGrid::set(const float_t* data)
+void CGrid::operator=(const float_t* data) {
+	this->real.set(data, this->real.elements);
+}
+
 // copies raw data from a std::vector<float_t> to the data buffer
 // of the underlying NGrid array;
-// copied_elements=0 means: copy ALL elements from the source buffer
+// copied_elements=0 means: copy ALL elements from the source buffer;
+// this method will typically not write beyond the boundaries of the NGrid, i.e. not automatic resizing occurs,
+// however, if the size is zero (=uninitialized NGrid), it will automatically be set to the size of the source vector (+target_offset);
 void NGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
-	data_buffer->write(data, copied_elements, source_offset_elements, target_offset_elements);
+	if (data.size() == 0) {
+		return; // nothing to copy
+	}
+	if (this->elements == 0) {
+		*this = this->reshape({ target_offset_elements + uint32_t(data.size()) });
+	}
+	this->data_buffer->write(data, copied_elements, source_offset_elements, target_offset_elements);
 }
 
 // copies raw data from a float_t array to the data buffer
 // of the underlying NGrid array;
 void NGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
 	uint32_t source_elements = copied_elements == 0 ? this->elements - source_offset_elements : copied_elements;
-	data_buffer->write(data, source_elements, source_offset_elements, target_offset_elements);
+	this->data_buffer->write(data, source_elements, source_offset_elements, target_offset_elements);
+}
+
+// copies raw data from a float_t array to the data buffer
+// of the real compontent of the underlying CGrid array;
+// the corresponding imaginary compontents are initialized with zeros
+void CGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+	uint32_t source_elements = copied_elements == 0 ? this->real.elements - source_offset_elements : copied_elements;
+	this->real.data_buffer->write(data, source_elements, source_offset_elements, target_offset_elements);
+
+	if (this->imag.elements == source_elements && target_offset_elements == 0) {
+		this->imag.fill_zero(); // initialize the entire imaginary part with zeros if the size matches the range of the copied elements
+	}
+	else {
+		NGrid condition_map(this->imag.elements);
+		condition_map.fill_index();
+		condition_map = (condition_map >= target_offset_elements) && (condition_map < target_offset_elements + copied_elements);
+		this->imag.replace_if(condition_map, 0.0f); // initialize the imaginary part for the copied elements with zeros
+	}
 }
 
 // copies raw data from another NGrid array to the data buffer
@@ -626,7 +946,7 @@ void NGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_of
 	if (this->elements == 0) {
 		if (copied_elements == 0) {
 			if (other.get_dimensions() == 1) {
-				std::vector<uint32_t> new_shape = { target_offset_elements + other.get_elements() };
+				std::vector<uint32_t> new_shape = { target_offset_elements + other.get_elements() - source_offset_elements };
 				this->create(new_shape);
 			}
 			else {
@@ -704,6 +1024,20 @@ float_t NGrid::get(const uint32_t flat_index) const {
 	return data_buffer->read_element(flat_index);
 }
 
+// return the value of an array element via its multidimensional index
+float_t NGrid::get(const std::initializer_list<uint32_t> index) const {
+	return data_buffer->read_element(flat_index(index));
+}
+
+// return the complex value of an array element via its multidimensional index
+std::complex<float_t> CGrid::get(const std::initializer_list<uint32_t> index) const {
+	std::complex<float_t> value;
+	uint32_t flat_index = this->real.flat_index(index);
+	value.real(this->real.data_buffer->read_element(flat_index));
+	value.imag(this->imag.data_buffer->read_element(flat_index));
+	return value;
+}
+
 // returns a flat (= 1-dimensional) copy of ALL raw data of the underlying buffer as type std::vector<float_t>
 std::vector<float> NGrid::get() const {
 	return data_buffer->read();
@@ -713,6 +1047,19 @@ std::vector<float> NGrid::get() const {
 // this overload uses parameters "read_elements" and "source_offset_elements" to allow copying only a subset of the data
 std::vector<float> NGrid::get(const uint32_t read_elements, const uint32_t source_offset_elements) const {
 	return data_buffer->read(read_elements, source_offset_elements);
+}
+
+// returns a flat (= 1-dimensional) copy of ALL raw data of the underlying buffer as type std::vector<std::complex<float_t>>
+std::vector<std::complex<float_t>> CGrid::get(const uint32_t read_elements, const uint32_t source_offset_elements) const {
+	std::vector<float_t> real_data = this->real.data_buffer->read();
+	std::vector<float_t> imag_data = this->imag.data_buffer->read();
+	std::vector<std::complex<float_t>> result;
+	uint32_t elements = static_cast<uint32_t>(read_elements - source_offset_elements);
+	result.reserve(elements);
+	for (uint32_t i = 0; i < elements; i++) {
+		result.push_back(std::complex<float_t>(real_data[i + source_offset_elements], imag_data[i + source_offset_elements]));
+	}
+	return result;
 }
 
 // returns the buffer containg the raw array data
@@ -730,7 +1077,7 @@ uint32_t NGrid::get_dimensions() const {
 	return this->dimensions;
 }
 
-// returns the number of rows, i.e. the size of the 'first' dimension (indexing starts from 0)
+// returns the size in the specified dimension
 uint32_t NGrid::get_size(uint32_t dimension) const {
 	if (dimension >= this->dimensions) {
 		Log::error("invalid usage of method 'NGrid get_size(uint32_t dimension)' with invalid dimension index; index is ",
@@ -750,6 +1097,26 @@ uint32_t NGrid::get_elements() const {
 // returns the shape of the array as std::vector<uint32_t>
 std::vector<uint32_t> NGrid::get_shape() const {
 	return this->shape;
+}
+
+// return the number of rows
+uint32_t NGrid::rows() const {
+	if (this->dimensions >= 1) {
+		return this->shape[0];
+	}
+	else {
+		return 0;
+	}
+}
+
+// return the number of columns
+uint32_t NGrid::cols() const {
+	if (this->dimensions >= 2) {
+		return this->shape[1];
+	}
+	else {
+		return 0;
+	}
 }
 
 // returns the shape of the array as std::string
@@ -844,8 +1211,8 @@ void NGrid::fill(const float_t value) {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -865,9 +1232,14 @@ void NGrid::fill_zero() {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
+}
+
+void CGrid::fill_zero() {
+	this->real.fill_zero();
+	this->imag.fill_zero();
 }
 
 // fill entire array with identity matrix
@@ -887,9 +1259,15 @@ void NGrid::fill_identity() {
 
 	PushConstants constants(this->elements, this->dimensions);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
+}
+
+NGrid NGrid::identity(const uint32_t size) {
+	NGrid result(size, size);
+	result.fill_identity();
+	return result;
 }
 
 // fill with values from a random normal (=gaussian) distribution
@@ -908,8 +1286,8 @@ void NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
 
 	PushConstants constants(this->elements, rnd::seed32(), mu, sigma);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -929,8 +1307,8 @@ void NGrid::fill_random_uniform(const float_t min, const float_t max) {
 
 	PushConstants constants(this->elements, rnd::seed32(), min, max);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -955,8 +1333,8 @@ void NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
 
 	PushConstants constants(this->elements, rnd::seed32(), min, max);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -988,8 +1366,8 @@ void NGrid::fill_random_binary(float_t ratio) {
 
 	PushConstants constants(this->elements, rnd::seed32(), valid_ratio);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -1016,8 +1394,8 @@ void NGrid::fill_random_sign(float_t ratio) {
 
 	PushConstants constants(this->elements, rnd::seed32(), valid_ratio);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -1041,8 +1419,8 @@ void NGrid::fill_range(const float_t start, const float_t step) {
 
 	PushConstants constants(this->elements, this->dimensions, start, step);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -1068,8 +1446,8 @@ void NGrid::fill_dropout(float_t ratio) {
 
 	PushConstants constants(this->elements, valid_ratio, rnd::seed32());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -1086,8 +1464,8 @@ void NGrid::weightinit_tanh_normal(uint32_t fan_in, uint32_t fan_out) {
 
 	PushConstants constants(this->elements, fan_in, fan_out, rnd::seed32());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, 1);
 	descriptor_pool->release_set(set);
 }
 
@@ -1104,8 +1482,8 @@ void NGrid::weightinit_tanh_uniform(uint32_t fan_in, uint32_t fan_out) {
 
 	PushConstants constants(this->elements, fan_in, fan_out, rnd::seed32());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -1122,8 +1500,8 @@ void NGrid::weightinit_sigmoid(uint32_t fan_in, uint32_t fan_out) {
 
 	PushConstants constants(this->elements, fan_in, fan_out, rnd::seed32());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -1140,8 +1518,8 @@ void NGrid::weightinit_relu(uint32_t fan_in) {
 
 	PushConstants constants(this->elements, fan_in, rnd::seed32());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -1158,8 +1536,8 @@ void NGrid::weightinit_elu(uint32_t fan_in) {
 
 	PushConstants constants(this->elements, fan_in, rnd::seed32());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -1175,8 +1553,8 @@ void NGrid::fill_index() {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 }
 
@@ -1492,7 +1870,7 @@ float_t NGrid::sum() const {
 		PushConstants constants(data_input.get_elements());
 
 		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
 		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
 		descriptor_pool->release_set(set);
 
@@ -1524,8 +1902,8 @@ NGrid NGrid::operator+(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -1589,7 +1967,7 @@ NGrid NGrid::operator++(int) {
 // elementwise addition of the specified
 // value to the elements of the array
 void NGrid::operator+=(const float_t value) {
-	*this = this->operator+(value);
+	*this = *this + value;
 }
 
 // elementwise addition of the values of 'other'
@@ -1598,7 +1976,6 @@ void NGrid::operator+=(const NGrid& other) {
 	*this = this->operator+(other);
 }
 
-
 // +=================================+   
 // | Substraction                    |
 // +=================================+
@@ -1606,7 +1983,7 @@ void NGrid::operator+=(const NGrid& other) {
 // elementwise substraction of the specified value from all values of the array
 NGrid NGrid::operator-(const float_t value) const {
 	// using the member method "NGrid operator+(const float_t value) const"
-	return this->operator+(value * -1);
+	return *this + (value * -1.0f);
 }
 
 // returns the resulting array of the elementwise substraction of
@@ -1709,7 +2086,7 @@ float_t NGrid::product() const {
 		PushConstants constants(data_input.get_elements());
 
 		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
 		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
 		descriptor_pool->release_set(set);
 
@@ -1741,8 +2118,8 @@ NGrid NGrid::operator*(const float_t factor) const {
 
 	PushConstants constants(this->elements, factor);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -1755,6 +2132,14 @@ void NGrid::operator*=(const float_t factor) {
 
 // Alias for 2D or 3D matrix multiplication
 NGrid NGrid::operator*(const NGrid& other) const {
+	return this->matrix_product(other);
+}
+
+CGrid CGrid::operator*(const NGrid& other) const {
+	return this->matrix_product(other);
+}
+
+CGrid CGrid::operator*(const CGrid& other) const {
 	return this->matrix_product(other);
 }
 
@@ -1814,7 +2199,7 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 	);
 
 	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -1824,8 +2209,22 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 // array with the corresponding values of a second array,
 // resulting in the 'Hadamard product';
 // the dimensions of the two arrays must match!
-// if they don't: only the common elements will be part of the result array
 NGrid NGrid::Hadamard_product(const NGrid& other) const {
+	if (this->dimensions != other.get_dimensions()) {
+		if (this->dimensions == other.get_dimensions() + 1 && this->shape[this->dimensions - 1] == 1) {
+			// do nothing, the dimensions still match because the last dimension of 'this' is 1
+		}
+		else if (other.get_dimensions() == this->dimensions + 1 && other.get_shape()[other.get_dimensions() - 1] == 1) {
+			// do nothing, the dimensions still match because the last dimension of 'other' is 1
+		}
+		else {
+			// dimensions do not match, return 'this' unmodified
+			Log::warning("invalid call of NGrid::Hadamard_product: the dimensions of the two arrays do not match! ",
+				"this array has shape ", this->get_shapestring(), ", other array has shape ", other.get_shapestring(),
+				"; returning 'this' unmodified");
+			return *this;
+		}
+	}
 	NGrid result(this->shape);
 
 	static ShaderModule shader(manager->get_device(), HADAMARD_PRODUCT_OTHER_SPIRV_BIN, HADAMARD_PRODUCT_OTHER_SPIRV_BYTES);
@@ -1842,8 +2241,8 @@ NGrid NGrid::Hadamard_product(const NGrid& other) const {
 
 	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -1853,24 +2252,24 @@ NGrid NGrid::Hadamard_product(const NGrid& other) const {
 // | Division                        |
 // +=================================+
 
-// elementwise division by a scalar
-NGrid NGrid::operator/(const float_t quotient) const {
-	if (quotient == 0) {
-		Log::error("invalid call of method 'NGrid NGrid::operator/(const T quotient)' with quotient=0 (zero division is undefined)");
+// returns the result of elementwise division by a scalar
+NGrid NGrid::operator/(const float_t divisor) const {
+	if (divisor == 0) {
+		Log::error("invalid call of method 'NGrid NGrid::operator/(const T divisor)' with divisor=0 (zero division is undefined)");
 	}
-	return (*this) * (1.0f / quotient);
+	return (*this) * (1.0f / divisor);
 }
 
 // elementwise division (/=) by a scalar
-void NGrid::operator/=(const float_t quotient) {
-	(*this) *= (1.0f / quotient);
+void NGrid::operator/=(const float_t divisor) {
+	(*this) *= (1.0f / divisor);
 }
 
 // elementwise division of the values of the current
 // array by the corresponding values of a second NGrid,
 // resulting in the 'Hadamard division';
 // the dimensions of the two arrays must match!
-NGrid NGrid::Hadamard_division(const NGrid& other) {
+NGrid NGrid::Hadamard_division(const NGrid& other) const {
 	NGrid result(this->shape);
 
 	static ShaderModule shader(manager->get_device(), HADAMARD_DIVISION_OTHER_SPIRV_BIN, HADAMARD_DIVISION_OTHER_SPIRV_BYTES);
@@ -1887,8 +2286,8 @@ NGrid NGrid::Hadamard_division(const NGrid& other) {
 
 	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -1928,8 +2327,8 @@ NGrid NGrid::operator%(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -1951,13 +2350,12 @@ NGrid NGrid::pow(const float_t exponent) const {
 	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
-
 	descriptor_pool->allocate_set(set);
 
 	PushConstants constants(this->elements, exponent);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -1975,6 +2373,14 @@ NGrid NGrid::operator^(const float_t exponent) const {
 // the corresponding element of 'other'
 NGrid NGrid::operator^(const NGrid& other) const {
 	return this->pow(other);
+}
+
+CGrid CGrid::operator^(const NGrid& other) const {
+	return this->pow(other, other, false);
+}
+
+CGrid CGrid::operator^(const CGrid& other) const {
+	return this->pow(other.real, other.imag, true);
 }
 
 // elementwise exponentiation of the values of 'this'
@@ -2013,8 +2419,8 @@ NGrid NGrid::pow(const NGrid& other) const {
 	);
 
 	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2043,8 +2449,8 @@ NGrid NGrid::log(float_t base) const {
 
 	PushConstants constants(this->elements, base);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2064,8 +2470,8 @@ NGrid NGrid::exp() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2091,8 +2497,8 @@ NGrid NGrid::round() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2114,8 +2520,8 @@ NGrid NGrid::floor() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2137,8 +2543,8 @@ NGrid NGrid::ceil() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2160,8 +2566,8 @@ NGrid NGrid::abs() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2187,8 +2593,8 @@ NGrid NGrid::min(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2210,8 +2616,8 @@ NGrid NGrid::max(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2236,8 +2642,8 @@ NGrid NGrid::min(const NGrid& other) const {
 
 	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2262,8 +2668,8 @@ NGrid NGrid::max(const NGrid& other) const {
 
 	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2290,8 +2696,8 @@ NGrid NGrid::cos(AngularUnit source_angle_unit) const {
 
 	PushConstants constants(this->elements, factor);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2314,8 +2720,8 @@ NGrid NGrid::sin(AngularUnit source_angle_unit) const {
 
 	PushConstants constants(this->elements, factor);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2338,8 +2744,8 @@ NGrid NGrid::tan(AngularUnit source_angle_unit) const {
 
 	PushConstants constants(this->elements, factor);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2363,8 +2769,8 @@ NGrid NGrid::acos(AngularUnit result_angle_unit) const {
 
 	PushConstants constants(this->elements, factor);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2388,8 +2794,8 @@ NGrid NGrid::asin(AngularUnit result_angle_unit) const {
 
 	PushConstants constants(this->elements, factor);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2413,8 +2819,8 @@ NGrid NGrid::atan(AngularUnit result_angle_unit) const {
 
 	PushConstants constants(this->elements, factor);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2435,8 +2841,8 @@ NGrid NGrid::cosh() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2457,8 +2863,8 @@ NGrid NGrid::sinh() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2479,8 +2885,8 @@ NGrid NGrid::tanh() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2501,8 +2907,8 @@ NGrid NGrid::acosh() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2523,8 +2929,8 @@ NGrid NGrid::asinh() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2545,8 +2951,8 @@ NGrid NGrid::atanh() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2572,8 +2978,8 @@ NGrid NGrid::replace(const float_t old_value, const float_t new_value) const {
 
 	PushConstants constants(this->elements, old_value, new_value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2616,8 +3022,8 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const NGrid& replacing_map) 
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2657,8 +3063,8 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const float_t replacing_valu
 
 	PushConstants constants(this->elements, replacing_value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2701,7 +3107,7 @@ uint32_t NGrid::find(const float_t& value) const {
 		);
 
 		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
 		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
 		descriptor_pool->release_set(set);
 
@@ -2737,8 +3143,8 @@ NGrid NGrid::sign() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2773,8 +3179,8 @@ NGrid NGrid::scale_minmax(float_t range_from, float_t range_to) const {
 		this->max()
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2938,8 +3344,8 @@ NGrid NGrid::sigmoid() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2961,8 +3367,8 @@ NGrid NGrid::sigmoid_drv() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -2984,8 +3390,8 @@ NGrid NGrid::elu(float_t alpha) const {
 
 	PushConstants constants(this->elements, alpha);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3009,8 +3415,8 @@ NGrid NGrid::elu_drv(float_t alpha) const {
 
 	PushConstants constants(this->elements, alpha);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3034,8 +3440,8 @@ NGrid NGrid::relu(float_t alpha) const {
 
 	PushConstants constants(this->elements, alpha);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3058,8 +3464,8 @@ NGrid NGrid::relu_drv(float_t alpha) const {
 
 	PushConstants constants(this->elements, alpha);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3080,8 +3486,8 @@ NGrid NGrid::tanh_drv() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3107,8 +3513,8 @@ NGrid NGrid::outliers_clamp_minmax(const float_t min_value, const float_t max_va
 
 	PushConstants constants(this->elements, min_value, max_value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3240,8 +3646,8 @@ NGrid NGrid::recover() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3265,8 +3671,8 @@ NGrid NGrid::operator>(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3287,8 +3693,8 @@ NGrid NGrid::operator>=(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3308,8 +3714,8 @@ NGrid NGrid::operator==(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3329,8 +3735,8 @@ NGrid NGrid::operator!=(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3350,8 +3756,8 @@ NGrid NGrid::operator<(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3371,8 +3777,8 @@ NGrid NGrid::operator<=(const float_t value) const {
 
 	PushConstants constants(this->elements, value);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3671,8 +4077,8 @@ NGrid NGrid::operator!() const {
 
 	PushConstants constants(this->elements);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3704,8 +4110,8 @@ NGrid NGrid::operator&&(const NGrid& other) const {
 		other.get_dimensions()
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3789,8 +4195,8 @@ NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, float_t default_ini
 		);
 
 		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-		command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+		command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 		descriptor_pool->release_set(set);
 	}
 	return result;
@@ -3870,8 +4276,8 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 		axis
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3904,8 +4310,8 @@ NGrid NGrid::padding(const uint32_t amount, const float_t init_value) const {
 		init_value
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 
 	return result;
@@ -3971,8 +4377,8 @@ NGrid NGrid::pool_max(const std::vector<uint32_t>& window_shape, const std::vect
 		window_N
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 	return result;
 }
@@ -4043,8 +4449,8 @@ NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::v
 		window_N
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 	return result;
 }
@@ -4115,8 +4521,8 @@ NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vect
 		window_N
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 	return result;
 }
@@ -4191,8 +4597,8 @@ NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vec
 	);
 
 	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 	return result;
 }
@@ -4243,8 +4649,8 @@ NGrid NGrid::convolution(const NGrid& kernel, uint32_t padding_amount, float_t p
 	);
 
 	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	descriptor_pool->release_set(set);
 	return result;
 }
@@ -4300,8 +4706,8 @@ NGrid NGrid::transpose(const std::vector<uint32_t> target_axis_order) const {
 		descriptor_pool->allocate_set(set);
 
 		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-		command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+		command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 		descriptor_pool->release_set(set);
 	}
 	// if 'this' is 2d or higher, it can be transposed directly
@@ -4317,27 +4723,28 @@ NGrid NGrid::transpose(const std::vector<uint32_t> target_axis_order) const {
 		descriptor_pool->allocate_set(set);
 
 		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
-		command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+		command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 		descriptor_pool->release_set(set);
 	}
 	return result;
 }
 
 // performs LU decomposition, returns the number of row swaps performed
-uint32_t  NGrid::lu_decomp(NGrid& L, NGrid& U, NGrid& P) const {
+LUresult NGrid::lu() const {
+	LUresult result;
 	// check if the grid is a 2d matrix
 	if (this->dimensions != 2) {
-		Log::warning("invalid usage of NGrid::lu_decomp: only 2d matrices can be decomposed, returning unmodified grids");
-		return 0;
+		Log::warning("invalid usage of NGrid::lu_decomp: only 2d matrices can be decomposed, returning empty result.");
+		return result;
 	}
 
 	// initialize matrices
 	// L is a lower triangular matrix, U is an upper triangular matrix, P is a permutation matrix
 	// please note that L and P are square matrices, while U (as a 'row echelon matrix') has the same shape as the source matrix
-	L = L.reshape({ this->shape[0], this->shape[0] });	L.fill_identity();
-	U = *this; // U is initialized with the source matrix
-	P = P.reshape({ this->shape[0], this->shape[0] });	P.fill_identity();
+	result.L = result.L.reshape({ this->shape[0], this->shape[0] });	result.L.fill_identity();
+	result.U = *this; // U is initialized with the source matrix
+	result.P = result.P.reshape({ this->shape[0], this->shape[0] });	result.P.fill_identity();
 
 	// add a buffer to store the row to be swapped for current row 'k'
 	Buffer<uint32_t> swap_row(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1);
@@ -4347,9 +4754,9 @@ uint32_t  NGrid::lu_decomp(NGrid& L, NGrid& U, NGrid& P) const {
 
 	// define descriptor set
 	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*L.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*U.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*P.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.L.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.U.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.P.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(swap_row, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(swap_count, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
@@ -4390,11 +4797,13 @@ uint32_t  NGrid::lu_decomp(NGrid& L, NGrid& U, NGrid& P) const {
 		// update U matrix in rows [k+1] to [rows-1]
 		static ShaderModule u_update_shader(manager->get_device(), LU_DECOMP_U_UPDATE_SPIRV_BIN, LU_DECOMP_U_UPDATE_SPIRV_BYTES);
 		ComputePipeline u_update_pipeline(manager->get_device(), u_update_shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(u_update_pipeline, U.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+		command_buffer->compute(u_update_pipeline, result.U.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
 	}
 	descriptor_pool->release_set(set);
 
-	return swap_count.read_element(0);
+	result.swap_count = swap_count.read_element(0);
+
+	return result;
 }
 
 // get the inverse of a lower triangular matrix L (using forward substitution)
@@ -4413,7 +4822,7 @@ NGrid NGrid::l_inverse() const {
 
 	// define descriptor set
 	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR); // 'this' must be in the form of a lower triangular matrix!
 	set.bind_buffer(*I.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
 	descriptor_pool->allocate_set(set);
@@ -4436,7 +4845,7 @@ NGrid NGrid::l_inverse() const {
 NGrid NGrid::u_inverse() const {
 
 	if (this->dimensions != 2 || this->shape[0] != this->shape[1]) {
-		Log::warning("invalid usage of method NGrid::l_inverse(): the underlying NGrid must be a 2d square matrix -> returning 'this' as unmodified");
+		Log::warning("invalid usage of method NGrid::u_inverse(): the underlying NGrid must be a 2d square matrix -> returning 'this' as unmodified");
 		return *this;
 	}
 
@@ -4449,7 +4858,7 @@ NGrid NGrid::u_inverse() const {
 
 	// define descriptor set
 	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR); // 'this' must be in the form of an upper triangular matrix
 	set.bind_buffer(*I.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
 	descriptor_pool->allocate_set(set);
@@ -4468,6 +4877,300 @@ NGrid NGrid::u_inverse() const {
 	return I;
 }
 
+// QR decomposition using Householder Reflections
+// QR decomposition breaks down a matrix into the product of two other matrices:
+// 1. an orthogonal matrix(Q)
+// 2. and an upper triangular matrix(R) or a Hessenberg matrix(H)
+QRresult NGrid::qr(const bool hessenberg) const {
+	QRresult result;
+
+	if (this->dimensions != 2) {
+		Log::warning("invalid call of method NGrid::qr(). 'this' mus be 2d, but has shape ", this->get_shapestring(), ". Result will be empty");
+		return result;
+	}
+
+	// variable definitions
+	uint32_t rows = this->shape[0];
+	uint32_t cols = this->shape[1];
+	uint32_t cols_Q = rows; // Q is a {rows,rows} square matrix
+	uint32_t k_max = hessenberg ? std::min(rows, cols) - 2 : std::min(rows, cols); // max iterations
+	uint32_t row_workgroups = (rows + workgroup_size_1d - 1) / workgroup_size_1d;
+
+	// initizialize result members
+	result.R = *this;
+	uint32_t cols_V = k_max;
+	result.V = result.V.reshape(rows, cols_V);
+	result.V.fill_zero();
+	result.Q = result.Q.reshape(rows, cols_Q);
+	result.Q.fill_identity();
+	result.Tau = result.Tau.reshape(cols_V);
+
+	// helper arrays
+	NGrid Temp_w(cols);
+	NGrid Temp_u(rows);
+	NGrid Temp_y(hessenberg ? rows : 1); // (small dummy for standard QR, only used for Hessenberg)
+	NGrid Alpha(k_max);
+	NGrid Gamma(k_max);
+	NGrid k_iterator(1); k_iterator.fill_zero();
+	NGrid LocalResults(row_workgroups); // to store local results from parallel reductions
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*result.Q.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.R.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.V.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.Tau.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*Temp_w.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*Temp_u.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*Temp_y.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*LocalResults.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*Alpha.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*k_iterator.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*Gamma.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		rows,				// rows in the source matrix
+		cols,				// columns in the source matrix
+		cols_V,
+		cols_Q,
+		row_workgroups,		// number of elements in the local_results buffer (constant for all iterations)
+		uint32_t(hessenberg)// 0 for QR, 1 for Hessenberg
+	);
+
+	// === DEFINE SHADERS & PIPELINES ===
+	static ShaderModule get_sum_of_squares_rk_shader(manager->get_device(), QR_GET_SUM_OF_SQUARES_RK_SPIRV_BIN, QR_GET_SUM_OF_SQUARES_RK_SPIRV_BYTES);
+	ComputePipeline get_sum_of_squares_rk_pipeline(manager->get_device(), get_sum_of_squares_rk_shader, constants, set, workgroup_size_1d, 1, 1);
+
+	static ShaderModule get_alpha_shader(manager->get_device(), QR_GET_ALPHA_SPIRV_BIN, QR_GET_ALPHA_SPIRV_BYTES);
+	ComputePipeline get_alpha_pipeline(manager->get_device(), get_alpha_shader, constants, set, 1, 1, 1);
+
+	static ShaderModule compute_householder_vector_shader(manager->get_device(), QR_COMPUTE_HOUSEHOLDER_VECTOR_SPIRV_BIN, QR_COMPUTE_HOUSEHOLDER_VECTOR_SPIRV_BYTES);
+	ComputePipeline compute_householder_vector_pipeline(manager->get_device(), compute_householder_vector_shader, constants, set, workgroup_size_1d, 1, 1);
+
+	static ShaderModule get_sum_of_squares_vk_shader(manager->get_device(), QR_GET_SUM_OF_SQUARES_VK_SPIRV_BIN, QR_GET_SUM_OF_SQUARES_VK_SPIRV_BYTES);
+	ComputePipeline get_sum_of_squares_vk_pipeline(manager->get_device(), get_sum_of_squares_vk_shader, constants, set, workgroup_size_1d, 1, 1);
+
+	static ShaderModule get_tau_shader(manager->get_device(), QR_GET_TAU_SPIRV_BIN, QR_GET_TAU_SPIRV_BYTES);
+	ComputePipeline get_tau_pipeline(manager->get_device(), get_tau_shader, constants, set, 1, 1, 1);
+
+	static ShaderModule get_temp_w_shader(manager->get_device(), QR_GET_TEMP_W_SPIRV_BIN, QR_GET_TEMP_W_SPIRV_BYTES);
+	ComputePipeline get_temp_w_pipeline(manager->get_device(), get_temp_w_shader, constants, set, 1, workgroup_size_1d, 1);
+
+	static ShaderModule get_temp_u_shader(manager->get_device(), QR_GET_TEMP_U_SPIRV_BIN, QR_GET_TEMP_U_SPIRV_BYTES);
+	ComputePipeline get_temp_u_pipeline(manager->get_device(), get_temp_u_shader, constants, set, workgroup_size_1d, 1, 1);
+
+	static ShaderModule get_gamma_shader(manager->get_device(), QR_GET_GAMMA_SPIRV_BIN, QR_GET_GAMMA_SPIRV_BYTES);
+	ComputePipeline get_gamma_pipeline(manager->get_device(), get_gamma_shader, constants, set, workgroup_size_1d, 1, 1);
+
+	static ShaderModule gamma_global_reduction_shader(manager->get_device(), QR_GAMMA_GLOBAL_REDUCTION_SPIRV_BIN, QR_GAMMA_GLOBAL_REDUCTION_SPIRV_BYTES);
+	ComputePipeline gamma_global_reduction_pipeline(manager->get_device(), gamma_global_reduction_shader, constants, set, 1, 1, 1);
+
+	static ShaderModule householder_transformation_shader(manager->get_device(), QR_HOUSEHOLDER_TRANSFORMATION_SPIRV_BIN, QR_HOUSEHOLDER_TRANSFORMATION_SPIRV_BYTES);
+	ComputePipeline householder_transformation_pipeline(manager->get_device(), householder_transformation_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
+
+	static ShaderModule increment_k_shader(manager->get_device(), QR_INCREMENT_K_SPIRV_BIN, QR_INCREMENT_K_SPIRV_BYTES);
+	ComputePipeline increment_k_pipeline(manager->get_device(), increment_k_shader, constants, set, 1, 1, 1);
+
+	// main loop
+	for (uint32_t k = 0; k < k_max; k++) {
+
+		command_buffer->compute(get_sum_of_squares_rk_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);			// Get local sums of squares of elements R[k:m-1][k] (store in local_results buffer)
+		command_buffer->compute(get_alpha_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);						// Get total sum of squares, norm_x and alpha_k
+		command_buffer->compute(compute_householder_vector_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);	// Compute Householder Vector v_k (V[k:m-1][k])
+		command_buffer->compute(get_sum_of_squares_vk_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);			// Get local sums of squares of elements V[k:m-1][k] (store in local_results buffer)
+		command_buffer->compute(get_tau_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);							// Get total sum of squares of elements V[k:m-1][k], then calculate tau[k] (single thread)
+		command_buffer->compute(get_temp_w_pipeline, 1, cols, 1, true, fence_timeout_nanosec, true);					// Get temp_w
+		command_buffer->compute(get_temp_u_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);					// Get temp_u
+		if (hessenberg) {
+			command_buffer->compute(get_gamma_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);						// local reduction for gamma (for Hessenberg)
+			command_buffer->compute(gamma_global_reduction_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);
+		}
+		command_buffer->compute(householder_transformation_pipeline, rows, std::max(cols, cols_Q), 1, true, fence_timeout_nanosec, true); // Update R, Q (2d dispatch)
+		command_buffer->compute(increment_k_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);						// increment k iterator in buffer
+	}
+	descriptor_pool->release_set(set);
+	return result;
+}
+
+// Hessenberg transformation
+QRresult NGrid::hess() const {
+	return this->qr(true);
+}
+
+// computes the Eigenvalues of a square matrix;
+// can deal with real or complex results;
+// for an NxN matrix: max_iterations of the sub_problem = N * max_iterations_multiplier
+CGrid NGrid::eigen(const uint32_t max_iterations_multiplier, const float_t tolerance) const {
+	NGrid H = this->hess().R; // get Hessenberg form of 'this'
+	this->print("\nsource matrix X = ");
+	H.print("\nH = Hessenberg form of source matrix = ");
+	uint32_t n = H.rows();
+	CGrid result(n);
+	uint32_t max_iterations = n * max_iterations_multiplier;
+	uint32_t iteration = 0;
+	uint32_t num_found_values = 0; // number of found eigenvalues so far
+
+	// main iterative loop
+	while (n > 0) {
+
+		bool converged = false;
+
+		// inner loop: perform QR steps until the subproblem converges
+		while (!converged && iteration < max_iterations) {
+
+			// 1. Find the starting row/col 'k' of the unreduced subproblem
+			uint32_t k = n - 1;
+			while (k > 0) {
+				// tolerance check (robust method)
+				float_t check_val = std::abs(H.get(flat_index({ k - 1, k - 1 }))) + std::abs(H.get(flat_index({ k, k })));
+				if (std::abs(H.get(flat_index({ k, k - 1 }))) < tolerance * check_val) {
+					break;
+				}
+				k--;
+			}
+
+			// Now, k is the starting row/col of the unreduced subproblem we must work on.
+			// The subproblem is H(k:n-1, k:n-1).
+			uint32_t subproblem_size = n - k;
+
+			// 2. Check for convergence / deflation
+			if (subproblem_size == 1) { // 1x1 block has converged
+				float found_real_value = H.get(flat_index({ k, k }));
+				result.real.set({ num_found_values }, found_real_value);
+				result.imag.set({ num_found_values }, 0.0f);
+				num_found_values++;
+				n = k; // shrink problem size by setting n to the start of the converged block
+				converged = true; // exit inner loop to re-scan the smaller problem
+			}
+			// --- Handle 2x2 blocks which might represent complex eigenvalues ---
+			else if (subproblem_size == 2) { // 2x2 block has converged
+				float_t a = H.get(flat_index({ k, k }));
+				float_t b = H.get(flat_index({ k, k + 1 }));
+				float_t c = H.get(flat_index({ k + 1, k }));
+				float_t d = H.get(flat_index({ k + 1, k + 1 }));
+
+				float_t trace = a + d;
+				float_t det = a * d - b * c;
+				float_t disc = trace * trace - 4 * det;
+
+				if (disc >= 0) { // Real eigenvalues
+					float_t sqrt_disc = std::sqrt(disc);
+
+					result.real.set({ num_found_values }, (trace + sqrt_disc) / 2.0f);
+					result.imag.set({ num_found_values }, 0.0f);
+					num_found_values++;
+
+					result.real.set({ num_found_values }, (trace - sqrt_disc) / 2.0f);
+					result.imag.set({ num_found_values }, 0.0f);
+					num_found_values++;
+
+				}
+				else { // Complex conjugate pair
+					float_t sqrt_abs_disc = std::sqrt(std::abs(disc));
+
+					result.real.set({ num_found_values }, trace / 2.0f);
+					result.imag.set({ num_found_values }, sqrt_abs_disc / 2.0f);
+					num_found_values++;
+
+					result.real.set({ num_found_values }, trace / 2.0f);
+					result.imag.set({ num_found_values }, -sqrt_abs_disc / 2.0f);
+					num_found_values++;
+				}
+				n = k; // shrink problem size by setting n to the start of the converged block
+				converged = true;
+			}
+			// 3. no convergence yet: perform double-shift QR step on the H(k:n-1, k:n-1) block
+			//    (-> the bulge chase)
+			else {
+
+				// Compute the shifts from the bottom right of the CURRENT problem
+				float_t a = H.get(flat_index({ n - 2, n - 2 }));
+				float_t b = H.get(flat_index({ n - 2, n - 1 }));
+				float_t c = H.get(flat_index({ n - 1, n - 2 }));
+				float_t d = H.get(flat_index({ n - 1, n - 1 }));
+
+				// Compute the real coefficients of the double-shift polynomial
+				float_t alpha_poly = a + d;
+				float_t beta_poly = a * d - b * c;
+
+				//Log::force("calculated alpha polynomial: ", alpha_poly);
+				//Log::force("calculated beta polynomial: ", beta_poly);
+
+				// Perform bulge chase on the specific subproblem H(k:n-1, k:n-1)
+				// This requires modifying the function and shaders
+				H.doubleshift_bulge_chase(alpha_poly, beta_poly, k, n);
+				//H.print("\nH after double_shift_bulge_chase in iteration :" + std::to_string(iteration), -1);
+				iteration++;
+			}
+		} // end of inner 'converged' loop
+	} // end of outer 'n' loop
+	Log::debug("\neigen() function finished after ", iteration, " iterations; found values: ", num_found_values);
+	return result;
+}
+
+// protected helper method for eigen values
+void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta_poly, uint32_t start_row, uint32_t end_row) {
+
+	// Create resources
+	uint32_t current_size = end_row - start_row;
+	NGrid v_k(4); // element [3] is reserved to store tau_k
+	NGrid Temp_y(current_size);
+	NGrid Temp_w(current_size);
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*v_k.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*Temp_y.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*Temp_w.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		uint32_t(0),	// for bulge chase iterator 'k' (0, 1, 2...)
+		start_row,		// offset of the start of the current relevant submatrix within H
+		end_row,		// offset of the end of the current relevant submatrix within H
+		this->rows(),	// height, width of the full matrix H (needed for correct indexing)
+		alpha_poly,
+		beta_poly
+	);
+	// define shaders and pipelines
+	static ShaderModule compute_householder_shader(manager->get_device(), DOUBLESHIFT_COMPUTE_HOUSEHOLDER_VECTOR_SPIRV_BIN, DOUBLESHIFT_COMPUTE_HOUSEHOLDER_VECTOR_SPIRV_BYTES);
+	ComputePipeline compute_householder_pipeline(manager->get_device(), compute_householder_shader, constants, set, 1, 1, 1);
+
+	static ShaderModule get_temp_y_shader(manager->get_device(), DOUBLESHIFT_GET_TEMP_Y_SPIRV_BIN, DOUBLESHIFT_GET_TEMP_Y_SPIRV_BYTES);
+	ComputePipeline get_temp_y_pipeline(manager->get_device(), get_temp_y_shader, constants, set, 1, workgroup_size_1d, 1);
+
+	static ShaderModule left_transformation_shader(manager->get_device(), DOUBLESHIFT_LEFT_TRANSFORMATION_SPIRV_BIN, DOUBLESHIFT_LEFT_TRANSFORMATION_SPIRV_BYTES);
+	ComputePipeline left_transformation_pipeline(manager->get_device(), left_transformation_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
+
+	static ShaderModule get_temp_w_shader(manager->get_device(), DOUBLESHIFT_GET_TEMP_W_SPIRV_BIN, DOUBLESHIFT_GET_TEMP_W_SPIRV_BYTES);
+	ComputePipeline get_temp_w_pipeline(manager->get_device(), get_temp_w_shader, constants, set, workgroup_size_1d, 1, 1);
+
+	static ShaderModule right_transformation_shader(manager->get_device(), DOUBLESHIFT_RIGHT_TRANSFORMATION_SPIRV_BIN, DOUBLESHIFT_RIGHT_TRANSFORMATION_SPIRV_BYTES);
+	ComputePipeline right_transformation_pipeline(manager->get_device(), right_transformation_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
+
+	// --- BULGE CHASE LOOP ---
+	for (uint32_t chase_k = 0; chase_k < current_size - 1; chase_k++) {
+		constants.add_values(chase_k, 0); // in-place overwrite at offset 0 in push constant range
+		command_buffer->compute(compute_householder_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);
+		//v_k.print("\nbulge chase loop, result for v_k in iteration " + std::to_string(chase_k) + " (elements [0:2] store the householder vector, element [3] is reserved for tau_k)");
+		command_buffer->compute(get_temp_y_pipeline, 1, current_size, 1, true, fence_timeout_nanosec, true);
+		//Temp_y.print("\nbulge chase loop, result for Temp_y:");
+		command_buffer->compute(left_transformation_pipeline, current_size, current_size, 1, true, fence_timeout_nanosec, true);
+		//this->print("\nbulge chase loop, iteration " + std::to_string(chase_k) + ", after transformation from the left:", -1);
+		command_buffer->compute(get_temp_w_pipeline, current_size, 1, 1, true, fence_timeout_nanosec, true);
+		//Temp_w.print("\nbulge chase loop, result for Temp_w:");
+		command_buffer->compute(right_transformation_pipeline, current_size, current_size, 1, true, fence_timeout_nanosec, true);
+		//this->print("\nbulge chase loop, iteration " + std::to_string(chase_k) + ", after transformation from the right:", -1);
+	}
+	descriptor_pool->release_set(set);
+}
+
 // 2d matrix inversion
 // this algorithm uses LU decomposition and obtains A_inv = L_inv * U_inv * P;
 // in case of a non-square matrix, the Moore-Penrose pseudo-inverse is calculated;
@@ -4481,9 +5184,7 @@ NGrid NGrid::inverse() const {
 
 	// case 1: square matrix
 	if (this->shape[0] == this->shape[1]) {
-		NGrid L, U, P;
-		this->lu_decomp(L, U, P);
-		return inverse(L, U, P);
+		return inverse(this->lu());
 	}
 
 	// case 2: 'tall' matrix (m x n, with m > n)
@@ -4503,15 +5204,15 @@ NGrid NGrid::inverse() const {
 // calculate the inverse of a square matrix based on the provided upper and lower triangular matrix,
 // as well as the permutation matrix;
 // this method has a built-in check if the source matrix's determinant is non-zero to confirm the matrix is invertible
-NGrid NGrid::inverse(const NGrid& L, const NGrid& U, const NGrid& P) {
-	if (!NGrid::is_invertible(U)) {
+NGrid NGrid::inverse(const LUresult& LUP) {
+	if (!NGrid::is_invertible(LUP.U)) {
 		Log::warning("invalid call of NGrid::inverse(L,U,P): the inverse is not defined because U contains zeros in its diagonal, ",
 			"therefore the determinant of U is zero (implying that the determinant of the source matrix is also zero)");
-		NGrid result(U.get_shape());
+		NGrid result(LUP.U.get_shape());
 		result.fill(NAN);
 		return result;
 	}
-	return U.u_inverse() * L.l_inverse() * P;
+	return LUP.U.u_inverse() * LUP.L.l_inverse() * LUP.P;
 }
 
 // checks if the inverse of a square matrix exists;
@@ -4528,12 +5229,8 @@ const bool NGrid::is_invertible() const {
 
 	// for a square matrix to be invertible the determinant of the U matrix must not be zero;
 	// the determinant of a triangular matrix is the product of all diagonal elements;
-	// in case of the upper triangular matrix we can set all non-diagonal elements to 1 and then calculate the total product
-	NGrid L, U, P;
-	this->lu_decomp(L, U, P);
-	NGrid U_identity_mask(U.get_shape());
-	U_identity_mask.fill_identity();
-	float_t det_U = U.replace_if(!U_identity_mask, 1.0f).product(); // using the NOT operator inverts the identity mask to a zero diagonal, with all other elements being ones
+	LUresult LUP = this->lu();
+	float_t det_U = LUP.U.diagonal().product();
 	// return false if det_U is NAN 
 	if (det_U != det_U) {
 		return false;
@@ -4550,10 +5247,7 @@ const bool NGrid::is_invertible(const NGrid& U) {
 
 	// for a square matrix to be invertible the determinant of the U matrix must not be zero;
 	// the determinant of a triangular matrix is the product of all diagonal elements;
-	// in case of the upper triangular matrix we can set all non-diagonal elements to 1 and then calculate the total product
-	NGrid U_identity_mask(U.get_shape());
-	U_identity_mask.fill_identity();
-	float_t det_U = U.replace_if(!U_identity_mask, 1.0f).product(); // using the NOT operator inverts the identity mask to a zero diagonal, with all other elements being ones
+	float_t det_U = U.diagonal().product();
 
 	// return false if det_U is NAN 
 	if (det_U != det_U) {
@@ -4573,7 +5267,7 @@ const bool NGrid::is_invertible(const NGrid& U) {
 // returns as std::pair<NGrid,NGrid> with the first element referring to the left part of the reduced echelon form and the second element being the solution;
 // Either use structured bindings to assign the return values or use method std::get<0>(return_val) and std::get<1>(return_val).
 // The NGrid::concatenate() method can be used to stich the return values together in order to obtain the complete row echelon form, if needed.
-std::pair<NGrid, NGrid> NGrid::rref_split(const NGrid& augment) const {
+RREF NGrid::rref(const NGrid& augment) const {
 	if (this->dimensions != 2) {
 		Log::error("invalid use of method NGrid::rref(). The input matrix must be 2d but has shape ", this->get_shapestring());
 	}
@@ -4588,8 +5282,9 @@ std::pair<NGrid, NGrid> NGrid::rref_split(const NGrid& augment) const {
 	uint32_t aug_cols = augment.get_dimensions() == 1 ? 1 : augment.get_shape()[1];
 
 	// make copies of the augmentation matrix and 'this' to keep the originals unmodified
-	NGrid augment_cpy = augment;
-	NGrid data_cpy = *this;
+	RREF result;
+	result.solution = augment;
+	result.coeffs = *this;
 
 	// add a buffer to store the row to be swapped for current row 'k'
 	Buffer<uint32_t> swap_row(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1);
@@ -4599,8 +5294,8 @@ std::pair<NGrid, NGrid> NGrid::rref_split(const NGrid& augment) const {
 
 	// define descriptor set
 	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_cpy.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*augment_cpy.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.coeffs.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.solution.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(swap_row, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(multipliers, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.finalize_layout();
@@ -4681,18 +5376,10 @@ std::pair<NGrid, NGrid> NGrid::rref_split(const NGrid& augment) const {
 
 	descriptor_pool->release_set(set);
 
-	return std::make_pair(data_cpy, augment_cpy);
-}
+	// get the augmented result (full RREF, with the 'left' coefficient matrix augmented by the solution matrix)
+	result.rref = result.coeffs.concatenate(result.solution, 1);
 
-// perform Gauss-Jordan elimination to obtain the reduced row echelon form,
-// can be used to solve systems of linear equations;
-// if the 'augment' input argument is the identity matrix, the solution will be equal to the inverse of the input matrix;
-// returns the complete "reduced row echelon form (RREF)", with the 'left' part (typically the identity matrix)
-// and the 'right' solution part concatenated together along the column axis
-NGrid NGrid::rref(const NGrid& augment) const {
-	auto [identity_part, solution_part] = rref_split(augment);
-	// stitch left part and solution together along the column axis
-	return identity_part.concatenate(solution_part, 1);
+	return result;
 }
 
 // reverse sorting (=mirror, =flip) of the grid along the specified axes
@@ -5375,11 +6062,11 @@ NGrid NGrid::sort(const bool ascending) const {
 	descriptor_pool->allocate_set(set);
 	uint32_t pass = 0;
 	PushConstants constants(this->elements, pass, static_cast<uint32_t>(ascending));
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d);
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
 
 	for (pass = 0; pass < this->elements; pass++) {
 		constants.add_values(pass, 4); // (over-)write pass (offset 4 bytes)
-		command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec);
+		command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
 	}
 
 	descriptor_pool->release_set(set);
@@ -5409,21 +6096,20 @@ float_t NGrid::determinant() const {
 
 	// larger square matrix
 	else {
-		NGrid L, U, P;
-		uint32_t swap_count = this->lu_decomp(L, U, P);
+		LUresult LUP = this->lu();
 
 		// The determinant of a permutation matrix is either 1 or −1:
 		// It's 1 if the number of row swaps(transpositions) is even, and −1 if the number of row swaps is odd.
-		float_t det_P = swap_count % 2 == 0 ? 1.0f : -1.0f;
+		float_t det_P = LUP.swap_count % 2 == 0 ? 1.0f : -1.0f;
 
 		// For a triangular matrix, the determinant is the product of its diagonal elements,
 		// Therefore in case of the lower triangular (which has all ones for the diagonal):
 		constexpr float_t det_L = 1;
 
 		// In case of the upper triangular, we can set all non-diagonal elements to 1 and then calculate the total product of all elements
-		NGrid U_identity_mask(U.get_shape());
+		NGrid U_identity_mask(LUP.U.get_shape());
 		U_identity_mask.fill_identity();
-		float_t det_U = U.replace_if(!U_identity_mask, 1.0f).product(); // using the NOT operator inverts the identity mask to a zero diagonal, with all other elements being ones
+		float_t det_U = LUP.U.replace_if(!U_identity_mask, 1.0f).product(); // using the NOT operator inverts the identity mask to a zero diagonal, with all other elements being ones
 
 		// return final result
 		return det_P * det_L * det_U;
@@ -5437,11 +6123,10 @@ const uint32_t NGrid::rank() const {
 		Log::warning("invalid use of method NGrid::rank() on a non-2d matrix with shape ", this->get_shapestring());
 		return NAN;
 	}
-	NGrid L, U, P;
-	NGrid U_identity_mask(U.get_shape());
-	this->lu_decomp(L, U, P);
+	LUresult LUP = this->lu();
+	NGrid U_identity_mask(LUP.U.get_shape());
 	U_identity_mask.fill_identity();
-	return uint32_t(std::round((U && U_identity_mask).sum()));
+	return uint32_t(std::round((LUP.U && U_identity_mask).sum()));
 }
 
 // return the rank of a 2d matrix, i.e. the number of linearly independent row vectors;
@@ -5455,13 +6140,65 @@ const uint32_t NGrid::rank(const NGrid& U) {
 	return uint32_t(std::round((U && U_identity_mask).sum()));
 }
 
+// return the rank of a 2d matrix, i.e. the number of linearly independent row vectors;
+// this is achieved by counting the non-zero elements in the diagonal of U;
+// this static version of the method makes use of reusing U in case it's already available
+// when LU decomposition has already been performed
+// (thus reducing additional overhead by repeting this step)
+const uint32_t NGrid::rank(const LUresult LUP) {
+	NGrid U_identity_mask(LUP.U.get_shape());
+	U_identity_mask.fill_identity();
+	return uint32_t(std::round((LUP.U && U_identity_mask).sum()));
+}
+
+// extract a the vector of diagonal elements from a multidimensional NGrid;
+// the size of the result vector corresponds the the size of the smallest dimensions
+NGrid NGrid::diagonal() const {
+	uint32_t size = this->shape[0];
+	for (uint32_t i = 1; i < this->dimensions; i++) {
+		size = std::min(this->shape[i], size);
+	}
+	NGrid result(size);
+
+	// load shader
+	static ShaderModule shader(manager->get_device(), DIAGONAL_SPIRV_BIN, DIAGONAL_SPIRV_BYTES);
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		size,
+		this->dimensions
+	);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, size, 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+
+	return result;
+}
+
 // +=================================+   
 // | Output                          |
 // +=================================+
 
 // print the vector or array to the console
 // use precision argument for decimal places (use negative number for unformatted full available precision)
-void NGrid::print(std::string comment, std::string delimiter, bool with_indices, bool rows_inline, int32_t precision) const {
+void NGrid::print(std::string comment, int32_t precision, bool with_indices, bool rows_inline, std::string delimiter) const {
+
+	if (this->elements == 0) {
+		return; // empty NGrid, nothing to print
+	}
+
+	// read the entire array into a vector
+	std::vector<float_t> flat_data = this->data_buffer->read();
 
 	uint32_t fract_significant_digits = precision < 0 ? std::numeric_limits<float_t>::max_digits10 : precision;
 
@@ -5475,7 +6212,7 @@ void NGrid::print(std::string comment, std::string delimiter, bool with_indices,
 
 	// define descriptor set
 	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*required_digits.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*make_scientific.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 	set.bind_buffer(*has_fractional.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
@@ -5513,24 +6250,21 @@ void NGrid::print(std::string comment, std::string delimiter, bool with_indices,
 				std::cout << "[" << std::setprecision(0) << std::setw(index_digits_x) << x << "]=";
 			}
 
-			// get next value
-			float_t value = this->get(x);
-
 			// output value
 			if (static_cast<bool>(make_scientific.get(x))) {
 				if (static_cast<bool>(has_fractional.get(x))) {
-					std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+					std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[x];
 				}
 				else {
-					std::cout << std::scientific << std::setprecision(0) << std::setw(value_digits) << value;
+					std::cout << std::scientific << std::setprecision(0) << std::setw(value_digits) << flat_data[x];
 				}
 			}
 			else {
 				if (static_cast<bool>(has_fractional.get(x))) {
-					std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+					std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[x];
 				}
 				else {
-					std::cout << std::fixed << std::setprecision(0) << std::setw(value_digits) << value;
+					std::cout << std::fixed << std::setprecision(0) << std::setw(value_digits) << flat_data[x];
 				}
 			}
 
@@ -5560,25 +6294,24 @@ void NGrid::print(std::string comment, std::string delimiter, bool with_indices,
 						std::cout << std::setprecision(0) << std::setw(index_digits_y) << y << "]=";
 					}
 
-					// get next value
+					// get flat index
 					uint32_t index = flat_index({ x, y });
-					float value = this->get(index);
 
 					// output value
 					if (static_cast<bool>(make_scientific.get(index))) {
 						if (static_cast<bool>(has_fractional.get(index))) {
-							std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+							std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[index];
 						}
 						else {
-							std::cout << std::scientific << std::setprecision(0) << std::setw(value_digits) << value;
+							std::cout << std::scientific << std::setprecision(0) << std::setw(value_digits) << flat_data[index];
 						}
 					}
 					else {
 						if (static_cast<bool>(has_fractional.get(index))) {
-							std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+							std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[index];
 						}
 						else {
-							std::cout << std::fixed << std::setprecision(0) << std::setw(value_digits) << value;
+							std::cout << std::fixed << std::setprecision(0) << std::setw(value_digits) << flat_data[index];
 						}
 					}
 
@@ -5605,23 +6338,22 @@ void NGrid::print(std::string comment, std::string delimiter, bool with_indices,
 
 						// get next value
 						uint32_t index = flat_index({ x, y, z });
-						float value = this->get(index);
 
 						// output value
 						if (static_cast<bool>(make_scientific.get(index))) {
 							if (static_cast<bool>(has_fractional.get(index))) {
-								std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+								std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[index];
 							}
 							else {
-								std::cout << std::scientific << std::setprecision(0) << std::setw(value_digits) << value;
+								std::cout << std::scientific << std::setprecision(0) << std::setw(value_digits) << flat_data[index];
 							}
 						}
 						else {
 							if (static_cast<bool>(has_fractional.get(index))) {
-								std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << value;
+								std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[index];
 							}
 							else {
-								std::cout << std::fixed << std::setprecision(0) << std::setw(value_digits) << value;
+								std::cout << std::fixed << std::setprecision(0) << std::setw(value_digits) << flat_data[index];
 							}
 						}
 
@@ -5662,7 +6394,7 @@ void NGrid::set_workgroup_size_1d(uint32_t size) {
 
 	// make sure that the workgroup size is a power of two
 	if ((workgroup_size_1d & (workgroup_size_1d - 1)) != 0) {
-		Log::warning("NGrid::set_workgroup_size_1d() called with a non-power-of-two size ", workgroup_size_1d, ", setting to next lower power of two");
+		Log::warning("NGrid::set_workgroup_size_1d() called with a non-power-of-two size ", size, ", setting to next lower power of two");
 		workgroup_size_1d = std::bit_floor(workgroup_size_1d); // requires C++20
 	}
 
@@ -5672,7 +6404,7 @@ void NGrid::set_workgroup_size_1d(uint32_t size) {
 	}
 	uint32_t max_size = manager->get_device().get_properties().limits.maxComputeWorkGroupSize[0];
 	if (workgroup_size_1d > max_size) {
-		Log::warning("NGrid::set_workgroup_size_1d() called with size ", workgroup_size_1d, ", which is larger than the maximum allowed size of ", max_size, ", setting to maximum size");
+		Log::warning("NGrid::set_workgroup_size_1d() called with size ", size, ", which is larger than the maximum allowed size of ", max_size, ", setting to maximum size");
 		workgroup_size_1d = max_size;
 	}
 }
@@ -5688,7 +6420,7 @@ void NGrid::set_workgroup_size_2d(uint32_t size) {
 
 	// make sure that the workgroup size is a power of two
 	if ((workgroup_size_2d & (workgroup_size_2d - 1)) != 0) {
-		Log::warning("NGrid::set_workgroup_size_2d() called with a non-power-of-two size ", workgroup_size_2d, ", setting to next lower power of two");
+		Log::warning("NGrid::set_workgroup_size_2d() called with a non-power-of-two size ", size, ", setting to next lower power of two");
 		workgroup_size_2d = std::bit_floor(workgroup_size_2d); // requires C++20
 	}
 
@@ -5702,7 +6434,7 @@ void NGrid::set_workgroup_size_2d(uint32_t size) {
 	uint32_t requested_invocations = workgroup_size_2d * workgroup_size_2d;
 
 	if (workgroup_size_2d > max_size_x || workgroup_size_2d > max_size_y) {
-		Log::warning("NGrid::set_workgroup_size_2d() called with size ", workgroup_size_2d, ", which is larger than the maximum allowed size of ", std::min(max_size_x, max_size_y), ", setting to maximum size");
+		Log::warning("NGrid::set_workgroup_size_2d() called with size ", size, ", which is larger than the maximum allowed size of ", std::min(max_size_x, max_size_y), ", setting to maximum size");
 		workgroup_size_2d = std::min(max_size_x, max_size_y);
 	}
 
@@ -5711,15 +6443,30 @@ void NGrid::set_workgroup_size_2d(uint32_t size) {
 	}
 	else {
 		while (workgroup_size_2d * workgroup_size_2d > max_invocations) {
-			Log::warning("NGrid::set_workgroup_size_2d() called with size ", workgroup_size_2d, ", which will result in ", workgroup_size_2d * workgroup_size_2d, " total invocations;\n",
-				"only ", max_invocations, " are allowed -> reducing size by 50% until fit");
 			workgroup_size_2d /= 2;
 		}
+		Log::warning("NGrid::set_workgroup_size_2d() called with size ", size, ", which will result in ", size * size, " total invocations;\n",
+			"only ", max_invocations, " are allowed -> reducing size to ", workgroup_size_2d);
 	}
 }
 
+// set the fence timeout in nanoseconds
+// (default is 1 second = 1e9 nanoseconds)
+void NGrid::set_fence_timeout_nanosec(uint64_t timeout) {
+	fence_timeout_nanosec = timeout;
+}
+
+// type conversion operator from NGrid to CGrid
+// (the imaginary part is initialized with zeros)
+NGrid::operator CGrid() const {
+	CGrid result(this->shape);
+	result.real = *this; // copy the real part
+	result.imag.fill_zero(); // initialize the imaginary part with zeros
+	return result;
+}
+
 // +=================================+   
-// | Protected Class Members         |
+// | Private Class Members           |
 // +=================================+
 
 // release resources from the shared static descriptor pool
@@ -5731,10 +6478,11 @@ void NGrid::release_descriptor_pool() {
 	}
 }
 
-// set the fence timeout in nanoseconds
-// (default is 1 second = 1e9 nanoseconds)
-void NGrid::set_fence_timeout_nanosec(uint64_t timeout) {
-	fence_timeout_nanosec = timeout;
+void NGrid::release_command_buffer() {
+	if (command_buffer != nullptr) {
+		delete command_buffer;
+		command_buffer = nullptr;
+	}
 }
 
 // returns a 'flat' equivalent to a multidimensional index
@@ -5766,4 +6514,2041 @@ uint32_t NGrid::flat_index(const std::vector<uint32_t>& multi_index) const {
 	return static_cast<uint32_t>(flat_index_calc);
 }
 
-#endif
+// ==================================================================================================================================================================================
+// DEFINITIONS (CGRID CLASS)
+
+// +=================================+   
+// | Constructors & Destructors      |
+// +=================================+
+
+// CGrid default constructor (initializes an empty array for complex numbers)
+CGrid::CGrid() {
+	real = NGrid();
+	imag = NGrid();
+	init_static_members();
+}
+
+// CGrid parametric default constructor for multi-dimensional complex-number array, overloaded for variadic template
+template<typename... Args> CGrid::CGrid(Args... args) {
+	std::vector<uint32_t> shape_vec = { static_cast<uint32_t>(args)... };
+	this->real.create(shape_vec);
+	this->imag.create(shape_vec);
+	init_static_members();
+}
+
+// CGrid parametric constructor for multi-dimensional complex-number array, overloaded for std::vector
+CGrid::CGrid(const std::vector<uint32_t>& shape_vec) {
+	this->real.create(shape_vec);
+	this->imag.create(shape_vec);
+	init_static_members();
+}
+
+// CGrid parametric constructor for multi-dimensional complex-number array, overloaded for std::initializer_list
+CGrid::CGrid(std::initializer_list<uint32_t> shape) {
+	std::vector<uint32_t> shape_vec(shape);
+	this->real.create(shape_vec);
+	this->imag.create(shape_vec);
+	init_static_members();
+}
+
+// CGrid parametric constructor for 1d array:
+// construct and directly fill the real part with the contents of a given std::vector<float_t>;
+// the imaginary part is initialized with zeros
+CGrid::CGrid(std::vector<float_t> source_vector) {
+	uint32_t copied_elements = static_cast<uint32_t>(source_vector.size());
+	std::vector<uint32_t> shape_vec = { copied_elements };
+	this->real.create(shape_vec);
+	this->real.set(source_vector, copied_elements, 0, 0);
+	this->imag.create(shape_vec);
+	this->imag.fill_zero();
+	init_static_members();
+}
+
+// CGrid move constructor (NGrid->CGrid)
+CGrid::CGrid(NGrid&& other) noexcept {
+	Log::debug("CGrid move constructor invoked");
+	this->real = std::move(other);
+	this->imag = this->imag.reshape(other.get_shape());
+	this->imag.fill_zero(); // initialize the imaginary part with zeros
+	init_static_members();
+}
+
+// CGrid move constructor (CGrid->CGrid)
+CGrid::CGrid(CGrid&& other) noexcept {
+	Log::debug("CGrid move constructor invoked");
+	this->real = std::move(other.real);
+	this->imag = std::move(other.imag);
+	init_static_members();
+}
+
+// CGrid copy constructor
+CGrid::CGrid(const NGrid& other) {
+	Log::debug("CGrid copy constructor invoked");
+	this->real = other;
+	this->imag = this->imag.reshape(other.get_shape());
+	this->imag.fill_zero(); // initialize the imaginary part with zeros
+	init_static_members();
+}
+
+// CGrid copy constructor
+CGrid::CGrid(const CGrid& other) {
+	Log::debug("CGrid copy constructor invoked");
+	this->real = other.real;
+	this->imag = other.imag;
+	init_static_members();
+}
+
+CGrid::~CGrid() {
+	// nothing to do here, as the NGrid members' lifetime ends automatically
+	// and the NGrid destructor takes care of it's own cleanup
+}
+
+void CGrid::init_static_members() {
+	static bool initialized = false;
+	// copy static members from NGrid
+	if (!initialized) {
+		if (descriptor_pool == nullptr) {
+			descriptor_pool = NGrid::descriptor_pool;
+		}
+		if (command_buffer == nullptr) {
+			command_buffer = NGrid::command_buffer;
+		}
+		if (manager == nullptr) {
+			manager = NGrid::manager;
+		}
+		initialized = true;
+	}
+}
+
+// +=================================+   
+// | Assignment                      |
+// +=================================+
+
+// CGrid copy assignment operator
+CGrid& CGrid::operator=(const NGrid& other) {
+	Log::debug("CGrid copy assignment invoked, copying from other NGrid (handle: ", other.data_buffer, ") to this CGrid (real handle: ", this->real.data_buffer, ", imag handle: ", this->imag.data_buffer);
+	this->real = other; // copy the real part
+	this->imag = this->imag.reshape(other.get_shape()); // reshape the imaginary part to match the shape of the real part
+	this->imag.fill_zero(); // initialize the imaginary part with zeros
+	return *this;
+}
+
+CGrid& CGrid::operator=(const CGrid& other) {
+	Log::debug("CGrid copy assignment invoked, coping from other CGrid (real handle: ", other.real.data_buffer, ", imag handle: ", other.imag.data_buffer, ") to this CGrid (real handle: ", this->real.data_buffer, ", imag handle: ", this->imag.data_buffer, ")");
+	if (this != &other) {
+		this->real = other.real; // copy the real part
+		this->imag = other.imag; // copy the imaginary part
+	}
+	return *this;
+}
+
+// CGrid move assignment operator
+CGrid& CGrid::operator=(NGrid&& other) noexcept {
+	Log::debug("CGrid move assignment invoked, moving from other NGrid (handle: ", other.data_buffer, ") to this CGrid (real handle: ", this->real.data_buffer, ", imag handle: ", this->imag.data_buffer, ")");
+	this->real = std::move(other); // move the real part
+	this->imag = this->imag.reshape(other.get_shape()); // reshape the imaginary part to match the shape of the real part
+	this->imag.fill_zero(); // initialize the imaginary part with zeros
+	return *this;
+}
+
+CGrid& CGrid::operator=(CGrid&& other) noexcept {
+	if (this != &other) {
+		Log::debug("CGrid move assignment invoked, moving from other CGrid (real handle: ", other.real.data_buffer, ", imag handle: ", other.imag.data_buffer, ") to this CGrid (real handle: ", this->real.data_buffer, ", imag handle: ", this->imag.data_buffer, ")");
+		this->real = std::move(other.real); // move the real part
+		this->imag = std::move(other.imag); // move the imaginary part
+	}
+	return *this;
+}
+
+// +=================================+   
+// | getters & setters               |
+// +=================================+
+
+// assigns a value to a CGrid data element via multi-dimensional index;
+// overload with index as std::initializer_list<uint32_t>;
+// note: because no imaginary part is passed, the imaginary part gets initialized with zero
+void CGrid::set(std::initializer_list<uint32_t> index, const float_t value) {
+	uint32_t flat_index = this->real.flat_index(index);
+	this->real.data_buffer->write_element(flat_index, value);
+	this->imag.data_buffer->write_element(flat_index, 0.0f);
+}
+
+// assigns a complex value to a CGrid data element via multi-dimensional index;
+// overload with index as std::initializer_list<uint32_t>;
+void CGrid::set(std::initializer_list<uint32_t> index, const std::complex<float_t> value) {
+	uint32_t flat_index = this->real.flat_index(index);
+	this->real.data_buffer->write_element(flat_index, value.real());
+	this->imag.data_buffer->write_element(flat_index, value.imag());
+}
+
+// assigns a value to a CGrid data element via multi-dimensional index;
+// overload with index as std::vector<uint32_t>;
+// because no imaginary part is passed, the imaginary part gets initialized with zero
+void CGrid::set(const std::vector<uint32_t>& index, const float_t value) {
+	uint32_t flat_index = this->real.flat_index(index);
+	this->real.data_buffer->write_element(flat_index, value);
+	this->imag.data_buffer->write_element(flat_index, 0.0f);
+}
+
+// assigns a complex value to a CGrid data element via multi-dimensional index;
+// overload with index as std::vector<uint32_t>;
+void CGrid::set(const std::vector<uint32_t>& index, const std::complex<float_t> value) {
+	uint32_t flat_index = this->real.flat_index(index);
+	this->real.data_buffer->write_element(flat_index, value.real());
+	this->imag.data_buffer->write_element(flat_index, value.imag());
+}
+
+// alias for CGrid::set(const std::vector<float_t>& data);
+// because no imaginary part is passed, all imaginary components are initialized with zeros
+void CGrid::operator=(const std::vector<float_t>& data) {
+	uint32_t elements = static_cast<uint32_t>(data.size());
+	this->real = this->real.reshape({ elements });
+	this->real.set(data);
+	this->imag = this->imag.reshape({ elements });
+	this->imag.fill_zero();
+}
+
+// alias for CGrid::set(const std::vector<float_t>& data)
+void CGrid::operator=(const std::vector<std::complex<float_t>>& data) {
+
+	// extract real and imaginary parts into separate vectors
+	uint32_t elements = static_cast<uint32_t>(data.size());
+	std::vector<float_t> real_data; real_data.reserve(elements);
+	std::vector<float_t> imag_data; imag_data.reserve(elements);
+
+	for (const auto& value : data) {
+		real_data.push_back(value.real());
+		imag_data.push_back(value.imag());
+	}
+
+	// copy vector data to the real and imaginary buffers of the CGrid
+	this->real.set(real_data);
+	this->imag.set(imag_data);
+}
+
+// copies raw data from a std::vector<float_t> to the data buffer
+// of the real part of the underlying CGrid array;
+// copied_elements=0 means: copy ALL elements from the source buffer;
+// this method will typically not write beyond the boundaries of the CGrid, i.e. not automatic resizing occurs,
+// however, if the size is zero (=uninitialized CGrid), it will automatically be set to the size of the source vector (+target_offset);
+void CGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+	if (data.size() == 0) {
+		return; // nothing to copy
+	}
+	if (this->real.elements == 0) {
+		this->real = this->real.reshape({ target_offset_elements + uint32_t(data.size()) });
+		this->imag = this->imag.reshape({ target_offset_elements + uint32_t(data.size()) });
+	}
+	this->real.data_buffer->write(data, copied_elements, source_offset_elements, target_offset_elements);
+	if (this->imag.elements == copied_elements && target_offset_elements == 0) {
+		this->imag.fill_zero(); // initialize the entire imaginary part with zeros if the size matches the range of the copied elements
+	}
+	else {
+		NGrid condition_map(this->imag.elements);
+		condition_map.fill_index();
+		condition_map = (condition_map >= target_offset_elements) && (condition_map < target_offset_elements + copied_elements);
+		this->imag.replace_if(condition_map, 0.0f); // initialize the imaginary part for the copied elements with zeros
+	}
+}
+
+// copies raw data from a std::vector<complex<float_t>> to the data buffers
+// of the real and imaginary parts of the underlying CGrid array;
+// copied_elements=0 means: copy ALL elements from the source buffer;
+// this method will typically not write beyond the boundaries of the CGrid, i.e. not automatic resizing occurs,
+// however, if the size is zero (=uninitialized CGrid), it will automatically be set to the size of the source vector (+target_offset);
+void CGrid::set(const std::vector<std::complex<float_t>>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+	if (data.size() == 0) {
+		return; // nothing to copy
+	}
+	if (this->real.elements == 0) {
+		this->real = this->real.reshape({ target_offset_elements + uint32_t(data.size()) });
+		this->imag = this->imag.reshape({ target_offset_elements + uint32_t(data.size()) });
+	}
+
+	// extract real and imaginary parts into separate vectors
+	uint32_t elements = static_cast<uint32_t>(data.size());
+	std::vector<float_t> real_data; real_data.reserve(elements);
+	std::vector<float_t> imag_data; imag_data.reserve(elements);
+
+	for (const auto& value : data) {
+		real_data.push_back(value.real());
+		imag_data.push_back(value.imag());
+	}
+
+	// write vector data to the real and imaginary buffers of the CGrid
+	this->real.data_buffer->write(real_data, copied_elements, source_offset_elements, target_offset_elements);
+	this->imag.data_buffer->write(imag_data, copied_elements, source_offset_elements, target_offset_elements);
+}
+
+// copies raw data from an NGrid array to the data buffer
+// of the real components of the underlying CGrid array;
+// flat indexing is used for the offset, i.e. making use of
+// offset parameters mostly makes sense for 1d arrays;
+// if arguments for copied_elements and offsets aren't used this method will also
+// work to copy multi-dimensional arrays (copy assignment may be used alternatively)
+void CGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+	// make sure 'other' is not empty
+	if (other.get_elements() == 0) {
+		Log::warning("attempt to use method NGrid::set(const NGrid& other, ...) with empty 'other' array");
+		return;
+	}
+	// make sure 'this' has a buffer with size >0
+	if (this->real.elements == 0) {
+		if (copied_elements == 0) {
+			if (other.get_dimensions() == 1) {
+				std::vector<uint32_t> new_shape = { target_offset_elements + other.get_elements() - source_offset_elements };
+				this->real.create(new_shape);
+				this->imag.create(new_shape);
+			}
+			else {
+				this->real.create(other.get_shape());
+				this->imag.create(other.get_shape());
+			}
+		}
+		else {
+			if (other.get_dimensions() == 1) {
+				std::vector<uint32_t> new_shape = { target_offset_elements + copied_elements };
+				this->real.create(new_shape);
+				this->imag.create(new_shape);
+			}
+			else {
+				this->real.create(other.get_shape());
+				this->imag.create(other.get_shape());
+			}
+		}
+	}
+	this->real.data_buffer->write(*other.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
+
+	NGrid condition_map(this->imag.elements);
+	condition_map.fill_index();
+	condition_map = (condition_map >= target_offset_elements) && (condition_map < target_offset_elements + (copied_elements == 0 ? other.get_elements() - source_offset_elements : copied_elements));
+	this->imag.replace_if(condition_map, 0.0f); // initialize the imaginary part for the copied elements with zeros
+}
+
+// copies raw data from a second CGrid array to the data buffers
+// of the real and imaginary components of the underlying CGrid array;
+// flat indexing is used for the offset, i.e. making use of
+// offset parameters mostly makes sense for 1d arrays;
+// if arguments for copied_elements and offsets aren't used this method will also
+// work to copy multi-dimensional arrays (copy assignment may be used alternatively)
+void CGrid::set(const CGrid& other, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+	// make sure 'other' is not empty
+	if (other.get_elements() == 0) {
+		Log::warning("attempt to use method NGrid::set(const NGrid& other, ...) with empty 'other' array");
+		return;
+	}
+	// make sure 'this' has a buffer with size >0
+	if (this->real.elements == 0) {
+		if (copied_elements == 0) {
+			if (other.get_dimensions() == 1) {
+				std::vector<uint32_t> new_shape = { target_offset_elements + other.get_elements() - source_offset_elements };
+				this->real.create(new_shape);
+				this->imag.create(new_shape);
+			}
+			else {
+				this->real.create(other.get_shape());
+				this->imag.create(other.get_shape());
+			}
+		}
+		else {
+			if (other.get_dimensions() == 1) {
+				std::vector<uint32_t> new_shape = { target_offset_elements + copied_elements };
+				this->real.create(new_shape);
+				this->imag.create(new_shape);
+			}
+			else {
+				this->real.create(other.get_shape());
+				this->imag.create(other.get_shape());
+			}
+		}
+	}
+	this->real.data_buffer->write(*other.real.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
+	this->imag.data_buffer->write(*other.imag.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
+}
+
+// copies elements from 'other' n-dimensional NGrid to the real components of 'this' CGrid;
+// because no imaginary part is passed, the corresponding imaginary components are initialized with zeros;
+// the target_origin_offset argument is used to shift the copy region relative
+// to the origin of 'this'
+// (overload with offset argument as std::vector)
+void CGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset) {
+	this->real.set(other, target_origin_offset);
+	NGrid zeros(other.get_shape());
+	zeros.fill_zero();
+	this->imag.set(zeros, target_origin_offset);
+}
+
+// copies complex elements from 'other' n-dimensional CGrid to the real and imaginary buffers of 'this' CGrid;
+// the target_origin_offset argument is used to shift the copy region relative
+// to the origin of 'this'
+// (overload with offset argument as std::vector)
+void CGrid::set(const CGrid& other, const std::vector<uint32_t>& target_origin_offset) {
+	this->real.set(other.real, target_origin_offset);
+	this->imag.set(other.imag, target_origin_offset);
+}
+
+// copies from 'other' n-dimensional NGrid to the real components of 'this';
+// because no imaginary part is passed, the corresponding imaginary components are initialized with zeros;
+// the target_origin_offset argument is used to shift the copy region relative
+// to the origin of 'this'
+// (overload with offset argument as std::initializer_list)
+void CGrid::set(const NGrid& other, const std::initializer_list<uint32_t>& target_offset_index) {
+	std::vector<uint32_t> offset(target_offset_index);
+	this->real.set(other, offset);
+	NGrid zeros(other.get_shape());
+	zeros.fill_zero();
+	this->imag.set(zeros, offset);
+}
+
+// copies from 'other' complex n-dimensional CGrid to the real and imaginary buffers of 'this';
+// the target_origin_offset argument is used to shift the copy region relative
+// to the origin of 'this'
+// (overload with offset argument as std::initializer_list)
+void CGrid::set(const CGrid& other, const std::initializer_list<uint32_t>& target_offset_index) {
+	std::vector<uint32_t> offset(target_offset_index);
+	this->real.set(other.real, offset);
+	this->imag.set(other.imag, offset);
+}
+
+// return the complex value of an array element via its flattend index
+std::complex<float_t> CGrid::get(const uint32_t flat_index) const {
+	std::complex<float_t> value;
+	value.real(this->real.data_buffer->read_element(flat_index));
+	value.imag(this->imag.data_buffer->read_element(flat_index));
+	return value;
+}
+
+// returns a flat (= 1-dimensional) copy of ALL raw data of the underlying buffer as type std::vector<std::complex<float_t>>
+std::vector<std::complex<float_t>> CGrid::get() const {
+	std::vector<float_t> real_data = this->real.data_buffer->read();
+	std::vector<float_t> imag_data = this->imag.data_buffer->read();
+	std::vector<std::complex<float_t>> result;
+	uint32_t elements = static_cast<uint32_t>(this->real.elements);
+	result.reserve(elements);
+	for (uint32_t i = 0; i < elements; i++) {
+		result.push_back(std::complex<float_t>(real_data[i], imag_data[i]));
+	}
+	return result;
+}
+
+// returns the number of dimensions of the underlying array
+uint32_t CGrid::get_dimensions() const {
+	return this->real.dimensions;
+}
+
+// returns the size in the specified dimension
+uint32_t CGrid::get_size(uint32_t dimension) const {
+	return this->real.get_size(dimension);
+}
+
+// returns the total number of elements of the underlying array, i.e. across all dimensions
+uint32_t CGrid::get_elements() const {
+	return this->real.elements;
+}
+
+// returns the shape of the array as std::vector<uint32_t>
+std::vector<uint32_t> CGrid::get_shape() const {
+	return this->real.shape;
+}
+
+// return the number of rows
+uint32_t CGrid::rows() const {
+	return this->real.rows();
+}
+
+// return the number of columns
+uint32_t CGrid::cols() const {
+	return this->real.cols();
+}
+
+// returns the shape of the array as std::string
+std::string CGrid::get_shapestring() const {
+	return this->real.get_shapestring();
+}
+
+CGrid CGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> subgrid_shape) const {
+	CGrid result(subgrid_shape);
+	result.real = this->real.subgrid(source_offset, subgrid_shape);
+	result.imag = this->imag.subgrid(source_offset, subgrid_shape);
+	return result;
+}
+
+CGrid CGrid::subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape) const {
+	CGrid result(subgrid_shape);
+	result.real = this->real.subgrid(source_offset, subgrid_shape);
+	result.imag = this->imag.subgrid(source_offset, subgrid_shape);
+	return result;
+}
+
+// +=================================+   
+// | Fill, Initialize                |
+// +=================================+
+
+void CGrid::fill(const float_t value) {
+	this->real.fill(value);
+	this->imag.fill_zero(); // initialize the imaginary part with zeros
+}
+
+void CGrid::fill(const std::complex<float_t> value) {
+	this->real.fill(value.real());
+	this->imag.fill(value.imag());
+}
+
+// +=================================+   
+// | Addition                        |
+// +=================================+
+
+// returns the total sum of all elements of the CGrid as a single complex number
+std::complex<float_t> CGrid::sum() const {
+	// sum up the real and imaginary parts separately
+	return std::complex<float_t>(this->real.sum(), this->imag.sum());
+}
+
+// returns the result of elementwise addition of the specified value
+// to the real parts of the CGrid
+CGrid CGrid::operator+(const float_t value) const {
+	CGrid result(this->get_shape());
+	result.real = this->real + value;
+	result.imag = this->imag;
+	return result;
+}
+
+// returns the result of elementwise addition of the specified complex value
+CGrid CGrid::operator+(const std::complex<float_t> complex_value) const {
+	CGrid result(this->get_shape());
+	result.real = this->real + complex_value.real();
+
+	// avoid unnecessary computation if the imaginary part is zero
+	if (complex_value.imag() != 0.0f) {
+		result.imag = this->imag + complex_value.imag();
+	}
+	else {
+		result.imag = this->imag; // no change to imaginary part
+	}
+	return result;
+}
+
+// elementwise addition of the values of the 'other' NGrid to the real parts of the CGrid
+CGrid CGrid::operator+(const NGrid& other) const {
+	CGrid result(this->get_shape());
+	result.real = this->real + other;
+	result.imag = this->imag;
+	return result;
+}
+
+// returns the result of elementwise addition of the complex values
+// (real and imaginary parts) of the 'other' CGrid to 'this'
+CGrid CGrid::operator+(const CGrid& other) const {
+	CGrid result(this->get_shape());
+	result.real = this->real + other.real;
+	result.imag = this->imag + other.imag;
+	return result;
+}
+
+// prefix increment operator
+CGrid& CGrid::operator++() {
+	this->real += 1.0f;
+	return *this;
+}
+
+// postfix increment operator
+CGrid CGrid::operator++(int) {
+	CGrid result = *this;
+	this->real += 1.0f;
+	return result;
+}
+
+// elementwise addition of the specified value
+// to the real parts of the CGrid
+void CGrid::operator+=(const float_t value) {
+	this->real = this->real + value;
+}
+
+// elementwise addition of the specified complex value
+// to the complex elements (real and imaginary parts) of the CGrid
+void CGrid::operator+=(const std::complex<float_t> complex_value) {
+	this->real = this->real + complex_value.real();
+	if (complex_value.imag() != 0.0f) {
+		this->imag = this->imag + complex_value.imag();
+	}
+}
+
+// elementwise addition of the values of the 'other' NGrid to the real parts of the CGrid
+void CGrid::operator+=(const NGrid& other) {
+	this->real = this->real + other;
+}
+
+// elementwise addition of the complex values of the 'other' CGrid
+// (real and imaginary parts) to 'this'
+void CGrid::operator+=(const CGrid& other) {
+	this->real = this->real + other.real;
+	this->imag = this->imag + other.imag;
+}
+
+// +=================================+   
+// | Substraction                    |
+// +=================================+
+
+// elementwise substraction of the specified value from the real parts of the CGrid
+CGrid CGrid::operator-(const float_t value) const {
+	return *this + (value * -1.0f);
+}
+
+// elementwise substaction of the specified complex value from all elements of the CGrid
+CGrid CGrid::operator-(const std::complex<float_t> complex_value) const {
+	return *this + (complex_value * -1.0f);
+}
+
+// elementwise substraction of the values of the 'other' NGrid from the real parts of the CGrid
+CGrid CGrid::operator-(const NGrid& other) const {
+	CGrid result(this->get_shape());
+	result.real = this->real - other;
+	result.imag = this->imag;
+	return result;
+}
+
+// returns the result of elementwise substraction of the complex values of the 'other' CGrid from 'this'
+CGrid CGrid::operator-(const CGrid& other) const {
+	CGrid result(this->get_shape());
+	result.real = this->real - other.real;
+	result.imag = this->imag - other.imag;
+	return result;
+}
+
+// prefix decrement operator
+CGrid& CGrid::operator--() {
+	this->real = this->real - 1.0f;
+	return *this;
+}
+
+// postfix decrement operator
+CGrid CGrid::operator--(int) {
+	CGrid result = *this;
+	result.real--;
+	return result;
+}
+
+// elementwise substraction of the specified value
+// form the real parts of the CGrid
+void CGrid::operator-=(const float_t value) {
+	this->real -= value;
+}
+
+// elementwise substraction of the specified complex value from 'this'
+void CGrid::operator-=(const std::complex<float_t> complex_value) {
+	this->real -= complex_value.real();
+	if (complex_value.imag() != 0.0f) {
+		this->imag -= complex_value.imag();
+	}
+}
+
+// elementwise substraction of the values of the 'other' NGrid from the real parts of 'this' CGrid
+void CGrid::operator-=(const NGrid& other) {
+	this->real -= other;
+}
+
+// elementwise substraction of the complex values of the 'other' CGrid from 'this'
+void CGrid::operator-=(const CGrid& other) {
+	this->real -= other.real;
+	this->imag -= other.imag;
+}
+
+// +=================================+   
+// | Multiplication                  |
+// +=================================+
+
+// returns the product reduction of all complex elements of the CGrid as a single complex number
+std::complex<float_t> CGrid::product() const {
+	// the polar form is r(cosθ + i*sinθ)
+
+	// 1. cacluate the magnitudes
+	NGrid R = this->magnitude();
+	float_t r = R.product();
+
+	// 2. calculate the angles
+	NGrid theta = this->imag.Hadamard_division(this->real).atan();
+
+	// 3. get the sum of the angles
+	float_t theta_sum = theta.sum();
+
+	// return result as complex number
+	return std::complex<float_t>(
+		r * std::cos(theta_sum),
+		r * std::sin(theta_sum)
+	);
+}
+
+// returns the result of elementwise multiplication with the specified scalar;
+// note: both real and imaginary parts of the CGrid get scaled by the factor
+CGrid CGrid::operator*(const float_t factor) const {
+	CGrid result(this->get_shape());
+	result.real = this->real * factor;
+	result.imag = this->imag * factor;
+	return result;
+}
+
+// returns the result of elementwise multiplication with the specified complex factor;
+// rule: for z1​=a+bi, z2​=c+di: z1​*z2​=(ac−bd)+(ad+bc)i
+CGrid CGrid::operator*(const std::complex<float_t> complex_factor) const {
+	if (complex_factor.imag() == 0.0f) {
+		return *this * complex_factor.real();
+	}
+	else {
+		CGrid result(this->get_shape());
+
+		static ShaderModule shader(manager->get_device(), OPERATOR_MULTIPLY_COMPLEX_SPIRV_BIN, OPERATOR_MULTIPLY_COMPLEX_SPIRV_BYTES);
+
+		DescriptorSet set(manager->get_device());
+		set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.finalize_layout();
+		descriptor_pool->allocate_set(set);
+
+		PushConstants constants(
+			this->get_elements(),
+			complex_factor.real(),
+			complex_factor.imag()
+		);
+
+		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+		command_buffer->compute(pipeline, this->get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+		descriptor_pool->release_set(set);
+
+		return result;
+	}
+}
+
+void CGrid::operator*=(const float_t factor) {
+	*this = *this * factor;
+}
+
+void CGrid::operator*=(const std::complex<float_t> complex_factor) {
+	*this = *this * complex_factor;
+}
+
+void CGrid::operator*=(const NGrid& other) {
+	*this = this->matrix_product(other);
+}
+
+void CGrid::operator*=(const CGrid& other) {
+	*this = this->matrix_product(other);
+}
+
+std::complex<float_t> CGrid::scalar_product(const NGrid& other) const {
+	return this->Hadamard_product(other).sum();
+}
+
+std::complex<float_t> CGrid::scalar_product(const CGrid& other) const {
+	return this->Hadamard_product(other).sum();
+}
+
+CGrid CGrid::matrix_product(const NGrid& other) const {
+	CGrid result(this->get_shape());
+	result.real = this->real.matrix_product(other);
+	result.imag = this->real.matrix_product(other);
+	return result;
+}
+
+// calclulate the matrix product of two complex matrices
+CGrid CGrid::matrix_product(const CGrid& other) const {
+	if (this->get_dimensions() > 2 || this->get_dimensions() == 0 || other.get_dimensions() > 2 || other.get_dimensions() == 0) {
+		Log::error("invalid call of CGrid::matrix_product; first array has shape ", this->get_shapestring(), ", second array has shape ",
+			other.get_shapestring(), "; both arrays must be 1d or 2d");
+	}
+
+	static ShaderModule shader(manager->get_device(), MATRIX_PRODUCT_OTHER_COMPLEX_SPIRV_BIN, MATRIX_PRODUCT_OTHER_COMPLEX_SPIRV_BYTES);
+
+	uint32_t first_rows = this->rows();
+	uint32_t first_cols = this->get_dimensions() == 1 ? 1 : this->cols();
+	uint32_t second_rows = other.get_dimensions() == 1 ? 1 : other.rows();
+	uint32_t second_cols = other.get_dimensions() == 1 ? other.rows() : other.cols();
+	uint32_t result_rows = first_rows;
+	uint32_t result_cols = second_cols;
+
+	if (first_cols != second_rows) {
+		Log::error("invalid call of CGrid::matrix_product; the 'inner' dimensions must match! First array A{m,n} has shape ",
+			this->get_shapestring(), ", second array B{o,p} has shape ", other.get_shapestring(), ", i.e. n!=p, result is undefined");
+	}
+
+	// set result array with correct dimensions
+	// the matrix product of A{m,n} and B{n,p} has shape AxB=C{m,p}
+	CGrid result({ result_rows, result_cols });
+
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	NGrid::descriptor_pool->allocate_set(set);
+
+	PushConstants constants(
+		this->get_elements(),
+		first_rows,
+		first_cols,
+		other.get_elements(),
+		second_rows,
+		second_cols,
+		result.get_elements(),
+		result_rows,
+		result_cols
+	);
+
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+
+	return result;
+}
+
+
+CGrid CGrid::Hadamard_product(const NGrid& other) const {
+	if (this->get_dimensions() != other.get_dimensions()) {
+		// dimensions do not match, return 'this' unmodified
+		Log::warning("invalid call of CGrid::Hadamard_product: the dimensions of the two arrays do not match! ",
+			"this array has shape ", this->get_shapestring(), ", other array has shape ", other.get_shapestring(),
+			"; returning 'this' unmodified");
+		return *this;
+	}
+	CGrid result(this->get_shape());
+	result.real = this->real.Hadamard_product(other);
+	result.imag = this->imag.Hadamard_product(other);
+	return result;
+}
+
+CGrid CGrid::Hadamard_product(const CGrid& other) const {
+	if (this->get_dimensions() != other.get_dimensions()) {
+		// dimensions do not match, return 'this' unmodified
+		Log::warning("invalid call of CGrid::Hadamard_product: the dimensions of the two arrays do not match! ",
+			"this array has shape ", this->get_shapestring(), ", other array has shape ", other.get_shapestring(),
+			"; returning 'this' unmodified");
+		return *this;
+	}
+
+	Device* device = &NGrid::manager->get_device();
+	static ShaderModule shader(*device, HADAMARD_PRODUCT_OTHER_COMPLEX_SPIRV_BIN, HADAMARD_PRODUCT_OTHER_COMPLEX_SPIRV_BYTES);
+
+	CGrid result(this->get_shape());
+
+	DescriptorSet set(*device);
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	NGrid::descriptor_pool->allocate_set(set);
+
+	PushConstants constants(
+		this->get_elements(),
+		result.get_dimensions()
+	);
+
+	ComputePipeline pipeline(*device, shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+}
+
+// +=================================+   
+// | Division                        |
+// +=================================+
+
+// returns the result of elementwise division of the CGrid by a scalar
+CGrid CGrid::operator/(const float_t divisor) const {
+	if (divisor == 0) {
+		Log::error("invalid call of method 'CGrid CGrid::operator/(const T divisor)' with divisor=0 (zero division is undefined)");
+	}
+	float_t factor = 1.0f / divisor;
+	CGrid result(this->get_shape());
+	result.real = this->real * factor;
+	result.imag = this->imag * factor;
+	return result;
+}
+
+// returns the result of elementwise division by the specified complex divisor;
+// rule: for z1​=a+bi, z2​=c+di: z1​*z2​=(ac−bd)+(ad+bc)i
+CGrid CGrid::operator/(const std::complex<float_t> complex_divisor) const {
+
+	CGrid result(this->get_shape());
+
+	static ShaderModule shader(manager->get_device(), OPERATOR_DIVIDE_COMPLEX_SPIRV_BIN, OPERATOR_DIVIDE_COMPLEX_SPIRV_BYTES);
+
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	NGrid::descriptor_pool->allocate_set(set);
+
+	PushConstants constants(
+		this->get_elements(),
+		complex_divisor.real(),
+		complex_divisor.imag()
+	);
+
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+
+	return result;
+}
+
+// elementwise division (/=) by a scalar
+void CGrid::operator/=(const float_t divisor) {
+	if (divisor == 0) {
+		Log::error("invalid call of method 'void CGrid::operator/=(const T divisor)' with divisor=0 (zero division is undefined)");
+	}
+	float_t factor = 1.0f / divisor;
+	this->real = this->real * factor;
+	this->imag = this->imag * factor;
+}
+
+// elementwise division (/=) by the specified complex divisor
+void CGrid::operator/=(const std::complex<float_t> complex_divisor) {
+	*this = *this / complex_divisor;
+}
+
+CGrid CGrid::Hadamard_division(const NGrid& other) const {
+	CGrid result(this->get_shape());
+	NGrid factors(this->get_shape()); factors.fill(1.0f);
+	factors = factors.Hadamard_division(other); // elementwise 1/x
+	result.real = this->real * factors;
+	result.imag = this->imag * factors;
+	return result;
+}
+
+CGrid CGrid::Hadamard_division(const CGrid& other) const {
+	if (this->get_dimensions() != other.get_dimensions()) {
+		// dimensions do not match, return 'this' unmodified
+		Log::warning("invalid call of CGrid::Hadamard_division: the dimensions of the two arrays do not match! ",
+			"this array has shape ", this->get_shapestring(), ", other array has shape ", other.get_shapestring(),
+			"; returning 'this' unmodified");
+		return *this;
+	}
+
+	static ShaderModule shader(manager->get_device(), HADAMARD_DIVISION_OTHER_COMPLEX_SPIRV_BIN, HADAMARD_DIVISION_OTHER_COMPLEX_SPIRV_BYTES);
+
+	CGrid result(this->get_shape());
+
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other.real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	PushConstants constants(
+		this->get_elements(),
+		result.get_dimensions()
+	);
+
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+
+	return result;
+}
+
+// returns the result of matrix division of a complex matrix by a real matrix
+CGrid CGrid::operator/(const NGrid& other) const {
+	return *this * other.inverse();
+}
+
+// returns the result of matrix division of a complex matrix by another complex matrix
+CGrid CGrid::operator/(const CGrid& other) const {
+	return *this * other.inverse();
+}
+
+// +=================================+   
+// | Exponentiation & Logarithm      |
+// +=================================+
+
+// helper function for elementwise exponentiation of a complex matrix to a real or complex power
+CGrid CGrid::pow(const float_t exponent_real, const float_t exponent_imag) const {
+	CGrid result(this->get_shape());
+
+	static ShaderModule shader(manager->get_device(), POW_COMPLEX_SPIRV_BIN, POW_COMPLEX_SPIRV_BYTES);
+
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	NGrid::descriptor_pool->allocate_set(set);
+
+	PushConstants constants(
+		result.get_elements(),
+		exponent_real,
+		exponent_imag
+	);
+
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	NGrid::command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	NGrid::descriptor_pool->release_set(set);
+
+	return result;
+}
+
+// returns the result of elementwise exponentiation to a real power
+CGrid CGrid::pow(const float_t exponent) const {
+	return this->pow(exponent, 0.0f);
+}
+
+// returns the result of elementwise exponentiation to a complex power
+CGrid CGrid::pow(const std::complex<float_t> complex_exponent) const {
+	return this->pow(complex_exponent.real(), complex_exponent.imag());
+}
+
+CGrid CGrid::operator^(const float_t exponent) const {
+	return this->pow(exponent);
+}
+
+CGrid CGrid::operator^(const std::complex<float_t> complex_exponent) const {
+	return this->pow(complex_exponent);
+}
+
+void CGrid::operator^=(const float_t exponent) {
+	*this = this->pow(exponent);
+}
+
+void CGrid::operator^=(const std::complex<float_t> complex_exponent) {
+	*this = this->pow(complex_exponent);
+}
+
+// helper function for elementwise exponentiation of a complex matrix to the corresponding powers of a second (real or complex) matrix
+CGrid CGrid::pow(const NGrid& other_real, const NGrid& other_imag, bool other_is_complex) const {
+
+	// check for equal dimensions
+	if (this->get_dimensions() != other_real.get_dimensions()) {
+		// dimensions do not match, return 'this' unmodified
+		Log::warning("invalid call of CGrid::pow: the dimensions of the two arrays do not match! ",
+			"this array has shape ", this->get_shapestring(), ", other array has shape ", other_real.get_shapestring(),
+			"; returning 'this' unmodified");
+		return *this;
+	}
+
+	// load shader
+	static ShaderModule shader(manager->get_device(), POW_OTHER_COMPLEX_SPIRV_BIN, POW_OTHER_COMPLEX_SPIRV_BYTES);
+
+	// define result CGrid
+	CGrid result(this->get_shape());
+
+	// setup descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->real.shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other_real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(other_is_complex ? *other_imag.get_buffer() : *other_real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*other_real.shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		result.get_elements(),
+		result.get_dimensions(),
+		other_real.get_elements(),
+		uint32_t(other_is_complex)
+	);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+	return result;
+}
+
+// elementwise exponentiation to the power of the corresponding elements of the 'other' NGrid
+CGrid CGrid::pow(const NGrid& other) const {
+	return this->pow(other, other, false);
+}
+
+// elementwise exponentiation to the power of the corresponding elements of the 'other' CGrid
+CGrid CGrid::pow(const CGrid& other) const {
+	return this->pow(other.real, other.imag, true);
+}
+
+// elementwise square root
+CGrid CGrid::sqrt() const {
+	return this->pow(0.5f, 0.0f);
+}
+
+// helper method for elementwise logarithm with the specified base (real or complex)
+CGrid CGrid::log(const float_t base_real, const float_t base_imag) const {
+	CGrid result(this->get_shape());
+
+	static ShaderModule shader(manager->get_device(), LOG_COMPLEX_SPIRV_BIN, LOG_COMPLEX_SPIRV_BYTES);
+
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	PushConstants constants(
+		result.get_elements(),
+		base_real,
+		base_imag
+	);
+
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	descriptor_pool->release_set(set);
+
+	return result;
+}
+
+// returns the result of elementwise logarithm with the specified base
+CGrid CGrid::log(const float_t base) const {
+	return this->log(base, 0.0f);
+}
+
+// returns the result of elementwise logarithm with the specified complex base
+CGrid CGrid::log(const std::complex<float_t> base) const {
+	return this->log(base.real(), base.imag());
+}
+
+// returns the result of the elementwise complex exponential function (exp(z) = e^(z))
+CGrid CGrid::exp() const {
+	CGrid result(this->get_shape());
+
+	static ShaderModule shader(manager->get_device(), EXP_COMPLEX_SPIRV_BIN, EXP_COMPLEX_SPIRV_BYTES);
+
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	PushConstants constants(
+		result.get_elements()
+	);
+
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
+	NGrid::command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, NGrid::fence_timeout_nanosec, true);
+	NGrid::descriptor_pool->release_set(set);
+
+	return result;
+}
+
+// +=================================+   
+// | Advanced Matrix Operations      |
+// +=================================+
+CGrid CGrid::flatten() const {
+	CGrid result(this->get_elements());
+	result.real = this->real.flatten();
+	result.imag = this->imag.flatten();
+	return result;
+}
+
+CGrid CGrid::reshape(const std::vector<uint32_t>& new_shape, float_t default_init_value) const {
+	CGrid result(new_shape);
+	result.real = this->real.reshape(new_shape, default_init_value);
+	result.imag = this->imag.reshape(new_shape, 0.0f);
+	return result;
+}
+
+CGrid CGrid::reshape(const std::vector<uint32_t>& new_shape, std::complex<float_t> default_complex_init_value) const {
+	CGrid result(new_shape);
+	result.real = this->real.reshape(new_shape, default_complex_init_value.real());
+	result.imag = this->imag.reshape(new_shape, default_complex_init_value.imag());
+	return result;
+}
+
+CGrid CGrid::reshape(std::initializer_list<uint32_t> new_shape, float_t default_init_value) const {
+	CGrid result(new_shape);
+	result.real = this->real.reshape(new_shape, default_init_value);
+	result.imag = this->imag.reshape(new_shape, 0.0f);
+	return result;
+}
+
+CGrid CGrid::reshape(std::initializer_list<uint32_t> new_shape, std::complex<float_t> default_complex_init_value) const {
+	CGrid result(new_shape);
+	result.real = this->real.reshape(new_shape, default_complex_init_value.real());
+	result.imag = this->imag.reshape(new_shape, default_complex_init_value.imag());
+	return result;
+}
+
+template<typename... Args> CGrid CGrid::reshape(Args... args) const {
+	std::vector<uint32_t> new_shape_vec = { static_cast<uint32_t>(args)... };
+	CGrid result(new_shape_vec);
+	result.real = this->real.reshape(new_shape_vec);
+	result.imag = this->imag.reshape(new_shape_vec);
+	return result;
+}
+
+CGrid CGrid::concatenate(const NGrid& other, const uint32_t axis) const {
+	CGrid result;
+	result.real = this->real.concatenate(other, axis);
+	result.imag = this->imag.reshape(result.real.get_shape(), 0.0f); // initialize imaginary part with zeros
+	return result;
+}
+
+CGrid CGrid::concatenate(const CGrid& other, const uint32_t axis) const {
+	CGrid result;
+	result.real = this->real.concatenate(other.real, axis);
+	result.imag = this->imag.concatenate(other.imag, axis);
+	return result;
+}
+
+CGrid CGrid::padding(const uint32_t amount, const float_t init_value) const {
+	CGrid result;
+	result.real = this->real.padding(amount, init_value);
+	result.imag = this->imag.padding(amount, 0.0f); // set padding for imaginary part to zero
+	return result;
+}
+
+CGrid CGrid::padding(const uint32_t amount, const std::complex<float_t> init_value) const {
+	CGrid result;
+	result.real = this->real.padding(amount, init_value.real());
+	result.imag = this->imag.padding(amount, init_value.imag());
+	return result;
+}
+
+CGrid CGrid::convolution(const NGrid& kernel, uint32_t padding_amount, float_t padding_value) const {
+	return this->convolution(CGrid(kernel), padding_amount, std::complex<float_t>(padding_value, 0.0f));
+}
+
+CGrid CGrid::convolution(const NGrid& kernel, uint32_t padding_amount, std::complex<float_t> padding_value) const {
+	return this->convolution(CGrid(kernel), padding_amount, padding_value);
+}
+
+CGrid CGrid::convolution(const CGrid& kernel, uint32_t padding_amount, float_t padding_value) const {
+	return this->convolution(kernel, padding_amount, std::complex<float_t>(padding_value, 0.0f));
+}
+
+CGrid CGrid::convolution(const CGrid& kernel, uint32_t padding_amount, std::complex<float_t> padding_value) const {
+	// check if kernel has valid dimensions
+	if (kernel.get_dimensions() != this->get_dimensions()) {
+		Log::warning("invalid usage of CGrid::convolution: dimensions of 'kernel' (", kernel.get_dimensions(), " dimensions, shape ", kernel.get_shapestring(),
+			") must match the dimensions of 'this' (", this->get_dimensions(), " dimensions, shape ", this->get_shapestring(), ")");
+		return *this; // return unmodified grid
+	}
+
+	// calculate result shape
+	std::vector<uint32_t> result_shape = this->get_shape();
+	for (uint32_t i = 0; i < this->get_dimensions(); i++) {
+		result_shape[i] = result_shape[i] - kernel.get_shape()[i] + 1 + (2 * padding_amount);
+	}
+	CGrid result(result_shape);
+
+	// load shader
+	static ShaderModule shader(manager->get_device(), CONVOLUTION_COMPLEX_SPIRV_BIN, CONVOLUTION_COMPLEX_SPIRV_BYTES);
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->real.shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+
+	set.bind_buffer(*kernel.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*kernel.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*kernel.real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+
+	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		this->get_dimensions(),
+		this->get_elements(),
+		result.get_elements(),
+		kernel.get_elements(),
+		padding_amount,
+		padding_value.real(),
+		padding_value.imag()
+	);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	NGrid::command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	NGrid::descriptor_pool->release_set(set);
+	return result;
+}
+
+CGrid CGrid::transpose(const std::vector<uint32_t> target_axis_order) const {
+	CGrid result;
+	result.real = this->real.transpose(target_axis_order);
+	result.imag = this->imag.transpose(target_axis_order);
+	return result;
+}
+
+// performs LU decomposition, returns the number of row swaps performed
+LUresultComplex CGrid::lu() const {
+
+	// define result structure
+	LUresultComplex result;
+
+	// check if the grid is a 2d matrix
+	if (this->get_dimensions() != 2) {
+		Log::warning("invalid usage of CGrid::lu(): only 2d matrices can be decomposed as upper and lower triangular, returning empty result.");
+		return result;
+	}
+
+	// initialize matrices
+	// L is a lower triangular matrix, U is an upper triangular matrix, P is a permutation matrix
+	// please note that L and P are square matrices, while U (as a 'row echelon matrix') has the same shape as the source matrix
+	result.L = result.L.reshape({ this->get_shape()[0], this->get_shape()[0] }); result.L.real.fill_identity();
+	result.U = *this; // U is initialized with the source matrix
+	result.P = result.P.reshape({ this->get_shape()[0], this->get_shape()[0] });	result.P.fill_identity();
+
+	// add a buffer to store the row to be swapped for current row 'k'
+	Device* device = &NGrid::manager->get_device();
+	Buffer<uint32_t> swap_row(*device, BufferUsage::STORAGE_BUFFER, 1);
+
+	// add a buffer to count the number of performed row swaps
+	Buffer<uint32_t> swap_count(*device, BufferUsage::STORAGE_BUFFER, 1);
+
+	// define descriptor set
+	DescriptorSet set(*device);
+	set.bind_buffer(*result.L.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.L.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.U.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.U.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.P.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(swap_row, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(swap_count, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	NGrid::descriptor_pool->allocate_set(set);
+
+	// define push constants
+	uint32_t k = 0;
+	PushConstants constants(
+		this->get_shape()[0],	// source matrix rows
+		this->get_shape()[1],	// source matrix columns
+		k						// current row index
+	);
+
+	// main iterative loop for LU decomposition;
+	for (k = 0; k < this->get_shape()[0]; k++) {
+
+		// update k in push constants (at offset 8 bytes)
+		constants.add_values(k, 8);
+
+		// check if row swap is needed
+		// (1d dispatch with one thread for each row)
+		static ShaderModule check_swap_shader(*device, LU_DECOMP_CHECK_ROWSWAP_COMPLEX_SPIRV_BIN, LU_DECOMP_CHECK_ROWSWAP_COMPLEX_SPIRV_BYTES);
+		ComputePipeline check_swap_pipeline(*device, check_swap_shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
+		NGrid::command_buffer->compute(check_swap_pipeline, this->get_shape()[0], 1, 1, false, 0, true);
+
+		// perform row swap (=if needed)
+		// (1d dispatch with one thread for each column)
+		static ShaderModule perform_swap_shader(*device, LU_DECOMP_PERFORM_ROWSWAP_COMPLEX_SPIRV_BIN, LU_DECOMP_PERFORM_ROWSWAP_COMPLEX_SPIRV_BYTES);
+		ComputePipeline perform_swap_pipeline(*device, perform_swap_shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
+		NGrid::command_buffer->compute(perform_swap_pipeline, this->get_shape()[1], 1, 1, false, 0, true);
+
+		// update L matrix in column k
+		// (1d dispatch with one thread for each row)
+		static ShaderModule l_update_shader(*device, LU_DECOMP_L_UPDATE_COMPLEX_SPIRV_BIN, LU_DECOMP_L_UPDATE_COMPLEX_SPIRV_BYTES);
+		ComputePipeline l_update_pipeline(*device, l_update_shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
+		NGrid::command_buffer->compute(l_update_pipeline, this->get_shape()[0], 1, 1, false, 0, true);
+
+		// update U matrix in rows [k+1] to [rows-1]
+		static ShaderModule u_update_shader(*device, LU_DECOMP_U_UPDATE_COMPLEX_SPIRV_BIN, LU_DECOMP_U_UPDATE_COMPLEX_SPIRV_BYTES);
+		ComputePipeline u_update_pipeline(*device, u_update_shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
+		NGrid::command_buffer->compute(u_update_pipeline, result.U.get_elements(), 1, 1, true, NGrid::fence_timeout_nanosec, true);
+	}
+	NGrid::descriptor_pool->release_set(set);
+
+	result.swap_count = swap_count.read_element(0);
+
+	return result;
+}
+
+// get the inverse of a lower triangular matrix L (using forward substitution)
+CGrid CGrid::l_inverse() const {
+	if (this->get_dimensions() != 2 || this->get_shape()[0] != this->get_shape()[1]) {
+		Log::warning("invalid usage of method CGrid::l_inverse(): the underlying CGrid must be a 2d square matrix -> returning 'this' as unmodified");
+		return *this;
+	}
+
+	// load shader module
+	static ShaderModule shader(manager->get_device(), L_INVERSE_COMPLEX_SPIRV_BIN, L_INVERSE_COMPLEX_SPIRV_BYTES);
+
+	// create an identity matrix of this->shape
+	CGrid I(this->get_shape());
+	I.real.fill_identity();
+	I.imag.fill_zero();
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*I.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*I.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		this->get_shape()[0]
+	);
+
+	// execute compute pipeline
+	// (1d dispatch with one thread for each column)
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->get_shape()[1], 1, 1, true, fence_timeout_nanosec, true);
+
+	descriptor_pool->release_set(set);
+	return I;
+}
+
+// get the inverse of an upper triangular matrix U (using backward substitution)
+CGrid CGrid::u_inverse() const {
+
+	if (this->get_dimensions() != 2 || this->get_shape()[0] != this->get_shape()[1]) {
+		Log::warning("invalid usage of method CGrid::u_inverse(): the underlying CGrid must be a 2d square matrix -> returning 'this' as unmodified");
+		return *this;
+	}
+
+	// load shader module
+	static ShaderModule shader(manager->get_device(), U_INVERSE_COMPLEX_SPIRV_BIN, U_INVERSE_COMPLEX_SPIRV_BYTES);
+
+	// create an identity matrix of this->shape
+	CGrid I(this->get_shape());
+	I.real.fill_identity();
+	I.imag.fill_zero();
+
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*I.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*I.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		this->get_shape()[0]
+	);
+
+	// execute compute pipeline
+	// (1d dispatch with one thread for each column)
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	command_buffer->compute(pipeline, this->get_shape()[1], 1, 1, true, fence_timeout_nanosec, true);
+
+	descriptor_pool->release_set(set);
+	return I;
+}
+
+// inversion of a 2d complex matrix;
+// this algorithm uses LU decomposition and obtains A_inv = L_inv * U_inv * P;
+// in case of a non-square matrix, the Moore-Penrose pseudo-inverse is calculated;
+CGrid CGrid::inverse() const {
+
+	// check if the grid is a 2d matrix
+	if (this->get_dimensions() != 2) {
+		Log::warning("invalid usage of CGrid::inverse: only 2d matrices can be inverted, returning unmodified grid");
+		return *this;
+	}
+
+	// case 1: square matrix
+	if (this->get_shape()[0] == this->get_shape()[1]) {
+		return inverse(this->lu());
+	}
+
+	// case 2: 'tall' matrix (m x n, with m > n)
+	// calculate the Moore-Penrose pseudo-inverse
+	else if (this->get_shape()[0] > this->get_shape()[1]) {
+		return (this->transpose() * *this).inverse() * this->transpose(); // A+ = (A^T * A)^-1 * A^T
+	}
+
+	// case 3: 'wide' matrix (m x n, with m < n)
+	// calculate the Moore-Penrose pseudo-inverse
+	else if (this->get_shape()[0] < this->get_shape()[1]) {
+		return this->transpose() * (*this * this->transpose()).inverse(); // A+ = A^T * (A * A^T)^-1
+	}
+	return *this;
+}
+
+// calculate the inverse of a square matrix based on the provided upper and lower triangular matrix,
+// as well as the permutation matrix;
+// this method has a built-in check if the source matrix's determinant is non-zero to confirm the matrix is invertible
+CGrid CGrid::inverse(const LUresultComplex& LUP) {
+	if (!NGrid::is_invertible(LUP.U)) {
+		Log::warning("invalid call of NGrid::inverse(L,U,P): the inverse is not defined because U contains zeros in its diagonal, ",
+			"therefore the determinant of U is zero (implying that the determinant of the source matrix is also zero)");
+		NGrid result(LUP.U.get_shape());
+		result.fill(NAN);
+		return result;
+	}
+	return LUP.U.u_inverse() * LUP.L.l_inverse() * LUP.P;
+}
+
+// checks if the inverse of a square matrix exists;
+// if it doesn't the Moore_Penrose pseudo-inverse (for non-square matrices) may still exist!
+const bool CGrid::is_invertible() const {
+	// check if matrix is 2d
+	if (this->get_dimensions() != 2) {
+		return false;
+	}
+	// check if matrix is square
+	if (this->get_shape()[0] != this->get_shape()[1]) {
+		return false;
+	}
+
+	// for a square matrix to be invertible the determinant of the U matrix must not be zero;
+	// the determinant of a triangular matrix is the product of all diagonal elements;
+	LUresultComplex LUP = this->lu();
+	CGrid diagonal;
+	diagonal.real = LUP.U.real.diagonal();
+	diagonal.imag = LUP.U.imag.diagonal();
+	std::complex<float_t> det_U = diagonal.product();
+	// return false if det_U is NAN 
+	if (std::isnan(det_U.real()) || std::isnan(det_U.imag())) {
+		return false;
+	}
+	else {
+		return det_U.real() != 0.0f && det_U.imag() != 0.0f;
+	}
+
+	return true;
+}
+
+// check if a matrix is invertible based on its corresponding upper triangular matrix
+const bool CGrid::is_invertible(const CGrid& U) {
+
+	// for a square matrix to be invertible the determinant of the U matrix must not be zero;
+	// the determinant of a triangular matrix is the product of all diagonal elements;
+	CGrid diagonal;
+	diagonal.real = U.real.diagonal();
+	diagonal.imag = U.imag.diagonal();
+	std::complex<float_t> det_U = diagonal.product();
+	// return false if det_U is NAN 
+	if (std::isnan(det_U.real()) || std::isnan(det_U.imag())) {
+		return false;
+	}
+	else {
+		return det_U.real() != 0.0f && det_U.imag() != 0.0f;
+	}
+
+	return true;
+}
+
+CGrid CGrid::mirror(const std::vector<bool>& mirror_axes) const {
+	CGrid result;
+	result.real = this->real.mirror(mirror_axes);
+	result.imag = this->imag.mirror(mirror_axes);
+	return result;
+}
+
+CGrid CGrid::mirror(const std::initializer_list<bool>& mirror_axes) const {
+	CGrid result;
+	result.real = this->real.mirror(mirror_axes);
+	result.imag = this->imag.mirror(mirror_axes);
+	return result;
+}
+
+CGrid CGrid::mirror() const {
+	CGrid result;
+	result.real = this->real.mirror();
+	result.imag = this->imag.mirror();
+	return result;
+}
+
+CGrid CGrid::remap(const NGrid& target_index_map) const {
+	CGrid result;
+	result.real = this->real.remap(target_index_map);
+	result.imag = this->imag.remap(target_index_map);
+	return result;
+}
+
+// returns the elementwise magnitude (=abs(), =modulus) of the complex CGrid;
+// the result is a real-valued NGrid with the same shape as the source CGrid
+NGrid CGrid::magnitude() const {
+	NGrid result(this->get_shape());
+
+	Device* device = &NGrid::manager->get_device();
+
+	static ShaderModule shader(*device, MAGNITUDE_COMPLEX_SPIRV_BIN, MAGNITUDE_COMPLEX_SPIRV_BYTES);
+
+	DescriptorSet set(*device);
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	NGrid::descriptor_pool->allocate_set(set);
+
+	PushConstants constants(
+		result.get_elements()
+	);
+
+	ComputePipeline pipeline(*device, shader, constants, set, workgroup_size_1d, 1, 1);
+	NGrid::command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
+	NGrid::descriptor_pool->release_set(set);
+
+	return result;
+}
+
+// alias for CGrid::magnitude()
+NGrid CGrid::abs() const {
+	return this->magnitude();
+}
+
+
+// +=================================+   
+// | Miscellaneous                   |
+// +=================================+
+
+void CGrid::set_workgroup_size_1d(uint32_t size) {
+	workgroup_size_1d = size;
+
+	// make sure the workgroup size is not zero
+	if (workgroup_size_1d == 0) {
+		Log::warning("CGrid::set_workgroup_size_1d() called with size 0, setting to default value of 32");
+		workgroup_size_1d = 32;
+	}
+
+	// make sure that the workgroup size is a power of two
+	if ((workgroup_size_1d & (workgroup_size_1d - 1)) != 0) {
+		Log::warning("NGrid::set_workgroup_size_1d() called with a non-power-of-two size ", workgroup_size_1d, ", setting to next lower power of two");
+		workgroup_size_1d = std::bit_floor(workgroup_size_1d); // requires C++20
+	}
+
+	// make sure that the workgroup size is not larger than the maximum allowed size
+	if (!manager) { CGrid x; } // create an empty dummy CGrid to make the manager available
+	uint32_t max_size = manager->get_device().get_properties().limits.maxComputeWorkGroupSize[0];
+	if (workgroup_size_1d > max_size) {
+		Log::warning("CGrid::set_workgroup_size_1d() called with size ", size, ", which is larger than the maximum allowed size of ", max_size, ", setting to maximum size");
+		workgroup_size_1d = max_size;
+	}
+}
+
+void CGrid::set_workgroup_size_2d(uint32_t size) {
+	workgroup_size_2d = size;
+
+	// make sure the workgroup size is not zero
+	if (workgroup_size_2d == 0) {
+		Log::warning("CGrid::set_workgroup_size_2d() called with size 0, setting to default value of 32");
+		workgroup_size_2d = 32;
+	}
+
+	// make sure that the workgroup size is a power of two
+	if ((workgroup_size_2d & (workgroup_size_2d - 1)) != 0) {
+		Log::warning("CGrid::set_workgroup_size_2d() called with a non-power-of-two size ", size, ", setting to next lower power of two");
+		workgroup_size_2d = std::bit_floor(workgroup_size_2d); // requires C++20
+	}
+
+	// make sure that the workgroup size is not larger than the maximum allowed size
+	if (!manager) { CGrid x; } // create an empty dummy CGrid to make the manager available
+	uint32_t max_size_x = manager->get_device().get_properties().limits.maxComputeWorkGroupSize[0];
+	uint32_t max_size_y = manager->get_device().get_properties().limits.maxComputeWorkGroupSize[1];
+	uint32_t max_invocations = manager->get_device().get_properties().limits.maxComputeWorkGroupInvocations;
+	uint32_t requested_invocations = workgroup_size_2d * workgroup_size_2d;
+
+	if (workgroup_size_2d > max_size_x || workgroup_size_2d > max_size_y) {
+		Log::warning("CGrid::set_workgroup_size_2d() called with size ", size, ", which is larger than the maximum allowed size of ", std::min(max_size_x, max_size_y), ", setting to maximum size");
+		workgroup_size_2d = std::min(max_size_x, max_size_y);
+	}
+
+	if (requested_invocations <= max_invocations) {
+		return;
+	}
+	else {
+		while (workgroup_size_2d * workgroup_size_2d > max_invocations) {
+			workgroup_size_2d /= 2;
+		}
+		Log::warning("CGrid::set_workgroup_size_2d() called with size ", size, ", which will result in ", size * size, " total invocations;\n",
+			"only ", max_invocations, " are allowed -> reducing size to ", workgroup_size_2d);
+	}
+}
+
+// set the fence timeout in nanoseconds
+// (default is 1 second = 1e9 nanoseconds)
+void CGrid::set_fence_timeout_nanosec(uint64_t timeout) {
+	fence_timeout_nanosec = timeout;
+}
+
+// convert the CGrid to an NGrid by extracting the real part;
+// the imaginary part is discarded
+CGrid::operator NGrid() const {
+	return this->real;
+}
+
+void CGrid::print(std::string comment, int32_t precision, bool with_indices, bool rows_inline, std::string delimiter) const {
+	uint32_t elements = this->get_elements();
+	if (elements == 0) {
+		return; // empty CGrid, nothing to print
+	}
+
+	bool has_imaginary_values = this->imag.abs().sum() > 0.0f;
+
+	// read the entire array into a vector
+	std::vector<float_t> flat_data_real = this->real.get_buffer()->read();
+	std::vector<float_t> flat_data_imag = this->imag.get_buffer()->read();
+
+	uint32_t fract_significant_digits = precision < 0 ? std::numeric_limits<float_t>::max_digits10 : precision;
+
+	// load shader
+	static ShaderModule shader(manager->get_device(), PRINTFORMAT_SPIRV_BIN, PRINTFORMAT_SPIRV_BYTES);
+
+	// define helper Grids for element properties
+	CGrid required_digits(elements);
+	CGrid make_scientific(elements);
+	CGrid has_fractional(elements);
+
+	// 1. === REAL PART ===
+	// define descriptor set
+	DescriptorSet set(manager->get_device());
+	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*required_digits.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*make_scientific.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.bind_buffer(*has_fractional.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+	set.finalize_layout();
+	descriptor_pool->allocate_set(set);
+
+	// define push constants
+	PushConstants constants(
+		elements,
+		fract_significant_digits
+	);
+
+	// execute compute pipeline
+	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+	NGrid::command_buffer->compute(pipeline, elements, 1, 1, true, fence_timeout_nanosec, true);
+
+	// 2. === IMAGINARY PART ===
+	if (has_imaginary_values) {
+		set.replace_buffer(*this->imag.get_buffer(), 0, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.replace_buffer(*required_digits.imag.get_buffer(), 1, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.replace_buffer(*make_scientific.imag.get_buffer(), 2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set.replace_buffer(*has_fractional.imag.get_buffer(), 3, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+
+		NGrid::command_buffer->compute(pipeline, elements, 1, 1, true, fence_timeout_nanosec, true);
+	}
+
+	descriptor_pool->release_set(set);
+
+	// get the minimum width required to display all values
+	uint32_t value_digits_real = static_cast<uint32_t>(required_digits.real.max());
+	uint32_t value_digits_imag = 0;
+	if (has_imaginary_values) {
+		value_digits_imag = static_cast<uint32_t>(required_digits.imag.max());
+	}
+	uint32_t value_digits_complex = value_digits_real;
+	if (has_imaginary_values) {
+		value_digits_complex += value_digits_imag + 4; // reserve 4 spaces for " + " and "i"
+	}
+
+	// get the minimum width to display the indices
+	uint32_t index_digits_x = uint32_t(log10(this->get_shape()[0]) + 1);
+	uint32_t index_digits_y = this->get_dimensions() >= 2 ? uint32_t(log10(this->get_shape()[1]) + 1) : 0;
+	uint32_t index_digits_z = this->get_dimensions() == 3 ? uint32_t(log10(this->get_shape()[2]) + 1) : 0;
+
+	if (comment != "") {
+		std::cout << comment;
+		std::cout << "\n";
+	}
+
+	// 1d vectors
+	if (this->get_dimensions() == 1) {
+
+		for (uint32_t x = 0; x < this->get_shape()[0]; x++) {
+			if (with_indices) {
+				std::cout << "[" << std::setprecision(0) << std::setw(index_digits_x) << x << "]=";
+			}
+
+			// output value (real part)
+			bool value_is_complex = flat_data_imag[x] != 0;
+			if (static_cast<bool>(make_scientific.real.get(x))) {
+				if (static_cast<bool>(has_fractional.real.get(x))) {
+					std::cout << std::scientific
+						<< std::setprecision(fract_significant_digits)
+						<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+						<< flat_data_real[x];
+				}
+				else {
+					std::cout << std::scientific
+						<< std::setprecision(0)
+						<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+						<< flat_data_real[x];
+				}
+			}
+			else {
+				if (static_cast<bool>(has_fractional.real.get(x))) {
+					std::cout << std::fixed
+						<< std::setprecision(fract_significant_digits)
+						<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+						<< flat_data_real[x];
+				}
+				else {
+					std::cout << std::fixed
+						<< std::setprecision(0)
+						<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+						<< flat_data_real[x];
+				}
+			}
+
+			// output value (imaginary part)
+			if (value_is_complex) {
+				std::cout << " + ";
+				if (static_cast<bool>(make_scientific.imag.get(x))) {
+					if (static_cast<bool>(has_fractional.imag.get(x))) {
+						std::cout << std::scientific
+							<< std::setprecision(fract_significant_digits)
+							<< std::setw(value_digits_imag)
+							<< flat_data_imag[x];
+					}
+					else {
+						std::cout << std::scientific
+							<< std::setprecision(0)
+							<< std::setw(value_digits_imag)
+							<< flat_data_imag[x];
+					}
+				}
+				else {
+					if (static_cast<bool>(has_fractional.imag.get(x))) {
+						std::cout << std::fixed
+							<< std::setprecision(fract_significant_digits)
+							<< std::setw(value_digits_imag)
+							<< flat_data_imag[x];
+					}
+					else {
+						std::cout << std::fixed
+							<< std::setprecision(0)
+							<< std::setw(value_digits_imag)
+							<< flat_data_imag[x];
+					}
+				}
+				std::cout << "i";
+			}
+
+			// add delimiter or line break
+			if (x != this->get_shape()[0] - 1) {
+				if (rows_inline) {
+					std::cout << delimiter;
+				}
+				else {
+					std::cout << "\n";
+				}
+			}
+		}
+		std::cout << "\n" << std::flush;
+	}
+
+	// 2d or 3d arrays
+	else {
+		for (uint32_t x = 0; x < this->get_shape()[0]; x++) {
+			for (uint32_t y = 0; y < this->get_shape()[1]; y++) {
+				if (this->get_dimensions() == 2 || this->get_shape()[2] == 1) {
+					if (with_indices) {
+						std::cout << "[";
+
+						// output index x
+						std::cout << std::setprecision(0) << std::setw(index_digits_x) << x << "][";
+
+						// output index y
+						std::cout << std::setprecision(0) << std::setw(index_digits_y) << y << "]=";
+					}
+
+					// get flat index
+					uint32_t index = this->real.flat_index({ x, y });
+
+					// output value (real part)
+					bool value_is_complex = flat_data_imag[index] != 0;
+					if (static_cast<bool>(make_scientific.real.get(index))) {
+						if (static_cast<bool>(has_fractional.real.get(index))) {
+							std::cout << std::scientific
+								<< std::setprecision(fract_significant_digits)
+								<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+								<< flat_data_real[index];
+						}
+						else {
+							std::cout << std::scientific
+								<< std::setprecision(0)
+								<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+								<< flat_data_real[index];
+						}
+					}
+					else {
+						if (static_cast<bool>(has_fractional.real.get(index))) {
+							std::cout << std::fixed
+								<< std::setprecision(fract_significant_digits)
+								<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+								<< flat_data_real[index];
+						}
+						else {
+							std::cout << std::fixed
+								<< std::setprecision(0)
+								<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+								<< flat_data_real[index];
+						}
+					}
+
+					// output value (imaginary part)
+					if (value_is_complex) {
+						std::cout << " + ";
+						if (static_cast<bool>(make_scientific.imag.get(index))) {
+							if (static_cast<bool>(has_fractional.imag.get(index))) {
+								std::cout << std::scientific
+									<< std::setprecision(fract_significant_digits)
+									<< std::setw(value_digits_imag)
+									<< flat_data_imag[index];
+							}
+							else {
+								std::cout << std::scientific
+									<< std::setprecision(0)
+									<< std::setw(value_digits_imag)
+									<< flat_data_imag[index];
+							}
+						}
+						else {
+							if (static_cast<bool>(has_fractional.imag.get(index))) {
+								std::cout << std::fixed
+									<< std::setprecision(fract_significant_digits)
+									<< std::setw(value_digits_imag)
+									<< flat_data_imag[index];
+							}
+							else {
+								std::cout << std::fixed
+									<< std::setprecision(0)
+									<< std::setw(value_digits_imag)
+									<< flat_data_imag[index];
+							}
+						}
+						std::cout << "i";
+					}
+
+					// add delimiter before next column
+					if (y != this->get_shape()[1] - 1) {
+						std::cout << delimiter;
+					}
+				}
+				else if (this->get_dimensions() == 3) {
+					std::cout << "{";
+					for (uint32_t z = 0; z < this->get_shape()[2]; z++) {
+						if (with_indices) {
+							std::cout << "[";
+
+							// output index x
+							std::cout << std::setprecision(0) << std::setw(index_digits_x) << x << "][";
+
+							// output index y
+							std::cout << std::setprecision(0) << std::setw(index_digits_y) << y << "][";
+
+							// output index z
+							std::cout << std::setprecision(0) << std::setw(index_digits_z) << z << "]=";
+						}
+
+						// get next value
+						uint32_t index = this->real.flat_index({ x, y, z });
+
+						// output value (real part)
+						bool value_is_complex = flat_data_imag[index] != 0;
+						if (static_cast<bool>(make_scientific.real.get(index))) {
+							if (static_cast<bool>(has_fractional.real.get(index))) {
+								std::cout << std::scientific
+									<< std::setprecision(fract_significant_digits)
+									<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+									<< flat_data_real[index];
+							}
+							else {
+								std::cout << std::scientific
+									<< std::setprecision(0)
+									<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+									<< flat_data_real[index];
+							}
+						}
+						else {
+							if (static_cast<bool>(has_fractional.real.get(index))) {
+								std::cout << std::fixed
+									<< std::setprecision(fract_significant_digits)
+									<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+									<< flat_data_real[index];
+							}
+							else {
+								std::cout << std::fixed
+									<< std::setprecision(0)
+									<< std::setw(value_is_complex ? value_digits_real : value_digits_complex)
+									<< flat_data_real[index];
+							}
+						}
+
+						// output value (imaginary part)
+						if (value_is_complex) {
+							std::cout << " + ";
+							if (static_cast<bool>(make_scientific.imag.get(index))) {
+								if (static_cast<bool>(has_fractional.imag.get(index))) {
+									std::cout << std::scientific
+										<< std::setprecision(fract_significant_digits)
+										<< std::setw(value_digits_imag)
+										<< flat_data_imag[index];
+								}
+								else {
+									std::cout << std::scientific
+										<< std::setprecision(0)
+										<< std::setw(value_digits_imag)
+										<< flat_data_imag[index];
+								}
+							}
+							else {
+								if (static_cast<bool>(has_fractional.imag.get(index))) {
+									std::cout << std::fixed
+										<< std::setprecision(fract_significant_digits)
+										<< std::setw(value_digits_imag)
+										<< flat_data_imag[index];
+								}
+								else {
+									std::cout << std::fixed
+										<< std::setprecision(0)
+										<< std::setw(value_digits_imag)
+										<< flat_data_imag[index];
+								}
+							}
+							std::cout << "i";
+						}
+
+						// add delimiter
+						if (z != this->get_shape()[2] - 1) {
+							std::cout << delimiter;
+						}
+					}
+					std::cout << "}";
+					// add space before next column
+					if (y != this->get_shape()[1] - 1) {
+						std::cout << " ";
+					}
+				}
+				else {
+					Log::debug("invalid call of method NGrid::print() for an array of more than 3 dimensions; shape is ", this->get_shapestring());
+					return;
+				}
+			}
+			// add line break before next row
+			std::cout << "\n";
+		}
+		// reset format presets and flush to console
+		std::cout << std::noshowpos;
+		std::cout.unsetf(std::ios_base::floatfield);
+		std::cout << std::flush;
+	}
+}
+
+#endif // NGRID_H

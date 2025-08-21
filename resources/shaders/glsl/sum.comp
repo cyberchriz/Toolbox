@@ -16,6 +16,33 @@ layout(push_constant) uniform push_constants {
     uint N;
 };
 
+// global variables
+const float FLOAT_MAX = 3.40282347e+38;
+const float FLT_EPSILON = 1e-07; //1.19209e-07;
+
+// avoid NAN/INF
+float valid(float value) {
+    if (isnan(value)) {
+        return 0.0f;
+    }
+    else if (isinf(value)) {
+        if (value > 0.0f) {
+            return FLOAT_MAX;   
+        }
+        else {
+            return -FLOAT_MAX;
+        }
+    }
+    else {
+        if (abs(value) <= FLT_EPSILON) {
+            return 0.0f;
+        }
+        else {
+            return value;
+        }
+    }
+}
+
 // shared variables
 shared float local_sum[gl_WorkGroupSize.x];
 
@@ -33,21 +60,7 @@ void main() {
             if (gl_LocalInvocationID.x < stride && gl_GlobalInvocationID.x + stride < N) {
 
                 float val = local_sum[gl_LocalInvocationID.x] + local_sum[gl_LocalInvocationID.x + stride];
-                
-                // check for NAN
-                if (isnan(val)) {
-                    val = 0.0;
-                }
-                // check for Infinity
-                else if (isinf(val)) {
-                    if (val > 0.0) {
-                        val = 3.402823466e+38;
-                    } else {
-                        val = -3.402823466e+38;
-                    }
-                }
-
-                local_sum[gl_LocalInvocationID.x] = val;
+                local_sum[gl_LocalInvocationID.x] = valid(val);
             }
             groupMemoryBarrier();
             barrier();
@@ -61,4 +74,5 @@ void main() {
         // this shader has no global reduction!
         // it has to be invoked several times, until N <= workgroup_size_x
     }
+    memoryBarrierBuffer(); barrier();
 }

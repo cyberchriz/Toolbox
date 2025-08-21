@@ -22,4 +22,5 @@ void main() {
     if (gl_GlobalInvocationID.x < N) {
         result[uint(target_index_map[gl_GlobalInvocationID.x])] = data[gl_GlobalInvocationID.x];
     }
+    memoryBarrierBuffer(); barrier();
 }

@@ -38,4 +38,5 @@ void main() {
         // assign to result
         result[idx] = normalized;
     }
+    memoryBarrierBuffer(); barrier();
 }

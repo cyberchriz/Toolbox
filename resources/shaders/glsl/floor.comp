@@ -21,4 +21,5 @@ void main() {
     if (gl_GlobalInvocationID.x < N) {
         result[gl_GlobalInvocationID.x] = floor(data[gl_GlobalInvocationID.x]);
     }
+    memoryBarrierBuffer(); barrier();
 }

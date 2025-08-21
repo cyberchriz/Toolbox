@@ -1,0 +1,81 @@
+// Vulkan/GLSL compute shader: calculate the inverse of an upper triangular matrix via backward substitution;
+// version with support for complex numbers
+// author: Christian Suer (github: "cyberchriz")
+
+#version 450 core
+
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers (Complex) ---
+layout(set = 0, binding = 0) buffer u_real_buffer { float U_real[]; }; // Real part of input U
+layout(set = 0, binding = 1) buffer u_imag_buffer { float U_imag[]; }; // Imaginary part of input U
+layout(set = 0, binding = 2) buffer i_real_buffer { float I_real[]; }; // Real part of output U^-1
+layout(set = 0, binding = 3) buffer i_imag_buffer { float I_imag[]; }; // Imaginary part of output U^-1
+
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint size; // rows/cols of the square matrix U
+};
+
+// --- Main Function ---
+void main() {
+    uint col = gl_GlobalInvocationID.x;
+    if (col >= size) {
+        return;
+    }
+
+    // Each invocation computes one column of the inverse using backward substitution.
+    // The 'row' loop must be sequential and run backwards, because row 'i' depends
+    // on results from rows j > i. A signed int is used for the loop counter.
+    for (int row = int(size) - 1; row >= 0; --row) {
+        uint idx = uint(row) * size + col;
+
+        // The inverse of an upper triangular matrix is also upper triangular.
+        // Elements below the diagonal are zero.
+        if (uint(row) > col) {
+            I_real[idx] = 0.0;
+            I_imag[idx] = 0.0;
+        } else {
+            // Formula: X_ik = (I_ik - sum(U_ij * X_jk for j=i+1 to n-1)) / U_ii
+            // All operations are now complex.
+
+            // 1. Calculate the sum term: sum(U_ij * X_jk)
+            float sum_real = 0.0;
+            float sum_imag = 0.0;
+            for (uint j = uint(row) + 1; j < size; ++j) {
+                // Complex multiplication: (a+bi) * (c+di) = (ac-bd) + i(ad+bc)
+                float U_ij_real = U_real[uint(row) * size + j];
+                float U_ij_imag = U_imag[uint(row) * size + j];
+                
+                // Reading values previously written by this same thread is safe.
+                float X_jk_real = I_real[j * size + col];
+                float X_jk_imag = I_imag[j * size + col];
+
+                sum_real += U_ij_real * X_jk_real - U_ij_imag * X_jk_imag;
+                sum_imag += U_ij_real * X_jk_imag + U_ij_imag * X_jk_real;
+            }
+
+            // 2. Calculate the numerator: I_ik - sum
+            // I_ik is 1.0 + 0.0i if row == col, and 0.0 + 0.0i otherwise.
+            float identity_real = (uint(row) == col) ? 1.0 : 0.0;
+            float num_real = identity_real - sum_real;
+            float num_imag = 0.0 - sum_imag; // identity_imag is always 0
+
+            // 3. Perform complex division by the diagonal element U_ii
+            float U_ii_real = U_real[uint(row) * size + uint(row)];
+            float U_ii_imag = U_imag[uint(row) * size + uint(row)];
+
+            // Division: (a+bi) / (c+di) = (ac+bd)/(c^2+d^2) + i(bc-ad)/(c^2+d^2)
+            float denominator = U_ii_real * U_ii_real + U_ii_imag * U_ii_imag;
+
+            if (denominator != 0.0) {
+                I_real[idx] = (num_real * U_ii_real + num_imag * U_ii_imag) / denominator;
+                I_imag[idx] = (num_imag * U_ii_real - num_real * U_ii_imag) / denominator;
+            } else {
+                // Matrix is singular
+                I_real[idx] = 0.0;
+                I_imag[idx] = 0.0;
+            }
+        }
+    }
+}

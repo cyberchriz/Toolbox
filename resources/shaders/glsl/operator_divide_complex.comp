@@ -1,0 +1,48 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_reaL_buffer {float data_real[];};
+layout(set = 0, binding = 1) buffer data_imag_buffer {float data_imag[];};
+layout(set = 0, binding = 2) buffer result_reaL_buffer {float result_real[];};
+layout(set = 0, binding = 3) buffer result_imag_buffer {float result_imag[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N;
+    float divisor_real;
+    float divisor_imag;
+};
+
+// main function
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx < N) {
+        // Complex division: (a+bi) / (c+di) = [(ac+bd)/(c^2+d^2)] + [(bc-ad)/(c^2+d^2)]i
+        
+        float a = data_real[idx];
+        float b = data_imag[idx];
+        float c = divisor_real;
+        float d = divisor_imag;
+
+        float denominator = (c * c) + (d * d);
+
+        // Handle division by zero. If the denominator is 0, the result is undefined.
+        // Returning here will leave the default value in the result buffers.
+        // It's important for the host code to also handle this case appropriately.
+        if (denominator == 0.0) {
+            return;
+        }
+
+        result_real[idx] = ((a * c) + (b * d)) / denominator;
+        result_imag[idx] = ((b * c) - (a * d)) / denominator;
+    }
+    memoryBarrierBuffer();
+    barrier();
+}

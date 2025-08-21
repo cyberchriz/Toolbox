@@ -1,0 +1,58 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for LU decomposition (version with support for complex numbers);
+// it updates current column 'k' in the L matrix (=lower triangular matrix)
+
+#version 450 core
+
+// setup specialization constants
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers (Complex Number compatible) ---
+layout(set = 0, binding = 0) buffer l_real_buffer { float L_real[]; }; // Real part of Lower triangular matrix L
+layout(set = 0, binding = 1) buffer l_imag_buffer { float L_imag[]; }; // Imaginary part of Lower triangular matrix L
+layout(set = 0, binding = 2) buffer u_real_buffer { float U_real[]; }; // Real part of Upper triangular matrix U
+layout(set = 0, binding = 3) buffer u_imag_buffer { float U_imag[]; }; // Imaginary part of Upper triangular matrix U
+layout(set = 0, binding = 4) buffer p_buffer      { float P[]; };      // Permutation matrix P
+layout(set = 0, binding = 5) buffer swap_row_buffer { uint swap_row[]; }; // (not used here)
+layout(set = 0, binding = 6) buffer swap_count_buffer { uint swap_count[]; }; // (not used here)
+
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;
+    uint cols;
+    uint k;
+};
+
+// --- Main Function ---
+void main() {
+    uint j = gl_GlobalInvocationID.x; // Row index
+
+    if (j > k && j < rows) {
+        // Perform complex division: L_jk = U_jk / U_kk
+        // Let U_jk = a + bi, U_kk = c + di
+        // Division is (ac + bd)/(c^2+d^2) + i(bc - ad)/(c^2+d^2)
+
+        float a = U_real[j * cols + k];
+        float b = U_imag[j * cols + k];
+        float c = U_real[k * cols + k];
+        float d = U_imag[k * cols + k];
+
+        float denominator = c * c + d * d;
+
+        if (denominator != 0.0) {
+            uint cols_L = rows; // L is a rows x rows square matrix
+            L_real[j * cols_L + k] = (a * c + b * d) / denominator;
+            L_imag[j * cols_L + k] = (b * c - a * d) / denominator;
+        } else {
+            // Handle division by zero if necessary, e.g., matrix is singular.
+            // For now, we set it to zero.
+            uint cols_L = rows;
+            L_real[j * cols_L + k] = 0.0;
+            L_imag[j * cols_L + k] = 0.0;
+        }
+    }
+    memoryBarrierBuffer();
+    barrier();
+}

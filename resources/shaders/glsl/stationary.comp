@@ -22,4 +22,5 @@ void main() {
     if (idx < N) {
         result[idx] = data[idx + 1] - data[idx];
     }
+    memoryBarrierBuffer(); barrier();
 }

@@ -45,4 +45,5 @@ void main() {
         // Assign the final result to the output buffer
         result[idx] = normalized_value;
     }
+    memoryBarrierBuffer(); barrier();
 }

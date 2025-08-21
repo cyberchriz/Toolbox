@@ -22,4 +22,5 @@ void main() {
         // 1-pow(tanh(x),2)
         result[gl_GlobalInvocationID.x] = 1 - pow(tanh(data[gl_GlobalInvocationID.x]), 2);
     }
+    memoryBarrierBuffer(); barrier();
 }

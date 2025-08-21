@@ -24,4 +24,5 @@ void main() {
     if (idx < N) {
         result[idx] = max(min(data[idx], upper_limit), lower_limit);
     }
+    memoryBarrierBuffer(); barrier();
 }

@@ -1,0 +1,92 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer first_real_buffer {float first_real[];};
+layout(set = 0, binding = 1) buffer first_imag_buffer {float first_imag[];};
+layout(set = 0, binding = 2) buffer first_shape_buffer {uint first_shape[];};
+layout(set = 0, binding = 3) buffer second_real_buffer {float second_real[];};
+layout(set = 0, binding = 4) buffer second_imag_buffer {float second_imag[];};
+layout(set = 0, binding = 5) buffer second_shape_buffer {uint second_shape[];};
+layout(set = 0, binding = 6) buffer result_real_buffer {float result_real[];};
+layout(set = 0, binding = 7) buffer result_imag_buffer {float result_imag[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint first_N;    // Total number of elements in the first array
+    uint num_dims;   // The number of dimensions for both arrays
+};
+
+// main function
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+
+    // Ensure we don't go out of bounds for the result matrix
+    if (index >= first_N) {
+        return;
+    }
+
+    // Default to copying the element from the first array
+    float result_real_val = first_real[index];
+    float result_imag_val = first_imag[index];
+
+    // Check if the current element has a corresponding match in the second array
+    // by converting the flat index to coordinates and checking against the shape.
+    bool can_divide = true;
+    uint temp_first_idx = index;
+    uint second_flat_idx = 0;
+    uint second_stride = 1;
+
+    // We assume the shape arrays are ordered from the lowest dimension to the highest (e.g., C-style row-major).
+    for (uint d = 0; d < num_dims; ++d) {
+        uint first_dim_size = first_shape[d];
+        uint second_dim_size = second_shape[d];
+
+        // Calculate the coordinate for the current dimension based on the first array's shape
+        uint coord = temp_first_idx % first_dim_size;
+        temp_first_idx /= first_dim_size;
+
+        // If the coordinate is out of bounds for the second array, we cannot divide.
+        if (coord >= second_dim_size) {
+            can_divide = false;
+            break; // No need to continue checking dimensions
+        }
+
+        // Calculate the corresponding flat index for the second array
+        second_flat_idx += coord * second_stride;
+        second_stride *= second_dim_size;
+    }
+
+    // If all coordinates are within the bounds of the second array, perform the division.
+    if (can_divide) {
+        // Complex division: (a+bi) / (c+di) = [(ac+bd)/(c^2+d^2)] + [(bc-ad)/(c^2+d^2)]i
+        
+        float a = first_real[index];
+        float b = first_imag[index];
+        float c = second_real[second_flat_idx];
+        float d = second_imag[second_flat_idx];
+
+        float denominator = (c * c) + (d * d);
+
+        // Handle division by zero. If the denominator is 0, the result is undefined.
+        // We will leave the values as they were (copied from the first array).
+        if (denominator != 0.0) {
+            result_real_val = ((a * c) + (b * d)) / denominator;
+            result_imag_val = ((b * c) - (a * d)) / denominator;
+        }
+    }
+    
+    // Write the final result to the output buffers
+    // Ensure -0.0 is written as 0.0
+    result_real[index] = result_real_val;
+    result_imag[index] = result_imag_val;
+
+    memoryBarrierBuffer();
+    barrier();
+}

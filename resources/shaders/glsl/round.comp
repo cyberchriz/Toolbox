@@ -18,7 +18,11 @@ layout(push_constant) uniform push_constants {
 
 // main function
 void main() {
-    if (gl_GlobalInvocationID.x < N) {
-        result[gl_GlobalInvocationID.x] = round(data[gl_GlobalInvocationID.x]);
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx < N) {
+        float rounded = round(data[gl_GlobalInvocationID.x]);
+        if (rounded == -0.0f) {rounded = 0.0f;} // avoid -0
+        result[idx] = rounded;
     }
+    memoryBarrierBuffer(); barrier();
 }

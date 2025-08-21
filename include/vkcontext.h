@@ -14,7 +14,6 @@
 #include <iostream>
 #include <log.h>
 #include <optional>
-#include <renderdoc_enable.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -22,6 +21,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include <vkdebug.h>
 #include <vulkan/vulkan.h>
 
 // --- Platform-Specific Headers ---
@@ -2628,6 +2628,7 @@ public:
 		vkUnmapMemory(logical, sourcebuffer.memory);
 	}
 
+
 	// flush host writes to host memory demain
 	// this is only necessary if the memory allocation doesn't have the flag VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	// (can be made available to the device memory domain by using a pipeline barrier with the VK_ACCESS_HOST_WRITE_BIT access type flag)
@@ -3588,7 +3589,8 @@ public:
 		DescriptorSet& descriptor_set,
 		uint32_t workgroup_size_x,
 		uint32_t workgroup_size_y = 1,
-		uint32_t workgroup_size_z = 1
+		uint32_t workgroup_size_z = 1,
+		std::vector<uint32_t> addon_specialization_constants = {}
 	) {
 		this->logical = device.get_logical();
 		this->set = &descriptor_set;
@@ -3604,32 +3606,28 @@ public:
 			Log::error("Invalid call of ComputePipeline constructor: descriptor set has not been allocated to any descriptor pool. Call method DescriptorPool::allocate_set() first!");
 		}
 
-		// setup specialization constants for the workgroup dimensions
-		std::vector<uint32_t> specialization_data = { workgroup_size_x, workgroup_size_y, workgroup_size_z };
-		std::vector<VkSpecializationMapEntry> specialization_map_entries;
+		// setup specialization constants (workgroup sizes + optional constants)
+		// indexing for GLSL shader: local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2;
+		// indexing for optional addon constants starts from constant_id = 3
+		specialization_data = { workgroup_size_x, workgroup_size_y, workgroup_size_z };
+		specialization_data.insert(specialization_data.end(), addon_specialization_constants.begin(), addon_specialization_constants.end());
 
-		VkSpecializationMapEntry workgroup_x_entry = {};
-		workgroup_x_entry.constantID = 0; // for the GLSL shader: local_size_x_id = 0
-		workgroup_x_entry.offset = 0;
-		workgroup_x_entry.size = sizeof(uint32_t);
-		specialization_map_entries.push_back(workgroup_x_entry);
+		size_t constants_count = specialization_data.size();
+		uint32_t current_offset = 0;
 
-		VkSpecializationMapEntry workgroup_y_entry = {};
-		workgroup_y_entry.constantID = 1; // for the GLSL shader: local_size_y_id = 1
-		workgroup_y_entry.offset = static_cast<uint32_t>(sizeof(uint32_t));
-		workgroup_y_entry.size = sizeof(uint32_t);
-		specialization_map_entries.push_back(workgroup_y_entry);
-
-		VkSpecializationMapEntry workgroup_z_entry = {};
-		workgroup_z_entry.constantID = 2; // for the GLSL shader: local_size_z_id = 2
-		workgroup_z_entry.offset = static_cast<uint32_t>(2 * sizeof(uint32_t));
-		workgroup_z_entry.size = sizeof(uint32_t);
-		specialization_map_entries.push_back(workgroup_z_entry);
+		for (uint32_t i = 0; i < constants_count; i++) {
+			VkSpecializationMapEntry next_entry = {};
+			next_entry.constantID = i;
+			next_entry.offset = current_offset;
+			next_entry.size = sizeof(uint32_t);
+			specialization_map_entries.push_back(next_entry);
+			current_offset += sizeof(uint32_t);
+		}
 
 		VkSpecializationInfo specialization_info = {};
-		specialization_info.mapEntryCount = 3;
+		specialization_info.mapEntryCount = constants_count;
 		specialization_info.pMapEntries = specialization_map_entries.data();
-		specialization_info.dataSize = 3 * sizeof(uint32_t);
+		specialization_info.dataSize = constants_count * sizeof(uint32_t);
 		specialization_info.pData = specialization_data.data();
 
 		// setup pipeline layout        
@@ -3639,13 +3637,13 @@ public:
 		layout_create_info.pSetLayouts = &descriptor_set.get_layout();
 		if (push_constants.get_data() == nullptr) { // check for empty PushConstants object
 			layout_create_info.pushConstantRangeCount = 0;
-			layout_create_info.pPushConstantRanges = NULL;
+			layout_create_info.pPushConstantRanges = nullptr;
 		}
 		else {
 			layout_create_info.pushConstantRangeCount = 1;
 			layout_create_info.pPushConstantRanges = &push_constants.get_range();
 		}
-		layout_create_info.pNext = NULL;
+		layout_create_info.pNext = nullptr;
 		VkResult result = vkCreatePipelineLayout(logical, &layout_create_info, nullptr, &layout);
 		if (result == VK_SUCCESS) {
 			Log::info("created pipeline layout for compute pipeline (handle: ", layout, ")");
@@ -3657,8 +3655,8 @@ public:
 		// setup shader stage
 		VkPipelineShaderStageCreateInfo shader_stage_create_info = {};
 		shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		shader_stage_create_info.pNext = NULL;
-		shader_stage_create_info.flags = NULL;
+		shader_stage_create_info.pNext = nullptr;
+		shader_stage_create_info.flags = 0;
 		shader_stage_create_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
 		shader_stage_create_info.module = compute_shader_module.get();
 		shader_stage_create_info.pName = "main";
@@ -3667,8 +3665,8 @@ public:
 		// finalize compute pipeline
 		VkComputePipelineCreateInfo pipeline_create_info = {};
 		pipeline_create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-		pipeline_create_info.pNext = NULL;
-		pipeline_create_info.flags = NULL;
+		pipeline_create_info.pNext = nullptr;
+		pipeline_create_info.flags = 0;
 		pipeline_create_info.stage = shader_stage_create_info;
 		pipeline_create_info.layout = layout;
 		pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
@@ -3716,7 +3714,8 @@ private:
 	uint32_t workgroup_size_x = 0;
 	uint32_t workgroup_size_y = 0;
 	uint32_t workgroup_size_z = 0;
-
+	std::vector<uint32_t> specialization_data;
+	std::vector<VkSpecializationMapEntry> specialization_map_entries;
 };
 
 // generic memory barrier for synchronization between different stages of the pipeline
@@ -4214,35 +4213,34 @@ public:
 		vkCmdNextSubpass(buffer, contents);
 	}
 
-	// end recording and submit command buffer to queue
-	// (overload with fence)
-	void submit(Fence& fence, uint64_t fence_timeout_nanosec = 100000) {
-		// stop command buffer recording state (thus triggering executable state)
-		vkEndCommandBuffer(buffer);
-
-		// submit to queue (triggers command buffer pending state)
-		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submit_info.pCommandBuffers = &buffer;
-		submit_info.commandBufferCount = 1;
-
-		vkQueueSubmit(queue, 1, &submit_info, fence.get());
-
-		fence.wait(fence_timeout_nanosec);
-		fence.reset();
+	// start command buffer recording state
+	void begin_recording(VkCommandBufferUsageFlagBits usage = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) {
+		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin_info.pNext = NULL;
+		begin_info.flags = usage;
+		begin_info.pInheritanceInfo = nullptr; // pointer to a VkCommandBufferInheritanceInfo struct; only relevant for secondary command buffers
+		VkResult result = vkBeginCommandBuffer(buffer, &begin_info);
+		if (result == VK_SUCCESS) {
+			Log::debug("beginning command buffer recording state");
+		}
+		else {
+			Log::warning("failed to begin command buffer recording state (VkResult = ", result, ")");
+		}
 	}
 
-	// end recording and submit command buffer to queue
-	// (overload without fence)
-	void submit() {
-		// stop command buffer recording state (thus triggering executable state)
-		vkEndCommandBuffer(buffer);
-
-		// submit to queue (triggers command buffer pending state)
-		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submit_info.pCommandBuffers = &buffer;
-		submit_info.commandBufferCount = 1;
-
-		vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+	// end command buffer recording state
+	// (thus triggering executable state)
+	void end_recording() const {
+		VkResult result = vkEndCommandBuffer(buffer);
+		if (result != VK_SUCCESS) {
+			switch (result) {
+			case VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR: Log::warning("in CommandBuffer::end_recording(): VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR"); break;
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY: Log::warning("in CommandBuffer::end_recording(): VK_ERROR_OUT_OF_DEVICE_MEMORY"); break;
+			case VK_ERROR_OUT_OF_HOST_MEMORY: Log::warning("in CommandBuffer::end_recording(): VK_ERROR_OUT_OF_HOST_MEMORY"); break;
+			case VK_ERROR_VALIDATION_FAILED_EXT: Log::warning("in CommandBuffer::end_recording(): VK_ERROR_VALIDATION_FAILED"); break;
+			default: Log::warning("in CommandBuffer::end_recording(): VK_ERROR_UNKNOWN");
+			}
+		}
 	}
 
 	void reset(VkCommandBufferResetFlags flags = VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT) {
@@ -4253,6 +4251,45 @@ public:
 		else {
 			Log::warning("failed to reset command buffer (handle: ", buffer, ", VkResult = ", result, ")");
 		}
+	}
+
+	// end recording and submit command buffer to queue
+	// (overload with fence)
+	void submit(Fence& fence, uint64_t fence_timeout_nanosec = 100000) {
+		// move to executable state
+		end_recording();
+
+		// submit to queue (triggers command buffer pending state)
+		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit_info.pCommandBuffers = &buffer;
+		submit_info.commandBufferCount = 1;
+
+		vkQueueSubmit(queue, 1, &submit_info, fence.get());
+
+		// wait for fence
+		fence.wait(fence_timeout_nanosec);
+		fence.reset();
+
+		// go back to recording state
+		reset();
+		begin_recording();
+	}
+
+	// end recording and submit command buffer to queue
+	// (overload without fence)
+	void submit() {
+		// move to executable state
+		end_recording();
+
+		// submit to queue (triggers command buffer pending state)
+		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit_info.pCommandBuffers = &buffer;
+		submit_info.commandBufferCount = 1;
+
+		vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+
+		// go back to recording state
+		// (no command buffer reset here, because it's likely still in a pending state)
 		begin_recording();
 	}
 
@@ -4290,24 +4327,8 @@ public:
 			else {
 				submit();
 			}
-			reset();
 		}
 		Log::debug("compute execution finished");
-	}
-
-	// start command buffer recording state
-	void begin_recording() {
-		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		begin_info.pNext = NULL;
-		begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // specifies that each recording of the command buffer will only be submitted once, and the command buffer will be reset and recorded again between each submission
-		begin_info.pInheritanceInfo = nullptr; // pointer to a VkCommandBufferInheritanceInfo struct; only relevant for secondary command buffers
-		VkResult result = vkBeginCommandBuffer(buffer, &begin_info);
-		if (result == VK_SUCCESS) {
-			Log::debug("beginning command buffer recording state");
-		}
-		else {
-			Log::warning("failed to begin command buffer recording state (VkResult = ", result, ")");
-		}
 	}
 
 protected:
@@ -4375,6 +4396,9 @@ public:
 			// enable instance extensions
 			shared_instance_extension_names = {
 				"VK_KHR_get_physical_device_properties2"
+#ifdef _DEBUG
+				, "VK_EXT_debug_utils"
+#endif
 			};
 
 			// enable device extensions (if available)

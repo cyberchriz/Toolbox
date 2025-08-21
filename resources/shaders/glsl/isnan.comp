@@ -23,4 +23,5 @@ void main() {
         float val = data[idx];
         result[idx] = float(isnan(data[idx]));
     }
+    memoryBarrierBuffer(); barrier();
 }

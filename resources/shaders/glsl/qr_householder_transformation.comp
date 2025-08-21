@@ -1,0 +1,125 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer Q_buffer          {float Q[];};             // flat representation of shape {rows, rows}, initialized as identity matrix
+layout(set = 0, binding = 1) buffer R_buffer          {float R[];};             // flat representation of shape {rows, cols}, initialized with values of A
+                                                                              // same shape as A, initialized with values of A;
+                                                                              // 'R' refers to QR decomposition; for Hessenberg transformation it represents 'H';
+                                                                              // the letter 'R' is reused in this case to avoid an additional buffer
+layout(set = 0, binding = 2) buffer V_buffer          {float V[];};             // flat representation of shape {rows, min(rows,cols)}    vectors v_k are stored as the columns of V
+layout(set = 0, binding = 3) buffer Tau_buffer        {float Tau[];};           // shape: {rows}
+layout(set = 0, binding = 4) buffer Temp_w_buffer     {float Temp_w[];};        // shape: {cols}
+layout(set = 0, binding = 5) buffer Temp_u_buffer     {float Temp_u[];};        // shape: {rows}
+layout(set = 0, binding = 6) buffer Temp_y_buffer     {float Temp_y[];};        // shape: {rows}
+layout(set = 0, binding = 7) buffer local_results_buffer {float local_results[];}; // not used by all shaders, only for parallel reductions
+layout(set = 0, binding = 8) buffer alpha_buffer      {float Alpha[];};         // shape: {min(rows,cols)}
+layout(set = 0, binding = 9) buffer K_buffer          {uint K[];};              // shape: {1}, i.e. single element
+layout(set = 0, binding = 10) buffer Gamma_buffer     {float Gamma[];};         // shape: {k_max}
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint rows;       // rows in the source matrix
+    uint cols;       // columns in the source matrix
+    uint cols_V;
+    uint cols_Q;
+    uint row_workgroups; // constant, calculated by host based on workgroup_size_1d and number of rows
+    uint method;     // 0 for QR, 1 for Hessenberg
+};
+
+// avoid NAN/INF
+float valid(float value) {
+    const float FLOAT_MAX = 3.40282347e+38;
+    const float FLT_EPSILON = 1e-07; //or: 1.19209e-07;
+    if (isnan(value)) { return 0.0f; }
+    else if (isinf(value)) { return (value > 0.0f) ? FLOAT_MAX : -FLOAT_MAX; }
+    else { return (abs(value) <= FLT_EPSILON) ? 0.0f : value; }
+}
+
+
+// main function
+void main() {
+
+    uint row = gl_GlobalInvocationID.x;
+    uint col = gl_GlobalInvocationID.y;
+
+    uint k = K[0];
+    float tau_k = Tau[k];
+    float alpha_k = Alpha[k];
+    float gamma_k = Gamma[k];
+
+    if (method == 0) {
+        
+        // --- UPDATE MATRIX R FOR QR DECOMPOSITION ---
+        // This shader call computes and applies: R = R - tau_k * v_k * (v_k^T * R)
+
+        // column k
+        if (col == k) {
+            if (row == k) {
+                R[row * cols + col] = valid(alpha_k);
+            }
+            else if (row > k && row < rows) {
+                R[row * cols + col] = 0.0f;
+            }
+        }
+
+        // For elements in columns col > k (the trailing submatrix to be updated by the Householder reflection)
+        else if (col > k && col < cols && row >= k && row < rows) {
+            R[row * cols + col] -= valid(tau_k * V[row * cols_V + k] * Temp_w[col]);
+        }
+
+        // --- UPDATE MATRIX Q FOR QR DECOMPOSITION ---
+        
+        if (row < rows && col >= k && col < cols_Q) {
+            Q[row * cols_Q + col] -= valid(tau_k * V[col * cols_V + k] * Temp_u[row]);
+        }
+    }
+
+    if (method == 1) { // Hessenberg transformation
+
+        // --- UPDATE MATRIX H (COMBINED UPDATE FOR LEFT AND RIGHT SIDE) ---
+
+        // column k
+        if (col == k) {
+            if (row == k + 1) {
+                R[row * cols + col] = valid(alpha_k);
+            }
+            else if (row > k + 1 && row < rows) {
+                R[row * cols + col] = 0.0f;
+            }
+        }
+
+        // columns other than k
+        else {
+            if (row < rows && col < cols) {
+                float term1 = row > k               ?   valid(-tau_k * V[row * cols_V + k] * Temp_w[col])           : 0.0f;
+                float term2 = col > k               ?   valid(-tau_k * V[col * cols_V + k] * Temp_y[row])           : 0.0f;
+                float term3 = row > k && col > k    ?   valid(gamma_k * V[row * cols_V + k] * V[col * cols_V + k])  : 0.0f;
+
+                // top right: H[0:k][k+1:n-1]
+                if (row <= k && col > k) {
+                    R[row * cols + col] += term2;
+                }
+
+                // bottom right: H[k+1:m-1][k+1:n-1]
+                else if (row > k && col > k) {
+                    R[row * cols + col] += term1 + term2 + term3;
+                }
+            }
+        }
+
+        // --- UPDATE MATRIX Q FOR HESSENBERG ---
+        if (row < rows && col > k && col < cols_Q) {
+            Q[row * cols_Q + col] -= valid(tau_k * Temp_u[row] * V[col * cols_V + k]);
+            
+        }
+    }
+
+    memoryBarrierBuffer(); barrier();
+}

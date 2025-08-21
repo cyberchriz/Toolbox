@@ -1,6 +1,5 @@
 // Vulkan/GLSL compute shader: calculate the inverse of a lower triangular matrix
-// This version is corrected to avoid race conditions.
-// author: Christian Suer (github: 'cyberchriz'), corrected by Google's Gemini
+// author: Christian Suer (github: 'cyberchriz')
 
 #version 450 core
 
@@ -9,12 +8,10 @@
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // --- Buffers ---
-// The 'I' buffer is now just an output buffer, not an input.
 layout(set = 0, binding = 0) buffer l_buffer { float L[]; }; // Lower triangular matrix L
-layout(set = 0, binding = 1) buffer i_buffer { float I[]; }; // Output for the inverse matrix L^-1
+layout(set = 0, binding = 1) buffer i_buffer { float I[]; }; // Output for the inverse matrix L^-1, initialized as the identity matrix
 
 // --- Push Constants ---
-// The 'k' push constant is no longer needed, as the column index is taken from the invocation ID.
 layout(push_constant) uniform push_constants {
     uint size;  // rows/cols of the square matrix L
 };
@@ -27,8 +24,7 @@ uint get_idx(uint row, uint col, uint matrix_size) {
 // --- Main Function ---
 void main() {
     // Each shader invocation computes one entire column of the inverse matrix.
-    // We launch 'size' invocations in total (e.g., dispatch(size, 1, 1) on the host).
-    uint col = gl_GlobalInvocationID.x; // This invocation is responsible for column 'col' (which corresponds to 'k').
+    uint col = gl_GlobalInvocationID.x;
 
     // Exit if this invocation is outside the matrix dimensions.
     if (col >= size) {
@@ -36,8 +32,6 @@ void main() {
     }
 
     // The elements of column 'col' are computed sequentially from top to bottom (row by row).
-    // This is required because the calculation for row 'i' depends on results from rows 'j < i'.
-    // Since a single thread does this whole loop, reads/writes are perfectly ordered.
     for (uint row = 0; row < size; ++row) {
         // The inverse of a lower triangular matrix is also lower triangular.
         // All elements above the main diagonal (where row < col) are zero.
@@ -64,4 +58,5 @@ void main() {
             I[get_idx(row, col, size)] = result;
         }
     }
+    memoryBarrierBuffer(); barrier();
 }

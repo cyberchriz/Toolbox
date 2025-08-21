@@ -32,4 +32,5 @@ void main() {
         // adding the workgroup id to the seed in order to get a different seed for each workgroup
         data[gl_GlobalInvocationID.x] = (random(seed + gl_GlobalInvocationID.x) - 0.5) * 8.0 * sqrt(6.0 / sqrt(fan_in + fan_out));
     }
+    memoryBarrierBuffer(); barrier();
 }

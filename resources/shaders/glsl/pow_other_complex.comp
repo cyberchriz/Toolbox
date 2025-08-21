@@ -1,0 +1,94 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450
+#define MAX_DIMENSIONS 10
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_real_buffer {float data_real[];};
+layout(set = 0, binding = 1) buffer data_imag_buffer {float data_imag[];};
+layout(set = 0, binding = 2) buffer data_shape_buffer {uint data_shape[];};
+layout(set = 0, binding = 3) buffer other_real_buffer {float other_real[];};
+layout(set = 0, binding = 4) buffer other_imag_buffer {float other_imag[];};
+layout(set = 0, binding = 5) buffer other_shape_buffer {uint other_shape[];};
+layout(set = 0, binding = 2) buffer result_real_buffer {float result_real[];};
+layout(set = 0, binding = 3) buffer result_imag_buffer {float result_imag[];};
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint result_N;
+    uint dimensions;
+    uint other_N;
+    uint other_is_complex;
+};
+
+// main function
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
+    if (idx < result_N) {
+        
+        float base_real = data_real[idx];
+        float base_imag = data_imag[idx];
+        
+        // get multidimensional index of current item of 'result' (same as multidimensional index of 'data')
+        uint result_array_index[MAX_DIMENSIONS];
+        uint result_flat_index = idx;
+        for (int i = int(dimensions) - 1; i >= 0; --i) {
+            // note: data has the same shape as result, so we can use data_shape here
+            result_array_index[i] = result_flat_index % data_shape[i];
+            result_flat_index = result_flat_index / data_shape[i];
+        }
+
+        // calculate the corresponding flat index of 'other' (which holds the exponent)
+        uint other_flat_index = 0;
+        for (uint i = 0; i < dimensions; i++) {
+            other_flat_index = other_flat_index * other_shape[i] + result_array_index[i];
+        }
+
+        // get the exponent from 'other' (which can be complex)
+        float exponent_real = other_real[other_flat_index];
+        float exponent_imag = other_is_complex == 1 ? other_imag[other_flat_index] : 0.0f;
+
+        // Handle the special case where the base is zero to avoid log(0)
+        if (base_real == 0.0 && base_imag == 0.0) {
+            // (0 + 0i)^n is generally 0, unless n=0, in which case it's 1.
+            if (exponent_real == 0.0 && exponent_imag == 0.0) {
+                // (0+0i)^0 = 1
+                result_real[idx] = 1.0;
+                result_imag[idx] = 0.0;
+            } else {
+                // (0+0i)^n = 0 for n != 0
+                result_real[idx] = 0.0;
+                result_imag[idx] = 0.0;
+            }
+        }
+
+        else {
+
+            // 1. Convert the complex base to polar form
+            float r = sqrt(base_real * base_real + base_imag * base_imag);
+            float theta = atan(base_imag, base_real);
+
+            // 2. Calculate the complex natural logarithm of the base
+            float log_r = log(r);
+
+            // 3. Perform complex multiplication of the exponent and the logarithm
+            float new_real = exponent_real * log_r - exponent_imag * theta;
+            float new_imag = exponent_real * theta + exponent_imag * log_r;
+
+            // 4. Calculate the complex exponential of the result
+            float final_modulus = exp(new_real);
+
+            // Get the final real and imaginary parts
+            result_real[idx] = final_modulus * cos(new_imag);
+            result_imag[idx] = final_modulus * sin(new_imag);
+        }
+
+        memoryBarrierBuffer(); barrier();
+    }
+}

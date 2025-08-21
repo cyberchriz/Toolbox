@@ -1,0 +1,63 @@
+// Vulkan/GLSL compute shader for LUP Decomposition
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for LU decomposition (version with support for complex numbers);
+// it updates U matrix (=upper triangular matrix)
+
+#version 450 core
+
+// setup specialization constants
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers (Complex Number compatible) ---
+layout(set = 0, binding = 0) buffer l_real_buffer { float L_real[]; }; // Real part of Lower triangular matrix L
+layout(set = 0, binding = 1) buffer l_imag_buffer { float L_imag[]; }; // Imaginary part of Lower triangular matrix L
+layout(set = 0, binding = 2) buffer u_real_buffer { float U_real[]; }; // Real part of Upper triangular matrix U
+layout(set = 0, binding = 3) buffer u_imag_buffer { float U_imag[]; }; // Imaginary part of Upper triangular matrix U
+layout(set = 0, binding = 4) buffer p_buffer      { float P[]; };      // Permutation matrix P
+layout(set = 0, binding = 5) buffer swap_row_buffer { uint swap_row[]; }; // (not used here)
+layout(set = 0, binding = 6) buffer swap_count_buffer { uint swap_count[]; }; // (not used here)
+
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;
+    uint cols;
+    uint k;
+};
+
+// --- Main Function ---
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= (rows * cols)) return;
+
+    uint col = id % cols; // column index
+    uint row = id / cols; // row index
+    uint cols_L = rows;   // L is a rows x rows square matrix
+
+    // Update the submatrix below and to the right of the pivot
+    if (row > k) {
+        if (col > k) {
+            // Perform complex subtraction: U_rc -= L_rk * U_kc
+            // Let L_rk = a + bi, U_kc = c + di
+            // Product is (ac - bd) + i(ad + bc)
+            
+            float a = L_real[row * cols_L + k];
+            float b = L_imag[row * cols_L + k];
+            float c = U_real[k * cols + col];
+            float d = U_imag[k * cols + col];
+
+            float product_real = a * c - b * d;
+            float product_imag = a * d + b * c;
+
+            U_real[row * cols + col] -= product_real;
+            U_imag[row * cols + col] -= product_imag;
+
+        } else if (col == k) {
+            // Zero out the elements in column k below the pivot
+            U_real[row * cols + col] = 0.0;
+            U_imag[row * cols + col] = 0.0;
+        }
+    }
+    memoryBarrierBuffer();
+    barrier();
+}

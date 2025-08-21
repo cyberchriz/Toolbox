@@ -24,4 +24,5 @@ void main() {
         float val = data[gl_GlobalInvocationID.x];
         result[gl_GlobalInvocationID.x] = val > 0 ? val : alpha * (exp(alpha) - 1);
     }
+    memoryBarrierBuffer(); barrier();
 }

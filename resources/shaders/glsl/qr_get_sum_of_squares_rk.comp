@@ -1,0 +1,103 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer Q_buffer        {float Q[];};                   // flat representation of shape {rows, rows}, initialized as identity matrix
+layout(set = 0, binding = 1) buffer R_buffer        {float R[];};                   // flat representation of shape {rows, cols}, initialized with values of A
+                                                                                    // same shape as A, initialized with values of A;
+                                                                                    // 'R' refers to QR decomposition; for Hessenberg transformation it represents 'H';
+                                                                                    // the letter 'R' is reused in this case to avoid an additional buffer
+layout(set = 0, binding = 2) buffer V_buffer        {float V[];};                   // flat representation of shape {rows, min(rows,cols)}   vectors v_k are stored as the columns of V
+layout(set = 0, binding = 3) buffer Tau_buffer      {float Tau[];};                 // shape: {rows}
+layout(set = 0, binding = 4) buffer Temp_w_buffer   {float Temp_w[];};              // shape: {cols}
+layout(set = 0, binding = 5) buffer Temp_u_buffer   {float Temp_u[];};              // shape: {rows}
+layout(set = 0, binding = 6) buffer Temp_y_buffer   {float Temp_y[];};              // shape: {rows}
+layout(set = 0, binding = 7) buffer local_results_buffer {float local_results[];};  // not used by all shaders, only for parallel reductions
+layout(set = 0, binding = 8) buffer alpha_buffer    {float Alpha[];};               // shape: {1}, i.e. single element
+layout(set = 0, binding = 9) buffer K_buffer        {uint K[];};                    // shape: {1}, i.e. single element
+layout(set = 0, binding = 10) buffer Gamma_buffer   {float Gamma[];};               // shape: {k_max}
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint rows;      // rows in the source matrix
+    uint cols;      // columns in the source matrix
+    uint cols_V;
+    uint cols_Q;
+    uint row_workgroups;  // constant, calculated by host based on workgroup_size_1d and number of rows
+    uint method;    // 0 for QR, 1 for Hessenberg
+};
+
+// shared local memory
+shared float local_sum[gl_WorkGroupSize.x];
+
+// avoid NAN/INF
+float valid(float value) {
+    const float FLOAT_MAX = 3.40282347e+38;
+    const float FLT_EPSILON = 1e-07; //or: 1.19209e-07;
+    if (isnan(value)) { return 0.0f; }
+    else if (isinf(value)) { return (value > 0.0f) ? FLOAT_MAX : -FLOAT_MAX; }
+    else { return (abs(value) <= FLT_EPSILON) ? 0.0f : value; }
+}
+
+// main function
+void main() {
+    
+    // ==============================================================================================
+
+    uint row = gl_GlobalInvocationID.x;
+    uint k = K[0];
+
+    // ==============================================================================================
+    // Load squared elements into shared memory
+
+    if (method == 0) {
+        if (row >= k && row < rows) {
+            float value_to_square = R[row * cols + k];
+            float value_squared = value_to_square * value_to_square;
+            local_sum[gl_LocalInvocationID.x] = value_squared;            
+        }
+        else {
+            local_sum[gl_LocalInvocationID.x] = 0.0f;
+        }
+    }
+
+    else { // (method == 1)
+        if (row > k && row < rows) {
+            float value_to_square = R[row * cols + k];
+            float value_squared = value_to_square * value_to_square;
+            local_sum[gl_LocalInvocationID.x] = value_squared;
+        }    
+        else {
+            local_sum[gl_LocalInvocationID.x] = 0.0f;
+        }
+    }
+
+    memoryBarrierShared(); barrier();
+
+    // ==============================================================================================
+	// Perform parallel sum of squares local reduction
+
+    for (uint stride = gl_WorkGroupSize.x / 2; stride > 0; stride /= 2) {
+        if (gl_LocalInvocationID.x < stride && row + stride < rows) {
+            local_sum[gl_LocalInvocationID.x] += local_sum[gl_LocalInvocationID.x + stride];
+        }
+        memoryBarrierShared(); barrier();
+    }
+
+    // ==============================================================================================
+	// Write local sum of squares to global buffer
+
+    if (gl_LocalInvocationID.x == 0) {
+        local_results[gl_WorkGroupID.x] = valid(local_sum[0]);
+    }
+
+    // ensure local result is written to global memory
+    memoryBarrierBuffer(); barrier();
+}
+

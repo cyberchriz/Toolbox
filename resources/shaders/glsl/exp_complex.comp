@@ -1,0 +1,40 @@
+// Vulkan/GLSL compute shader
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// setup buffers
+layout(set = 0, binding = 0) buffer data_real_buffer { float data_real[]; };
+layout(set = 0, binding = 1) buffer data_imag_buffer { float data_imag[]; };
+layout(set = 0, binding = 2) buffer result_real_buffer { float result_real[]; };
+layout(set = 0, binding = 3) buffer result_imag_buffer { float result_imag[]; };
+
+// setup push constants layout
+layout(push_constant) uniform push_constants {
+    uint N;
+};
+
+// main function
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
+    if (idx < N) {
+        float x = data_real[idx];
+        float y = data_imag[idx];
+        
+        // Calculate the modulus of the result: e^x
+        float final_modulus = exp(x);
+
+        // Calculate the real and imaginary parts of the result
+        // based on Euler's formula: e^(x+iy) = e^x * (cos(y) + i*sin(y))
+        result_real[idx] = final_modulus * cos(y);
+        result_imag[idx] = final_modulus * sin(y);
+
+        // Memory barrier to ensure results are visible to other threads if needed
+        memoryBarrierBuffer(); barrier();
+    }
+}

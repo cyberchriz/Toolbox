@@ -1,0 +1,62 @@
+// Vulkan/GLSL compute shader for LUP Decomposition (version with support for complex numbers)
+// author: Christian Suer (github: 'cyberchriz')
+
+// this is a helper function for LU decomposition;
+// it checks if a row swap is needed for the current row 'k'
+
+#version 450 core
+
+// setup specialization constants
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers (Complex Number compatible) ---
+layout(set = 0, binding = 0) buffer l_real_buffer { float L_real[]; }; // Real part of Lower triangular matrix L
+layout(set = 0, binding = 1) buffer l_imag_buffer { float L_imag[]; }; // Imaginary part of Lower triangular matrix L
+layout(set = 0, binding = 2) buffer u_real_buffer { float U_real[]; }; // Real part of Upper triangular matrix U
+layout(set = 0, binding = 3) buffer u_imag_buffer { float U_imag[]; }; // Imaginary part of Upper triangular matrix U
+layout(set = 0, binding = 4) buffer p_buffer      { float P[]; };      // Permutation matrix P
+layout(set = 0, binding = 5) buffer swap_row_buffer { uint swap_row[]; }; // stores the row to swap for the current row 'k'
+layout(set = 0, binding = 6) buffer swap_count_buffer { uint swap_count[]; }; // stores the number of row swaps performed
+
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint rows;
+    uint cols;
+    uint k;      // pivot iterator
+};
+
+// --- Main Function ---
+void main() {
+    uint row = gl_GlobalInvocationID.x;
+    
+    // Initialize swap_row with the current row k (done by a single thread)
+    if (gl_LocalInvocationID.x == 0) {
+        // This loop ensures initialization happens correctly even with concurrent dispatches
+        while (swap_row[0] < k) {
+            atomicExchange(swap_row[0], k);
+        }
+    }
+    barrier();
+
+    // Each thread from k+1 to rows-1 checks if its element in column k has the largest magnitude so far.
+    if (row > k && row < rows) {
+        // To avoid sqrt, we compare the squared magnitude of the complex numbers.
+        // Magnitude squared of z = a + bi is a^2 + b^2.
+        float current_mag_sq = U_real[row * cols + k] * U_real[row * cols + k] + U_imag[row * cols + k] * U_imag[row * cols + k];
+        
+        // Atomically read the current pivot row and calculate its magnitude
+        uint current_swap_row = atomicAdd(swap_row[0], 0); // Atomic read
+        float pivot_mag_sq = U_real[current_swap_row * cols + k] * U_real[current_swap_row * cols + k] + U_imag[current_swap_row * cols + k] * U_imag[current_swap_row * cols + k];
+
+        // If this row's element has a larger magnitude, attempt to set it as the new pivot row.
+        // The while loop helps resolve potential race conditions between threads.
+        while (current_mag_sq > pivot_mag_sq) {
+            atomicExchange(swap_row[0], row);
+            // Re-read the pivot to see if another thread with an even larger magnitude won
+            current_swap_row = atomicAdd(swap_row[0], 0);
+            pivot_mag_sq = U_real[current_swap_row * cols + k] * U_real[current_swap_row * cols + k] + U_imag[current_swap_row * cols + k] * U_imag[current_swap_row * cols + k];
+        }
+    }
+    memoryBarrierBuffer();
+    barrier();
+}

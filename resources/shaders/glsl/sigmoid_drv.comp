@@ -23,4 +23,5 @@ void main() {
         float val = data[gl_GlobalInvocationID.x];
         result[gl_GlobalInvocationID.x] = exp(val) / pow(exp(val) + 1, 2);
     }
+    memoryBarrierBuffer(); barrier();
 }

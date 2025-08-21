@@ -1,0 +1,220 @@
+// Vulkan/GLSL compute shader for complex number convolution.
+// author: by Christian Suer (github: 'cyberchriz').
+
+#version 450 core
+
+// --- Constants ---
+#define MAX_DIMENSIONS 10
+#define MAX_KERNEL_SIZE 100 // Maximum kernel size for efficient use of shared memory.
+
+// --- Specialization Constants ---
+// The actual workgroup size is specified at pipeline creation.
+// We can access it in main() via gl_WorkGroupSize.x, .y, and .z.
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// --- Buffers ---
+// Input Data (Complex)
+layout(set = 0, binding = 0) buffer data_real_buffer {float data_real[];};
+layout(set = 0, binding = 1) buffer data_imag_buffer {float data_imag[];};
+layout(set = 0, binding = 2) buffer data_shape_buffer {uint data_shape[];};
+
+// Kernel (Complex)
+layout(set = 0, binding = 3) buffer kernel_real_buffer {float kernel_real[];};
+layout(set = 0, binding = 4) buffer kernel_imag_buffer {float kernel_imag[];};
+layout(set = 0, binding = 5) buffer kernel_shape_buffer {uint kernel_shape[];};
+
+// Result (Complex)
+layout(set = 0, binding = 6) buffer result_real_buffer {float result_real[];};
+layout(set = 0, binding = 7) buffer result_imag_buffer {float result_imag[];};
+layout(set = 0, binding = 8) buffer result_shape_buffer {uint result_shape[];};
+
+// --- Push Constants ---
+layout(push_constant) uniform push_constants {
+    uint dimensions;
+    uint data_N;
+    uint result_N;
+    uint kernel_N;
+    uint padding_amount;
+    float padding_value_real;
+    float padding_value_imag;
+};
+
+// --- Shared (Local) Memory ---
+// Used for frequently accessed data to reduce global memory latency.
+shared uint shared_data_shape[MAX_DIMENSIONS];
+shared uint shared_kernel_shape[MAX_DIMENSIONS];
+shared uint shared_result_shape[MAX_DIMENSIONS];
+shared float shared_kernel_real[MAX_KERNEL_SIZE];
+shared float shared_kernel_imag[MAX_KERNEL_SIZE];
+
+// --- Main Shader Logic ---
+void main() {
+    // Get the unique global identifier for this invocation.
+    uint global_idx = gl_GlobalInvocationID.x;
+    uint local_idx = gl_LocalInvocationID.x;
+
+    // Boundary check: ensure we don't process beyond the result buffer size.
+    if (global_idx >= result_N) {
+        return;
+    }
+    
+    // --- Load Shape and Kernel data into Shared Memory ---
+    // Each thread in the workgroup loads a piece of the shape information.
+    if (local_idx < dimensions) {
+        shared_data_shape[local_idx] = data_shape[local_idx];
+        shared_kernel_shape[local_idx] = kernel_shape[local_idx];
+        shared_result_shape[local_idx] = result_shape[local_idx];
+    }
+
+    // If the number of dimensions is larger than the workgroup size,
+    // the first thread loads the remaining shape data.
+    if (gl_WorkGroupSize.x < dimensions && local_idx == 0) {
+        for (uint i = gl_WorkGroupSize.x; i < dimensions; i++) {
+            shared_data_shape[i] = data_shape[i];
+            shared_kernel_shape[i] = kernel_shape[i];
+            shared_result_shape[i] = result_shape[i];
+        }
+    }
+    
+    // If the kernel is small enough, load it into shared memory for faster access.
+    if (kernel_N <= MAX_KERNEL_SIZE) {
+        // Parallel load by all threads in the workgroup.
+        if (local_idx < kernel_N) {
+            shared_kernel_real[local_idx] = kernel_real[local_idx];
+            shared_kernel_imag[local_idx] = kernel_imag[local_idx];
+        }
+        // If the kernel is larger than the workgroup, the first thread loads the rest.
+        if (kernel_N > gl_WorkGroupSize.x && local_idx == 0) {
+            for (uint i = gl_WorkGroupSize.x; i < kernel_N; i++) {
+                shared_kernel_real[i] = kernel_real[i];
+                shared_kernel_imag[i] = kernel_imag[i];
+            }
+        }
+    }
+
+    // Synchronize all threads in the workgroup to ensure shared memory is fully populated
+    // before any thread proceeds to computation.
+    memoryBarrierShared();
+    barrier();
+
+    // --- Convolution Calculation ---
+    
+    // Initialize accumulators for the complex result.
+    float product_sum_real = 0.0f;
+    float product_sum_imag = 0.0f;
+
+    // --- 1D Convolution (Optimized Path) ---
+    if (dimensions == 1) {
+        // The starting index in the data array, accounting for padding.
+        // This can be negative, indicating the kernel is partially over the padded area.
+        int data_start_index = int(global_idx) - int(padding_amount);
+
+        for (uint i = 0; i < kernel_N; i++) {
+            int current_data_index = data_start_index + int(i);
+            
+            float d_real, d_imag;
+            float k_real, k_imag;
+
+            // Check if the current data index is within the valid data range.
+            if (current_data_index < 0 || current_data_index >= int(data_N)) {
+                // Out of bounds: use the padding value.
+                d_real = padding_value_real;
+                d_imag = padding_value_imag;
+            } else {
+                // In bounds: read from the global data buffer.
+                d_real = data_real[current_data_index];
+                d_imag = data_imag[current_data_index];
+            }
+
+            // Read kernel value from shared or global memory.
+            if (kernel_N <= MAX_KERNEL_SIZE) {
+                k_real = shared_kernel_real[i];
+                k_imag = shared_kernel_imag[i];
+            } else {
+                k_real = kernel_real[i];
+                k_imag = kernel_imag[i];
+            }
+
+            // Complex multiplication and accumulation:
+            // (d_real + d_imag*i) * (k_real + k_imag*i)
+            product_sum_real += d_real * k_real - d_imag * k_imag;
+            product_sum_imag += d_real * k_imag + d_imag * k_real;
+        }
+    }
+    // --- N-D Convolution (General Path) ---
+    else {
+        // Local arrays to hold multidimensional indices.
+        uint data_array_index[MAX_DIMENSIONS];
+        uint kernel_array_index[MAX_DIMENSIONS];
+        uint result_array_index[MAX_DIMENSIONS];
+
+        // Convert the 1D global_idx into a multidimensional index for the result array.
+        uint result_flat_index = global_idx;
+        for (int i = int(dimensions) - 1; i >= 0; --i) {
+            result_array_index[i] = result_flat_index % shared_result_shape[i];
+            result_flat_index = result_flat_index / shared_result_shape[i];
+        }
+
+        // Iterate over each element of the kernel.
+        for (uint i = 0; i < kernel_N; i++) {
+            // Convert the 1D kernel index 'i' into a multidimensional kernel index.
+            uint kernel_flat_index = i;
+            for (int j = int(dimensions) - 1; j >= 0; --j) {
+                kernel_array_index[j] = kernel_flat_index % shared_kernel_shape[j];
+                kernel_flat_index = kernel_flat_index / shared_kernel_shape[j];
+            }
+
+            bool within_boundaries = true;
+            // For each dimension, calculate the corresponding data index and check boundaries.
+            for (uint j = 0; j < dimensions; j++) {
+                int index_j = int(result_array_index[j] + kernel_array_index[j]) - int(padding_amount);
+                if (index_j < 0 || index_j >= int(shared_data_shape[j])) {
+                    within_boundaries = false;
+                    break; // No need to check other dimensions if one is out of bounds.
+                } else {
+                    data_array_index[j] = uint(index_j);
+                }
+            }
+            
+            float d_real, d_imag;
+            float k_real, k_imag;
+
+            if (within_boundaries) {
+                // Convert the multidimensional data index back to a flat 1D index.
+                uint data_flat_index = 0;
+                for (uint j = 0; j < dimensions; j++) {
+                    data_flat_index = data_flat_index * shared_data_shape[j] + data_array_index[j];
+                }
+                // Read from global data buffer.
+                d_real = data_real[data_flat_index];
+                d_imag = data_imag[data_flat_index];
+            } else {
+                // Out of bounds: use padding value.
+                d_real = padding_value_real;
+                d_imag = padding_value_imag;
+            }
+
+            // Read kernel value from shared or global memory.
+            if (kernel_N <= MAX_KERNEL_SIZE) {
+                k_real = shared_kernel_real[i];
+                k_imag = shared_kernel_imag[i];
+            } else {
+                k_real = kernel_real[i];
+                k_imag = kernel_imag[i];
+            }
+            
+            // Complex multiplication and accumulation.
+            product_sum_real += d_real * k_real - d_imag * k_imag;
+            product_sum_imag += d_real * k_imag + d_imag * k_real;
+        }
+    }
+
+    // --- Write Result ---
+    // Store the final computed real and imaginary parts in the result buffers.
+    result_real[global_idx] = product_sum_real;
+    result_imag[global_idx] = product_sum_imag;
+    
+    // --- Final Synchronization Barrier ---
+    memoryBarrierBuffer();
+    barrier();
+}

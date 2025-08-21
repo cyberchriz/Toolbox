@@ -98,4 +98,5 @@ void main() {
         // write the min value to the result buffer
         result[gl_GlobalInvocationID.x] = min_value;
     }
+    memoryBarrierBuffer(); barrier();
 }

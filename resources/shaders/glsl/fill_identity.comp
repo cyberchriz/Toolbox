@@ -41,4 +41,5 @@ void main() {
         }
         data[gl_GlobalInvocationID.x] = 1.0;
     }
+    memoryBarrierBuffer(); barrier();
 }

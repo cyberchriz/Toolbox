@@ -24,4 +24,5 @@ void main() {
     if (idx < N) {
         result[idx] = (data[idx] - data_mean) / data_range;
     }
+    memoryBarrierBuffer(); barrier();
 }

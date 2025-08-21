@@ -31,4 +31,5 @@ void main() {
             result[idx] = val;
         }
     }
+    memoryBarrierBuffer(); barrier();
 }

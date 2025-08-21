@@ -22,4 +22,5 @@ void main() {
     if (gl_GlobalInvocationID.x < N) {
         result[gl_GlobalInvocationID.x] = log(data[gl_GlobalInvocationID.x]) / log(base);
     }
+    memoryBarrierBuffer(); barrier();
 }

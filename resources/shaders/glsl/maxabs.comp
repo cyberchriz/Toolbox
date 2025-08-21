@@ -45,4 +45,6 @@ void main() {
         // this shader has no global reduction!
         // it has to be invoked several times, until N <= workgroup_size_x
     }
+
+    memoryBarrierBuffer(); barrier();
 }

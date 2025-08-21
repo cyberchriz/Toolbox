@@ -45,5 +45,5 @@ void main() {
             atomicExchange(swap_row[0], row);
         }
     }
-    memoryBarrierBuffer();
+    memoryBarrierBuffer(); barrier();
 }

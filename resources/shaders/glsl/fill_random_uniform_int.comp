@@ -32,4 +32,5 @@ void main() {
         // adding the seed to the global invocation ID to ensure different random numbers for each invocation
         data[gl_GlobalInvocationID.x] = round(random(seed + gl_GlobalInvocationID.x) * (max_val - min_val) + min_val);
     }
+    memoryBarrierBuffer(); barrier();
 }
