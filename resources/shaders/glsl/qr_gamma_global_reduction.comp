@@ -20,8 +20,7 @@ layout(set = 0, binding = 5) buffer Temp_u_buffer   {float Temp_u[];};          
 layout(set = 0, binding = 6) buffer Temp_y_buffer   {float Temp_y[];};              // shape: {rows}
 layout(set = 0, binding = 7) buffer local_results_buffer {float local_results[];};  // not used by all shaders, only for parallel reductions
 layout(set = 0, binding = 8) buffer alpha_buffer    {float Alpha[];};               // shape: {min(rows,cols)}
-layout(set = 0, binding = 9) buffer K_buffer        {uint K[];};                    // shape: {1}, i.e. single element
-layout(set = 0, binding = 10) buffer Gamma_buffer   {float Gamma[];};               // shape: {k_max}
+layout(set = 0, binding = 9) buffer Gamma_buffer    {float Gamma[];};                // shape: {k_max}
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
@@ -31,6 +30,7 @@ layout(push_constant) uniform push_constants {
     uint cols_Q;
     uint row_workgroups;  // constant, calculated by host based on workgroup_size_1d and number of rows
     uint method;    // 0 for QR, 1 for Hessenberg
+    uint k;         // k iterator
 };
 
 // avoid NAN/INF
@@ -47,7 +47,6 @@ void main() {
     // perform global reduction for gamma (only needed for Hessenberg)
     if (method == 1) {
         
-        uint k = K[0];
         float tau_k = Tau[k];
 
         float total_dot_product_sum = 0;

@@ -542,9 +542,9 @@ int main() {
 	Log::force("\nThis library supports LU decomposition, which is the basis for calculation the matrix inverse.");
 	X = X.reshape(7, 7); X.fill_random_int(-9, 9);
 	X.print("\n... for X =");
-	Log::force("\nuint32_t swap_count = X.lu().swap_count;");
+	Log::force("\nuint32_t swap_count = X.lu().swap_count();");
 	auto lu_result = X.lu();
-	Log::force("\nswap_count = ", lu_result.swap_count, " row swaps have been performed.");
+	Log::force("\nswap_count = ", lu_result.swap_count(), " row swaps have been performed.");
 	lu_result.L.print("\nresult for lower triagonal matrix L =");
 	lu_result.U.print("\nresult for upper triagonal matrix U =");
 	Log::force("\nThe source matrix has a 'rank' (=number of linearly independent rows) of NGrid::rank(U) = ", NGrid::rank(lu_result.U), " (Note: this is a static method)");
@@ -562,14 +562,14 @@ int main() {
 	NGrid X_ident(X.get_shape()[0], X.get_shape()[1]); X_ident.fill_identity();
 	X_ident.print("\nX_ident = ");
 	X.concatenate(X_ident, 1).print("\nBEFORE the operation, the augmented matrix [X|X_ident] would look like this:  X.concatenate(X_ident, 1) = ");
-	X.rref(X_ident).rref.print("\nThe concatenation (=augmented matrix) above was only for clarification; we don't have to do this manually. To get the RREF we can simply write directly: X.rref(X_ident).rref = ");
+	X.rref(X_ident).augmented().print("\nThe concatenation (=augmented matrix) above was only for clarification; we don't have to do this manually. To get the RREF we can simply write directly: X.rref(X_ident).augmented() = ");
 	Log::force("\nFrom this result, we could extract the inverse by using the subgrid method. However, this is unnecessary, because it's directly available as a struct member:");
 	X.rref(X_ident).solution.print("\nX.rref(X_ident).solution =");
 	X.rref(X_ident).coeffs.print("\nX.rref(X_ident).coeffs = ");
 	Log::force("\nThe method NGrid::rref() can also be used to get the solution of a system of linear equations.");
 	Y = Y.reshape(X.get_shape()[0]); Y.fill_random_int(-9, 9);
 	Y.print("\nLet's say we augment X by the following vector Y:");
-	X.rref(Y).rref.print("\nThe RREF then becomes: X.rref(Y).rref =");
+	X.rref(Y).augmented().print("\nThe RREF then becomes: X.rref(Y).augmented() =");
 	X.rref(Y).solution.print("Or directly for the solution: X.rref(Y).solution = ");
 
 	Log::force("\nThis library supports QR decomposition: auto qr_result = X.qr();");

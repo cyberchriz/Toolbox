@@ -19,7 +19,8 @@ layout(set = 0, binding = 4) buffer result_shape_buffer {uint result_shape[];};
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
-    uint dimensions;
+    uint data_dimensions;
+    uint result_dimensions;
     uint data_N;
 };
 
@@ -34,10 +35,10 @@ void main() {
 
         // use shared arrays to reduce global memory access for performance
         if (gl_LocalInvocationID.x == 0) {
-            for (uint i = 0; i < dimensions; i++) {
-                shared_data_shape[i] = data_shape[i];
-                shared_target_axis_order[i] = target_axis_order[i];
-                shared_result_shape[i] = result_shape[i];
+            for (uint i = 0; i < MAX_DIMENSIONS; i++) {
+                shared_data_shape[i] = i < data_dimensions ? data_shape[i] : 1;
+                shared_target_axis_order[i] = i < result_dimensions ? target_axis_order[i] : 1;
+                shared_result_shape[i] = i < result_dimensions ? result_shape[i] : 1;
             }
         }
         memoryBarrierShared();
@@ -49,19 +50,19 @@ void main() {
 
         // get multidimensional index of current element of the source data
         uint data_flat_index = gl_GlobalInvocationID.x;
-        for (int i = int(dimensions) - 1; i >= 0; --i) {
+        for (int i = int(data_dimensions) - 1; i >= 0; --i) {
             data_array_index[i] = data_flat_index % shared_data_shape[i];
             data_flat_index = data_flat_index / shared_data_shape[i];
         }
 
         // convert data index to corresponding result index
-        for (uint i = 0; i < dimensions; i++) {
+        for (uint i = 0; i < result_dimensions; i++) {
             result_array_index[shared_target_axis_order[i]] = data_array_index[i];
         }
 
         // calculate flat index of current element in the result buffer
         uint result_flat_index = 0;
-        for (uint i = 0; i < dimensions; i++) {
+        for (uint i = 0; i < result_dimensions; i++) {
             result_flat_index = result_flat_index * shared_result_shape[i] + result_array_index[i];
         }
 

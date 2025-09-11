@@ -8,7 +8,6 @@
 #define NOMINMAX
 #define DEFAULT_WORKGROUP_SIZE_1D 256	// default workgroup_size_x for 1d dispatch; can be changed via set_workgroup_size_1d() method
 #define DEFAULT_WORKGROUP_SIZE_2D 16	// default workgroup_size_x for 2d dispatch; can be changed via set_workgroup_size_2d() method
-#define MAX_DESCRIPTOR_SET_COUNT 10 // max number of descriptor sets within the shared singleton descriptor pool
 
 #include <algorithm>
 #include <angular.h>            // custom class for angular units
@@ -48,41 +47,51 @@ struct RREF;
 struct EIGENresult;
 class CGrid;
 
+enum ScalingMethod {
+	SCALING_METHOD_NONE,
+	SCALING_METHOD_MINMAX,
+	SCALING_METHOD_MEAN,
+	SCALING_METHOD_ZSCORE
+};
+
 // data structure class for parallel computing with Vulkan
 // (for real number only; use CGrid for complex numbers)
 class NGrid {
 	friend class CGrid;
+	friend class NNet;
 public:
 	// +=================================+   
 	// | Constructors & Destructors      |
 	// +=================================+
-	NGrid();                                        // default constructor (initilizes an empty array)
+	NGrid();                                        // default constructor (initializes an empty array)
 	template<typename... Args> NGrid(Args... args); // parametric default constructor for multi-dimensional array, overload for variadic template
 	NGrid(const std::vector<uint32_t>& shape);      // parametric default constructor for multi-dimensional array, overload for std::vector
 	NGrid(std::initializer_list<uint32_t> shape);   // parametric default constructor for multi-dimensional array, overload for std::initializer_list
 	NGrid(std::vector<float_t> source_vector);      // construct 1d array and directly fill it with the contents of a std::vector<float_t>
-	NGrid(NGrid&& other) noexcept;                  // move constructor
-	NGrid(const NGrid& other);                      // copy constructor
+	NGrid(NGrid&& other) noexcept;		            // move constructor
+	NGrid(const NGrid& other);						// copy constructor
 	~NGrid();                                       // destructor
 
 	// +=================================+   
 	// | Assignment                      |
 	// +=================================+
-	NGrid& operator=(const NGrid& other);           // copy assignment
-	NGrid& operator=(NGrid&& other) noexcept;       // move assignment
+	NGrid& operator=(const NGrid& other);			// copy assignment
+	NGrid& operator=(NGrid&& other) noexcept;		// move assignment
 	void operator=(const std::vector<float_t>& data); // alias for set(const std::vector<float_t>& data)
 	void operator=(const float_t* data);            // alias for set(const float_t* data)
 
 	// +=================================+   
 	// | getters & setters               |
 	// +=================================+
-	void set(std::initializer_list<uint32_t> index, const float_t value);
-	void set(const std::vector<uint32_t>& index, const float_t value);
-	void set(const std::vector<float_t>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	void set(const float_t* data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	void set(const NGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	void set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset);
-	void set(const NGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
+	// these setter methods are 'destructive', i.e. they modify the NGrid itself, then return a reference to 'this'
+	NGrid& set(std::initializer_list<uint32_t> index, const float_t value);
+	NGrid& set(const std::vector<uint32_t>& index, const float_t value);
+	NGrid& set(const std::vector<float_t>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	NGrid& set(const float_t* data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	NGrid& set(const NGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	NGrid& set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset);
+	NGrid& set(const NGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
+
 	float_t get(const uint32_t flat_index) const;
 	float_t get(const std::initializer_list<uint32_t> index) const;
 	std::vector<float_t> get() const;
@@ -92,7 +101,7 @@ public:
 	uint32_t get_dimensions() const;
 	uint32_t get_size(uint32_t dimension = 0) const;
 	uint32_t get_elements() const;
-	std::vector<uint32_t> get_shape() const;
+	const std::vector<uint32_t>& get_shape() const;
 	uint32_t rows() const;
 	uint32_t cols() const;
 	std::string get_shapestring() const;
@@ -102,29 +111,32 @@ public:
 	// +=================================+   
 	// | Fill                            |
 	// +=================================+
-	void fill(const float_t value);
-	void fill_zero();
-	void fill_identity();
+	// these fill methods are 'destructive', i.e. they modify the NGrid itself, then return a reference to 'this'
+	NGrid& fill(const float_t value);
+	NGrid& fill_zero();
+	NGrid& fill_identity();
+	NGrid& fill_random_gaussian(const float_t mu = 0.0f, const float_t sigma = 1.0f);
+	NGrid& fill_random_uniform(const float_t min = 0.0f, const float_t max = 1.0f);
+	NGrid& fill_random_uniform_int(const int32_t min = 0, const int32_t max = 9);
+	NGrid& fill_random(const float_t min = 0.0f, const float_t max = 1.0f); // alias for fill_random_uniform()
+	NGrid& fill_random_int(const int32_t min = 0, const int32_t max = 9); // alias for fill_random_uniform_int()
+	NGrid& fill_random_binary(float_t ratio = 0.5f);
+	NGrid& fill_random_sign(float_t ratio = 0.5f);
+	NGrid& fill_range(const float_t start = 0.0f, const float_t step = 1.0f);
+	NGrid& fill_dropout(float_t ratio = 0.2f);
+	NGrid& fill_index();
+
 	static NGrid identity(const uint32_t size);
-	void fill_random_gaussian(const float_t mu = 0.0f, const float_t sigma = 1.0f);
-	void fill_random_uniform(const float_t min = 0.0f, const float_t max = 1.0f);
-	void fill_random_uniform_int(const int32_t min = 0, const int32_t max = 9);
-	void fill_random(const float_t min = 0.0f, const float_t max = 1.0f); // alias for fill_random_uniform()
-	void fill_random_int(const int32_t min = 0, const int32_t max = 9); // alias for fill_random_uniform_int()
-	void fill_random_binary(float_t ratio = 0.5f);
-	void fill_random_sign(float_t ratio = 0.5f);
-	void fill_range(const float_t start = 0.0f, const float_t step = 1.0f);
-	void fill_dropout(float_t ratio = 0.2f);
-	void fill_index();
 
 	// +=================================+   
 	// | Neural Net Weight Initialization|
 	// +=================================+
-	void weightinit_tanh_normal(uint32_t fan_in, uint32_t fan_out);
-	void weightinit_tanh_uniform(uint32_t fan_in, uint32_t fan_out);
-	void weightinit_sigmoid(uint32_t fan_in, uint32_t fan_out);
-	void weightinit_relu(uint32_t fan_in);
-	void weightinit_elu(uint32_t fan_in);
+	// these initialization methods are 'destructive', i.e. they modify the NGrid itself, then return a reference to 'this'
+	NGrid& weightinit_tanh_normal(uint32_t fan_in, uint32_t fan_out);
+	NGrid& weightinit_tanh_uniform(uint32_t fan_in, uint32_t fan_out);
+	NGrid& weightinit_sigmoid(uint32_t fan_in, uint32_t fan_out);
+	NGrid& weightinit_relu(uint32_t fan_in);
+	NGrid& weightinit_elu(uint32_t fan_in);
 
 	// +=================================+   
 	// | Distribution Properties         |
@@ -281,6 +293,8 @@ public:
 	NGrid scale_minmax(float_t range_from = 0.0f, float_t range_to = 1.0f) const;
 	NGrid scale_mean() const;
 	NGrid scale_zscore(const float_t z_score = 1.0f) const;
+	NGrid scale_undo() const;
+	NGrid scale_undo(const NGrid& scaling_reference) const;
 
 	// +=================================+   
 	// | Activation Functions            |
@@ -350,35 +364,40 @@ public:
 	// +=================================+   
 	// | Miscellaneous                   |
 	// +=================================+
+	NGrid flush() const;
 	void print(std::string comment = "", int32_t precision = 3, bool with_indices = false, bool rows_inline = true, std::string delimiter = "|") const;
 	static void set_workgroup_size_1d(uint32_t size);
 	static void set_workgroup_size_2d(uint32_t size);
-	static void set_fence_timeout_nanosec(uint64_t timeout);
 	operator CGrid() const;
 	uint32_t flat_index(std::initializer_list<uint32_t> multi_index) const;
 	uint32_t flat_index(const std::vector<uint32_t>& multi_index) const;
+	Semaphore& get_timeline_semaphore() const;
 
-protected:
+private:
 
 	// +=================================+   
-	// | Protected Class Members         |
+	// | Private Class Members           |
 	// +=================================+
 	static VulkanManager* manager;              // shared singleton manager for instance, device and command pool
-	static DescriptorPool* descriptor_pool;	    // shared singleton descriptor pool for command buffer
-	static CommandBuffer* command_buffer;		// shared singleton command buffer for compute operations
 	static uint32_t workgroup_size_1d;          // default workgroup size for 1d dispatch
 	static uint32_t workgroup_size_2d;          // default workgroup size for 2d dispatch
-	static uint64_t fence_timeout_nanosec;      // timeout for waiting for the fence to be signaled
 	std::vector<uint32_t> shape = {};           // shape of the array
 	uint32_t dimensions = 0;                    // number of dimensions
 	uint32_t elements = 0;                      // total number of elements
 	Buffer<float_t>* data_buffer = nullptr;
 	Buffer<uint32_t>* shape_buffer = nullptr;
+	Semaphore* timeline_semaphore = nullptr;
+
+	// store scaling information (e.g. useful for neural networks: label scaling based on input scaling)
+	ScalingMethod scaling_method = ScalingMethod::SCALING_METHOD_NONE;
+	float_t scaling_min = 0;
+	float_t scaling_max = 0;
+	float_t scaling_mean = 0;
+	float_t scaling_stdev = 0;
+	float_t scaling_zscore = 0;
 
 	// helper methods
 	void create(const std::vector<uint32_t>& shape); // instance creation helper method, shared among constructors
-	static void release_descriptor_pool();      // static method for cleanup of the shared descriptor pool
-	static void release_command_buffer();       // static method for cleanup of the shared command buffer
 	void doubleshift_bulge_chase(const float_t alpha, const float_t beta, uint32_t start_row, uint32_t end_row);
 };
 
@@ -428,19 +447,19 @@ public:
 	// +=================================+   
 	// | getters & setters               |
 	// +=================================+
-	void set(std::initializer_list<uint32_t> index, const float_t value);
-	void set(std::initializer_list<uint32_t> index, const std::complex<float_t> complex_value);
-	void set(const std::vector<uint32_t>& index, const float_t value);
-	void set(const std::vector<uint32_t>& index, const std::complex<float_t> complex_value);
-	void set(const std::vector<float_t>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	void set(const std::vector<std::complex<float_t>>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	void set(const float_t* data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	void set(const NGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	void set(const CGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	void set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset);
-	void set(const CGrid& other, const std::vector<uint32_t>& target_origin_offset);
-	void set(const NGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
-	void set(const CGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
+	CGrid& set(std::initializer_list<uint32_t> index, const float_t value);
+	CGrid& set(std::initializer_list<uint32_t> index, const std::complex<float_t> complex_value);
+	CGrid& set(const std::vector<uint32_t>& index, const float_t value);
+	CGrid& set(const std::vector<uint32_t>& index, const std::complex<float_t> complex_value);
+	CGrid& set(const std::vector<float_t>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	CGrid& set(const std::vector<std::complex<float_t>>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	CGrid& set(const float_t* data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	CGrid& set(const NGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	CGrid& set(const CGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	CGrid& set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset);
+	CGrid& set(const CGrid& other, const std::vector<uint32_t>& target_origin_offset);
+	CGrid& set(const NGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
+	CGrid& set(const CGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
 	std::complex<float_t> get(const uint32_t flat_index) const;
 	std::complex<float_t> get(const std::initializer_list<uint32_t> index) const;
 	std::vector<std::complex<float_t>> get() const;
@@ -448,7 +467,7 @@ public:
 	uint32_t get_dimensions() const;
 	uint32_t get_size(uint32_t dimension = 0) const;
 	uint32_t get_elements() const;
-	std::vector<uint32_t> get_shape() const;
+	const std::vector<uint32_t>& get_shape() const;
 	uint32_t rows() const;
 	uint32_t cols() const;
 	std::string get_shapestring() const;
@@ -458,9 +477,9 @@ public:
 	// +=================================+   
 	// | Fill                            |
 	// +=================================+
-	void fill(const float_t value);
-	void fill(const std::complex<float_t> complex_value);
-	void fill_zero();
+	CGrid& fill(const float_t value);
+	CGrid& fill(const std::complex<float_t> complex_value);
+	CGrid& fill_zero();
 
 	// +=================================+   
 	// | Addition                        |
@@ -478,7 +497,7 @@ public:
 	void operator+=(const CGrid& other);
 
 	// +=================================+   
-	// | Substraction                    |
+	// | Subtraction                     |
 	// +=================================+
 	CGrid operator-(const float_t value) const;
 	CGrid operator-(const std::complex<float_t> complex_value) const;
@@ -578,14 +597,12 @@ public:
 	operator NGrid() const;
 	static void set_workgroup_size_1d(uint32_t size);
 	static void set_workgroup_size_2d(uint32_t size);
-	static void set_fence_timeout_nanosec(uint64_t timeout);
 	void print(std::string comment = "", int32_t precision = 3, bool with_indices = false, bool rows_inline = true, std::string delimiter = "|") const;
+	uint64_t get_timeline_counter() const;
 
-protected:
-	// protected class members
+private:
+	// private class members
 	static VulkanManager* manager;              // shared singleton manager for instance, device and command pool
-	static DescriptorPool* descriptor_pool;	    // shared singleton descriptor pool for command buffer
-	static CommandBuffer* command_buffer;		// shared singleton command buffer for compute operations
 	static uint32_t workgroup_size_1d;          // default workgroup size for 1d dispatch
 	static uint32_t workgroup_size_2d;          // default workgroup size for 2d dispatch
 	static uint64_t fence_timeout_nanosec;      // timeout for waiting for the fence to be signaled
@@ -601,18 +618,12 @@ protected:
 // | Static Member Initializations   |
 // +=================================+
 VulkanManager* NGrid::manager = nullptr;
-DescriptorPool* NGrid::descriptor_pool = nullptr;
-CommandBuffer* NGrid::command_buffer = nullptr;
 uint32_t NGrid::workgroup_size_1d = DEFAULT_WORKGROUP_SIZE_1D;
 uint32_t NGrid::workgroup_size_2d = DEFAULT_WORKGROUP_SIZE_2D;
-UINT64 NGrid::fence_timeout_nanosec = 1e09; // default: 1 second timeout for waiting for the fence to be signaled
 
 VulkanManager* CGrid::manager = nullptr;
-DescriptorPool* CGrid::descriptor_pool = nullptr;
-CommandBuffer* CGrid::command_buffer = nullptr;
 uint32_t CGrid::workgroup_size_1d = DEFAULT_WORKGROUP_SIZE_1D;
 uint32_t CGrid::workgroup_size_2d = DEFAULT_WORKGROUP_SIZE_2D;
-UINT64 CGrid::fence_timeout_nanosec = 1e09; // default: 1 second timeout for waiting for the fence to be signaled
 
 // +=================================+   
 // | Enums & Helper Structs          |
@@ -633,23 +644,69 @@ enum ActFunc {
 struct RREF {
 	NGrid coeffs;	// 'left' part of the reduced row echelon form (typically becomes the identity matrix)
 	NGrid solution;	// 'right' (=augmented) part of the reduced row echelon form
-	NGrid rref;		// left and right part of the reduced row echelon form concatenated into an augmented single matrix
+	NGrid augmented() const { return coeffs.concatenate(solution, 1); } // left and right part of the reduced row echelon form concatenated into an augmented single matrix
 };
 
 // structure for the result of LU decomposition
 struct LUresult {
+	friend class NGrid;
+private:
+	Buffer<uint32_t>* swap_count_staging_buffer = nullptr;
+	Buffer<uint32_t>* swap_count_buffer = nullptr;
+	Buffer<uint32_t>* swap_row_buffer = nullptr;
+public:
 	NGrid L; // lower triangular matrix
 	NGrid U; // upper triangular matrix
 	NGrid P; // permutation matrix (identity matrix if no row swaps were performed)
-	uint32_t swap_count; // number of row swaps performed during the decomposition
+	uint32_t swap_count() {
+		static uint32_t result = swap_count_buffer->read_element(0);
+		return result;
+	}
+
+	// destructor
+	~LUresult() {
+		if (swap_count_buffer != nullptr) {
+			delete swap_count_buffer;
+			swap_count_buffer = nullptr;
+		}
+		if (swap_count_staging_buffer != nullptr) {
+			delete swap_count_staging_buffer;
+			swap_count_staging_buffer = nullptr;
+		}
+		if (swap_row_buffer != nullptr) {
+			delete swap_row_buffer;
+			swap_row_buffer = nullptr;
+		}
+	}
 };
 
 // structure for the result of LU decomposition for matrices with complex numbers
 struct LUresultComplex {
+	friend class CGrid;
+private:
+	Buffer<uint32_t>* swap_count_staging_buffer = nullptr;
+	Buffer<uint32_t>* swap_count_buffer = nullptr;
+public:
 	CGrid L; // lower triangular matrix
 	CGrid U; // upper triangular matrix
 	NGrid P; // permutatiion matrix (identity matrix if no row swaps were performed)
-	uint32_t swap_count; // number of row swaps performed during the decomposition
+
+	uint32_t swap_count() {
+		static uint32_t result = swap_count_buffer->read_element(0);
+		return result;
+	}
+
+	// destructor
+	~LUresultComplex() {
+		if (swap_count_buffer != nullptr) {
+			delete swap_count_buffer;
+			swap_count_buffer = nullptr;
+		}
+		if (swap_count_staging_buffer != nullptr) {
+			delete swap_count_staging_buffer;
+			swap_count_staging_buffer = nullptr;
+		}
+	}
 };
 
 // structure for the result of QR decomposition
@@ -734,60 +791,54 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 		}
 	}
 
-	// create a shared manager for instance, device and commandpool
-	if (VulkanManager::get_singleton() == nullptr) {
-		manager = VulkanManager::make_singleton_for_compute(1, 3, 0);
+	// create a shared manager for instance, device and command pool
+	if (!&VulkanManager::get_singleton()) {
+		manager = &VulkanManager::make_singleton();
 	}
 	else {
-		manager = VulkanManager::get_singleton();
+		manager = &VulkanManager::get_singleton();
 	}
 
-	// create a shared singleton descriptor pool for the command buffer
-	if (descriptor_pool == nullptr) {
-		std::vector<VkDescriptorPoolSize> max_buffers = {
-			{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20},
-			{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20}
-		};
-		descriptor_pool = new DescriptorPool(manager->get_device(), MAX_DESCRIPTOR_SET_COUNT, max_buffers);
-
-		// register static destructor for cleanup at program termination;
-		// note: this is necessary because descriptor_pool is a static object shared across multiple instances of NGrid,
-		// therefore it shouldn't be destroyed by any object destructors which are meant for single instances
-		std::atexit(&NGrid::release_descriptor_pool);
-	}
-
-	// create a command buffer
-	if (command_buffer == nullptr) {
-		command_buffer = new CommandBuffer(manager->get_device(), manager->get_command_pool_compute());
-		std::atexit(&NGrid::release_command_buffer);
+	// create a timeline semaphore (required for GPU/GPU synchronization)
+	if (timeline_semaphore == nullptr) {
+		timeline_semaphore = new Semaphore(manager->get_device(), 0);
 	}
 
 	if (this->elements != 0) {
-		// allocate as a 'flat' buffer
-		VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		// allocate as a 'flat' buffer (device-local!)
 		if (this->data_buffer == nullptr) {
-			data_buffer = new Buffer<float_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->elements, memory_properties);
+			data_buffer = new Buffer<float_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->elements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		}
 		else {
 			// keep the previous buffer only if it already has sufficient capacity
 			if (data_buffer->get_elements() < this->elements) {
 				delete data_buffer;
-				data_buffer = new Buffer<float_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->elements, memory_properties);
+				data_buffer = new Buffer<float_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->elements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 			}
 		}
 
-		// allocate a storage buffer for the shape of the array
+		// allocate a storage buffer (device-local!) for the shape of the array
 		if (this->shape_buffer == nullptr) {
-			shape_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions, memory_properties);
+			shape_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		}
 		else {
 			// if it already exists: create a new one in case the number of dimensions is wrong
 			if (shape_buffer->get_elements() != this->dimensions) {
 				delete shape_buffer;
-				shape_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions, memory_properties);
+				shape_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 			}
 		}
-		shape_buffer->write(this->shape, this->dimensions, 0, 0);
+
+		// write shape to a temporary staging buffer, then copy it to the shape buffer on the device
+		ComputeTask& task = manager->get_compute_task(std::string(__FUNCTION__) + " (copy shape buffer to device)");
+		Buffer<uint32_t>& staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		staging_buffer.write(this->shape, this->dimensions, 0, 0);
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.copy_buffer(staging_buffer, *shape_buffer);
+		cb.end_recording();
+		task.timeline_sync(*this->timeline_semaphore);
+		task.submit();
 	}
 }
 
@@ -798,10 +849,14 @@ NGrid::NGrid(NGrid&& other) noexcept {
 	this->dimensions = other.dimensions;                        other.dimensions = 0;
 	this->shape = std::move(other.shape);                       other.shape.clear();
 	if (this->data_buffer != nullptr) {
-		delete[] this->data_buffer;
+		delete this->data_buffer;
 	}
 	this->data_buffer = std::move(other.data_buffer);           other.data_buffer = nullptr;
+	if (this->shape_buffer != nullptr) {
+		delete this->shape_buffer;
+	}
 	this->shape_buffer = std::move(other.shape_buffer);         other.shape_buffer = nullptr;
+	this->timeline_semaphore = std::move(other.timeline_semaphore); other.timeline_semaphore = nullptr;
 }
 
 // NGrid copy constructor
@@ -813,7 +868,6 @@ NGrid::NGrid(const NGrid& other) {
 
 // destructor
 NGrid::~NGrid() {
-	// destroy in reverse order of creation
 	Log::debug("NGrid destructor invoked");
 	if (this->shape_buffer != nullptr) {
 		delete this->shape_buffer;
@@ -823,8 +877,10 @@ NGrid::~NGrid() {
 		delete this->data_buffer;
 		this->data_buffer = nullptr;
 	}
-	// Note: 'manager', 'command_buffer' and 'descriptor_pool' are static objects, shared across multiple instances of NGrid,
-	// therefore they shouldn't be destroyed by any object destructors which are meant for single instances
+	if (this->timeline_semaphore != nullptr) {
+		delete this->timeline_semaphore;
+		this->timeline_semaphore = nullptr;
+	}
 }
 
 // +=================================+   
@@ -835,8 +891,6 @@ NGrid::~NGrid() {
 NGrid& NGrid::operator=(const NGrid& other) {
 	Log::debug("NGrid copy assignment invoked, copying from other (handle: ", other.data_buffer, ") to this (handle: ", this->data_buffer, ")");
 	if (this != &other) {
-		delete this->data_buffer;	this->data_buffer = nullptr;
-		delete this->shape_buffer;  this->shape_buffer = nullptr;
 		this->create(other.get_shape());
 		this->set(other);
 	}
@@ -854,6 +908,7 @@ NGrid& NGrid::operator=(NGrid&& other) noexcept {
 		delete this->shape_buffer;
 		this->data_buffer = std::move(other.data_buffer);           other.data_buffer = nullptr;
 		this->shape_buffer = std::move(other.shape_buffer);         other.shape_buffer = nullptr;
+		this->timeline_semaphore = std::move(other.timeline_semaphore); other.timeline_semaphore = nullptr;
 	}
 	return *this;
 }
@@ -864,19 +919,48 @@ NGrid& NGrid::operator=(NGrid&& other) noexcept {
 
 // assigns a value to an NGrid data element via multi-dimensional index;
 // overload with index as std::initializer_list<uint32_t>
-void NGrid::set(std::initializer_list<uint32_t> index, const float_t value) {
-	this->data_buffer->write_element(flat_index(index), value);
+NGrid& NGrid::set(std::initializer_list<uint32_t> index, const float_t value) {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// write value to a temporary staging buffer (transient resource, owned by the task)
+	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(1, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	staging_buffer.write_element(0, value);
+
+	// copy from staging buffer to data buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.copy_buffer(staging_buffer, *this->data_buffer, sizeof(float_t), 0, flat_index(index) * sizeof(float_t));
+	cb.end_recording();
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+	return *this;
 }
 
 // assigns a value to an NGrid data element via multi-dimensional index;
 // overload with index as std::vector<uint32_t>
-void NGrid::set(const std::vector<uint32_t>& index, const float_t value) {
-	this->data_buffer->write_element(flat_index(index), value);
+NGrid& NGrid::set(const std::vector<uint32_t>& index, const float_t value) {
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// write value to a temporary staging buffer (transient resource, owned by the task)
+	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(1, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	staging_buffer.write_element(0, value);
+
+	// copy from staging buffer to data buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.copy_buffer(staging_buffer, *this->data_buffer, sizeof(float_t), 0, flat_index(index) * sizeof(float_t));
+	cb.end_recording();
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+	return *this;
 }
 
 // alias for NGrid::set(const std::vector<float_t>& data)
 void NGrid::operator=(const std::vector<float_t>& data) {
-	*this = this->reshape({ uint32_t(data.size()) });
+	*this = this->reshape({ static_cast<uint32_t>(data.size()) });
 	this->set(data);
 }
 
@@ -885,189 +969,304 @@ void NGrid::operator=(const float_t* data) {
 	this->set(data, this->elements);
 }
 
-// alias for CGrid::set(const float_t* data)
-void CGrid::operator=(const float_t* data) {
-	this->real.set(data, this->real.elements);
-}
-
 // copies raw data from a std::vector<float_t> to the data buffer
 // of the underlying NGrid array;
-// copied_elements=0 means: copy ALL elements from the source buffer;
-// this method will typically not write beyond the boundaries of the NGrid, i.e. not automatic resizing occurs,
+// copied_elements=0 means: copy ALL elements from the source vector;
+// this method will typically not write beyond the boundaries of the NGrid (boundary violations trigger warnings and no data is copied),
 // however, if the size is zero (=uninitialized NGrid), it will automatically be set to the size of the source vector (+target_offset);
-void NGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+NGrid& NGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
 	if (data.size() == 0) {
-		return; // nothing to copy
+		return *this; // nothing to copy
 	}
 	if (this->elements == 0) {
-		*this = this->reshape({ target_offset_elements + uint32_t(data.size()) });
+		*this = this->reshape({ target_offset_elements + static_cast<uint32_t>(data.size()) });
 	}
-	this->data_buffer->write(data, copied_elements, source_offset_elements, target_offset_elements);
+
+	// check for valid offsets
+	if (source_offset_elements >= data.size()) {
+		Log::warning("buffer boundary violation in method NGrid::set(const std::vector<float_t>& data, ...): source_offset_elements (", source_offset_elements, ") exceeds the size of the source vector (", data.size(), ")");
+		return *this;
+	}
+	if (target_offset_elements >= this->elements) {
+		Log::warning("buffer boundary violation in method NGrid::set(const std::vector<float_t>& data, ...): target_offset_elements (", target_offset_elements, ") exceeds the number of elements of the NGrid (", this->elements, ")");
+		return *this;
+	}
+
+	uint32_t num_elements = copied_elements == 0 ? static_cast<uint32_t>(data.size()) - source_offset_elements : copied_elements;
+
+	// check for valid number of elements to copy
+	if (source_offset_elements + num_elements > data.size()) {
+		Log::warning("buffer boundary violation in method NGrid::set(const std::vector<float_t>& data, ...): source_offset_elements (", source_offset_elements, ") plus copied_elements (", num_elements, ") exceeds the size of the source vector (", data.size(), ")");
+		return *this;
+	}
+	if (target_offset_elements + num_elements > this->elements) {
+		Log::warning("buffer boundary violation in method NGrid::set(const std::vector<float_t>& data, ...): target_offset_elements (", target_offset_elements, ") plus copied_elements (", num_elements, ") exceeds the number of elements of the NGrid (", this->elements, ")");
+		return *this;
+	}
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// write value to a temporary staging buffer (transient resource, owned by the task)
+	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(num_elements, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	staging_buffer.write(data, num_elements, source_offset_elements, 0);
+
+	// copy from staging buffer to data buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.copy_buffer(staging_buffer, *this->data_buffer, copied_elements * sizeof(float_t), 0, target_offset_elements * sizeof(float_t));
+	cb.end_recording();
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+	return *this;
 }
 
 // copies raw data from a float_t array to the data buffer
 // of the underlying NGrid array;
-void NGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
-	uint32_t source_elements = copied_elements == 0 ? this->elements - source_offset_elements : copied_elements;
-	this->data_buffer->write(data, source_elements, source_offset_elements, target_offset_elements);
-}
-
-// copies raw data from a float_t array to the data buffer
-// of the real compontent of the underlying CGrid array;
-// the corresponding imaginary compontents are initialized with zeros
-void CGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
-	uint32_t source_elements = copied_elements == 0 ? this->real.elements - source_offset_elements : copied_elements;
-	this->real.data_buffer->write(data, source_elements, source_offset_elements, target_offset_elements);
-
-	if (this->imag.elements == source_elements && target_offset_elements == 0) {
-		this->imag.fill_zero(); // initialize the entire imaginary part with zeros if the size matches the range of the copied elements
+NGrid& NGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+	if (copied_elements == 0) {
+		return *this; // nothing to copy
 	}
-	else {
-		NGrid condition_map(this->imag.elements);
-		condition_map.fill_index();
-		condition_map = (condition_map >= target_offset_elements) && (condition_map < target_offset_elements + copied_elements);
-		this->imag.replace_if(condition_map, 0.0f); // initialize the imaginary part for the copied elements with zeros
+	if (this->elements == 0) {
+		*this = this->reshape({ target_offset_elements + copied_elements });
 	}
+	if (target_offset_elements + copied_elements > this->elements) {
+		if (this->dimensions == 1) {
+			*this = this->reshape(target_offset_elements + copied_elements);
+		}
+		else {
+			Log::warning("buffer boundary violation in method NGrid::set(const float_t* data, ...): target_offset_elements (", target_offset_elements, ") plus copied_elements (", copied_elements, ") exceeds the number of elements of the NGrid (", this->elements, ")");
+			return *this;
+		}
+	}
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// write value to a temporary staging buffer (transient resource, owned by the task)
+	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(copied_elements, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	staging_buffer.write(data, copied_elements, source_offset_elements, 0);
+
+	// copy from staging buffer to data buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.copy_buffer(staging_buffer, *this->data_buffer, copied_elements * sizeof(float_t), 0, target_offset_elements * sizeof(float_t));
+	cb.end_recording();
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+	return *this;
 }
 
 // copies raw data from another NGrid array to the data buffer
 // of the underlying NGrid array;
-// flat indexing is used for the offset, i.e. making use of
-// offset parameters mostly makes sense for 1d arrays;
-// if arguments for copied_elements and offsets aren't used this method will also
-// work to copy multi-dimensional arrays (copy assignment may be used alternatively)
-void NGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+// offset arguments (other than 0) are for 1d arrays only!
+NGrid& NGrid::set(const NGrid& other, uint32_t elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+
+	// check if offset arguments are used correctly
+	if (this->dimensions > 1 || other.get_dimensions() != 1) {
+		if (source_offset_elements != 0 || target_offset_elements != 0) {
+			Log::warning("invalid use of method NGrid::set(NGrid& other, ...): offset arguments (other than 0) for source and/or target are only supported for 1d arrays!");
+			return *this;
+		}
+	}
+
 	// make sure 'other' is not empty
 	if (other.get_elements() == 0) {
-		Log::warning("attempt to use method NGrid::set(const NGrid& other, ...) with empty 'other' array");
-		return;
+		Log::warning("attempt to use method NGrid::set(NGrid& other, ...) with empty 'other' array");
+		return *this;
 	}
-	// make sure 'this' has a buffer with size >0
-	if (this->elements == 0) {
-		if (copied_elements == 0) {
-			if (other.get_dimensions() == 1) {
-				std::vector<uint32_t> new_shape = { target_offset_elements + other.get_elements() - source_offset_elements };
-				this->create(new_shape);
-			}
-			else {
-				this->create(other.get_shape());
+
+	// check boundaries of other
+	if (source_offset_elements + elements > other.get_elements()) {
+		Log::warning("buffer boundary violation in method NGrid::set(NGrid& other, ...): 'other' has ", other.get_elements(), " elements, but source_offset=", source_offset_elements, " plus elements=", elements, " equals ", source_offset_elements + elements);
+		return *this;
+	}
+
+	// check boundaries of 'this'
+	if (target_offset_elements + elements > this->elements && this->elements != 0 && elements != 0) {
+		Log::warning("buffer boundary violation in method NGrid::set(NGrid& other, ...): 'this' has ", this->elements, " elements, but target_offset=", target_offset_elements, " plus elements=", elements, " equals ", target_offset_elements + elements);
+		return *this;
+	}
+
+	// check for equal shape
+	bool shape_mismatch = false;
+	if (this->dimensions != other.get_dimensions()) {
+		shape_mismatch = true;
+	}
+	else {
+		for (uint32_t i = 0; i < this->dimensions; ++i) {
+			if (this->shape[i] != other.get_shape()[i]) {
+				shape_mismatch = true;
+				break;
 			}
 		}
-		else {
-			if (other.get_dimensions() == 1) {
-				std::vector<uint32_t> new_shape = { target_offset_elements + copied_elements };
-				this->create(new_shape);
-			}
-			else {
-				this->create(other.get_shape());
-			}
-		}
 	}
-	data_buffer->write(*other.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
+
+	// reshape 'this' in case of shape mismatch
+	if (shape_mismatch) {
+		*this = this->reshape(other.get_shape());
+	}
+
+	// elements == 0 ? ->copy ALL elements of 'other' beyond the source offset
+	uint32_t copied_elements = elements == 0 ? other.get_elements() - source_offset_elements : elements;
+
+	// make sure 'this' has sufficient buffer size
+	uint32_t target_elements = target_offset_elements + copied_elements;
+	if (this->elements < target_elements) {
+		this->reshape(target_elements);
+	}
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// record and submit
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.copy_buffer(*other.get_buffer(), *this->data_buffer, copied_elements * sizeof(float_t), source_offset_elements * sizeof(float_t), target_offset_elements * sizeof(float_t));
+	cb.end_recording();
+
+	task.timeline_sync(*this->timeline_semaphore);
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.submit();
+
+	return *this;
 }
 
 // copies from 'other' n-dimensional NGrid to 'this';
 // the target_origin_offset argument is used to shift the copy region relative
 // to the origin of 'this'
 // (overload with offset argument as std::vector)
-void NGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset) {
+NGrid& NGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset) {
 	uint32_t offset_dim = target_origin_offset.size();
 	if (this->dimensions != other.get_dimensions() || this->dimensions != offset_dim) {
 		Log::warning("In method NGrid::set(const NGrid& other, ...): dimensions of 'this', 'other' and target_origin_offset must match! ",
 			"'this' has ", this->dimensions, " dimensions, 'other' has ", other.get_dimensions(), " dimensions, offset argument has ",
 			offset_dim, " dimensions");
-		return;
+		return *this;
 	}
 
-	// create a buffer for the offset
-	Buffer<uint32_t> offset(manager->get_device(), BufferUsage::STORAGE_BUFFER, offset_dim);
-	offset.write(target_origin_offset);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), SET_OTHER_SPIRV_BIN, SET_OTHER_SPIRV_BYTES);
+	// create a buffer for the offset (transient resource, owned by the task)
+	Buffer<uint32_t>& offset_staging = task.add_temp_buffer<uint32_t>(offset_dim, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	offset_staging.write(target_origin_offset);
+	Buffer<uint32_t>& offset = task.add_temp_buffer<uint32_t>(offset_dim, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(offset, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push_constants
-	PushConstants constants(
+	// define push_constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, other.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), SET_OTHER_SPIRV_BIN, SET_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, offset);
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.copy_buffer(offset_staging, offset);
+	cb.add_buffer_memory_barrier(offset, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, other.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.submit();
+
+	return *this;
 }
 
 // copies from 'other' n-dimensional NGrid to 'this';
 // the target_origin_offset argument is used to shift the copy region relative
 // to the origin of 'this'
 // (overload with offset argument as std::initializer_list)
-void NGrid::set(const NGrid& other, const std::initializer_list<uint32_t>& target_offset_index) {
+NGrid& NGrid::set(const NGrid& other, const std::initializer_list<uint32_t>& target_offset_index) {
 	std::vector<uint32_t> offset(target_offset_index);
 	this->set(other, offset);
+	return *this;
 }
 
-// returns the value of an array element via its flattened index
+// returns the value of a single element via its flattened index
+// (note: copying individual elements to host visible memory involves a lot of overhead, adding up when lots of elements are read by this method;
+// acquiring multiple (or all) elements at once is preferable whenever possible)
 float_t NGrid::get(const uint32_t flat_index) const {
-	// using flat index as 'row' index
-	return data_buffer->read_element(flat_index);
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(1, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.copy_buffer(*this->data_buffer, staging_buffer, sizeof(float_t), flat_index * sizeof(float_t), 0);
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT);
+	cb.record_barriers();
+	cb.end_recording();
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit(true); // 'true' = keep task protected (=unavailable for reset) after submit
+	task.wait_idle(); // wait for fence
+	float_t result = staging_buffer.read_element(0);
+	task.unprotect(); // mark available for reset
+	return result;
 }
 
 // return the value of an array element via its multidimensional index
 float_t NGrid::get(const std::initializer_list<uint32_t> index) const {
-	return data_buffer->read_element(flat_index(index));
-}
-
-// return the complex value of an array element via its multidimensional index
-std::complex<float_t> CGrid::get(const std::initializer_list<uint32_t> index) const {
-	std::complex<float_t> value;
-	uint32_t flat_index = this->real.flat_index(index);
-	value.real(this->real.data_buffer->read_element(flat_index));
-	value.imag(this->imag.data_buffer->read_element(flat_index));
-	return value;
+	uint32_t index_uint = flat_index(index);
+	return this->get(index_uint);
 }
 
 // returns a flat (= 1-dimensional) copy of ALL raw data of the underlying buffer as type std::vector<float_t>
 std::vector<float> NGrid::get() const {
-	return data_buffer->read();
+	return this->get(this->elements, 0);
 }
 
 // returns a flat (= 1-dimensional) copy of the raw data of the underlying buffer as type std::vector<float_t>;
 // this overload uses parameters "read_elements" and "source_offset_elements" to allow copying only a subset of the data
 std::vector<float> NGrid::get(const uint32_t read_elements, const uint32_t source_offset_elements) const {
-	return data_buffer->read(read_elements, source_offset_elements);
-}
-
-// returns a flat (= 1-dimensional) copy of ALL raw data of the underlying buffer as type std::vector<std::complex<float_t>>
-std::vector<std::complex<float_t>> CGrid::get(const uint32_t read_elements, const uint32_t source_offset_elements) const {
-	std::vector<float_t> real_data = this->real.data_buffer->read();
-	std::vector<float_t> imag_data = this->imag.data_buffer->read();
-	std::vector<std::complex<float_t>> result;
-	uint32_t elements = static_cast<uint32_t>(read_elements - source_offset_elements);
-	result.reserve(elements);
-	for (uint32_t i = 0; i < elements; i++) {
-		result.push_back(std::complex<float_t>(real_data[i + source_offset_elements], imag_data[i + source_offset_elements]));
-	}
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(read_elements, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	static uint64_t float_size = sizeof(float);
+	cb.copy_buffer(*this->data_buffer, staging_buffer, read_elements * float_size, source_offset_elements * float_size, 0);
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT);
+	cb.record_barriers();
+	cb.end_recording();
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit(true); // 'true' = keep task protected (=unavailable for reset) after submit
+	task.wait_idle();
+	std::vector<float_t> result = staging_buffer.read(read_elements, 0);
+	task.unprotect(); // mark available for reset
 	return result;
 }
 
-// returns the buffer containg the raw array data
+// returns the buffer containing the raw array data
 Buffer<float_t>* NGrid::get_buffer() const {
 	return this->data_buffer;
 }
 
-// returns the buffer containg the shape of the array
+// returns the buffer containing the shape of the array
 Buffer<uint32_t>* NGrid::get_shape_buffer() const {
 	return this->shape_buffer;
 }
@@ -1095,7 +1294,7 @@ uint32_t NGrid::get_elements() const {
 }
 
 // returns the shape of the array as std::vector<uint32_t>
-std::vector<uint32_t> NGrid::get_shape() const {
+const std::vector<uint32_t>& NGrid::get_shape() const {
 	return this->shape;
 }
 
@@ -1151,34 +1350,56 @@ NGrid NGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> 
 	// declare result NGrid
 	NGrid subgrid(subgrid_shape);
 
-	// write offset to a buffer
-	Buffer<uint32_t> source_offset_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
-	source_offset_buffer.write(source_offset);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), SUBGRID_SPIRV_BIN, SUBGRID_SPIRV_BYTES);
+	// create a temporary staging buffer for the source offset (transient resource, owned by the task)
+	Buffer<uint32_t>& offset_staging = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	offset_staging.write(source_offset);
+	Buffer<uint32_t>& source_offset_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*subgrid.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*subgrid.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(source_offset_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		subgrid.get_elements(),
 		this->elements
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, subgrid.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), SUBGRID_SPIRV_BIN, SUBGRID_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *subgrid.get_buffer());
+	ds.bind_buffer(3, *subgrid.get_shape_buffer());
+	ds.bind_buffer(4, source_offset_buffer);
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.copy_buffer(offset_staging, source_offset_buffer);
+	cb.add_buffer_memory_barrier(source_offset_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, subgrid.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return subgrid;
 }
@@ -1195,73 +1416,147 @@ NGrid NGrid::subgrid(std::initializer_list<uint32_t> source_offset, std::initial
 // +=================================+
 
 // fill entire array with given floating point value
-void NGrid::fill(const float_t value) {
+NGrid& NGrid::fill(const float_t value) {
 	if (this->elements == 0) {
 		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		return *this;
 	}
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_SPIRV_BIN, FILL_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, value);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // initialize the entire array with zeros
-void NGrid::fill_zero() {
+NGrid& NGrid::fill_zero() {
 	if (this->elements == 0) {
-		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		Log::warning("NGrid::fill_zero() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return *this;
 	}
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_ZERO_SPIRV_BIN, FILL_ZERO_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
-}
-
-void CGrid::fill_zero() {
-	this->real.fill_zero();
-	this->imag.fill_zero();
+	return *this;
 }
 
 // fill entire array with identity matrix
-void NGrid::fill_identity() {
+NGrid& NGrid::fill_identity() {
 	if (this->elements == 0) {
-		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		Log::warning("NGrid::fill_identity() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return *this;
 	}
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		this->dimensions
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_IDENTITY_SPIRV_BIN, FILL_IDENTITY_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *this->shape_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, this->dimensions);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 NGrid NGrid::identity(const uint32_t size) {
@@ -1271,83 +1566,170 @@ NGrid NGrid::identity(const uint32_t size) {
 }
 
 // fill with values from a random normal (=gaussian) distribution
-void NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
+NGrid& NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
 	if (this->elements == 0) {
-		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		Log::warning("NGrid::fill_random_gaussian() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return *this;
 	}
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		rnd::seed32(),
+		mu,
+		sigma
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_RANDOM_GAUSSIAN_SPIRV_BIN, FILL_RANDOM_GAUSSIAN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, rnd::seed32(), mu, sigma);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // fill with values from a random uniform distribution
-void NGrid::fill_random_uniform(const float_t min, const float_t max) {
+NGrid& NGrid::fill_random_uniform(const float_t min, const float_t max) {
 	if (this->elements == 0) {
-		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		Log::warning("NGrid::fill_random_uniform() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
+		return *this;
 	}
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		rnd::seed32(),
+		min,
+		max
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_RANDOM_UNIFORM_SPIRV_BIN, FILL_RANDOM_UNIFORM_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, rnd::seed32(), min, max);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // Alias for NGrid::fill_random_uniform()
-void NGrid::fill_random(const float_t min, const float_t max) {
-	fill_random_uniform(min, max);
+NGrid& NGrid::fill_random(const float_t min, const float_t max) {
+	return fill_random_uniform(min, max);
 }
 
 // fill with values from a random uniform distribution
-void NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
+NGrid& NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
 	if (this->elements == 0) {
 		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		return *this;
 	}
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		rnd::seed32(),
+		min,
+		max
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_RANDOM_UNIFORM_INT_SPIRV_BIN, FILL_RANDOM_UNIFORM_INT_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, rnd::seed32(), min, max);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // Alias for NGrid::fill_random_uniform_int()
-void NGrid::fill_random_int(const int32_t min, const int32_t max) {
-	fill_random_uniform_int(min, max);
+NGrid& NGrid::fill_random_int(const int32_t min, const int32_t max) {
+	return fill_random_uniform_int(min, max);
 }
 
 // randomly sets the specified fraction of the values to zero and the rest to 1 (default: 0.5, i.e. 50%)
-void NGrid::fill_random_binary(float_t ratio) {
+NGrid& NGrid::fill_random_binary(float_t ratio) {
 	if (this->elements == 0) {
 		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		return *this;
 	}
 	// check valid ratio
 	if (ratio > 1 || ratio < 0) {
@@ -1356,26 +1738,53 @@ void NGrid::fill_random_binary(float_t ratio) {
 	}
 	float_t valid_ratio = std::fmax(std::fmin(ratio, 1.0f), 0.0f);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		rnd::seed32(),
+		valid_ratio
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_RANDOM_BINARY_SPIRV_BIN, FILL_RANDOM_BINARY_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, rnd::seed32(), valid_ratio);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // randomly sets the specified fraction of the values to -1 and the rest to +1 (default: 0.5, i.e. 50%)
-void NGrid::fill_random_sign(float_t ratio) {
+NGrid& NGrid::fill_random_sign(float_t ratio) {
 	if (this->elements == 0) {
 		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		return *this;
 	}
 	// check valid ratio
 	if (ratio > 1 || ratio < 0) {
@@ -1384,50 +1793,108 @@ void NGrid::fill_random_sign(float_t ratio) {
 	}
 	float_t valid_ratio = std::fmax(std::fmin(ratio, 1.0f), 0.0f);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		rnd::seed32(),
+		valid_ratio
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_RANDOM_SIGN_SPIRV_BIN, FILL_RANDOM_SIGN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, rnd::seed32(), valid_ratio);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // fills the array with a continuous
 // range of numbers (with specified start parameter
 // referring to the zero position and a step parameter)
 // in all dimensions
-void NGrid::fill_range(const float_t start, const float_t step) {
+NGrid& NGrid::fill_range(const float_t start, const float_t step) {
 	if (this->elements == 0) {
 		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		return *this;
 	}
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		this->dimensions,
+		start,
+		step
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_RANGE_SPIRV_BIN, FILL_RANGE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *this->shape_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(*this->shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, this->dimensions, start, step);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
-void NGrid::fill_dropout(float_t ratio) {
+NGrid& NGrid::fill_dropout(float_t ratio) {
 	if (this->elements == 0) {
 		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
-		return;
+		return *this;
 	}
 	// check valid ratio
 	if (ratio > 1 || ratio < 0) {
@@ -1436,126 +1903,321 @@ void NGrid::fill_dropout(float_t ratio) {
 	}
 	float_t valid_ratio = std::fmax(std::fmin(ratio, 1.0f), 0.0f);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		valid_ratio,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_DROPOUT_SPIRV_BIN, FILL_DROPOUT_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, valid_ratio, rnd::seed32());
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // fill with normal "Xavier" weight initialization
 // (by Xavier Glorot & Bengio) for tanh activation
-void NGrid::weightinit_tanh_normal(uint32_t fan_in, uint32_t fan_out) {
+NGrid& NGrid::weightinit_tanh_normal(uint32_t fan_in, uint32_t fan_out) {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		fan_out,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), WEIGHTINIT_TANH_NORMAL_SPIRV_BIN, WEIGHTINIT_TANH_NORMAL_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, fan_in, fan_out, rnd::seed32());
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, 1);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // fill with uniform "Xavier" weight initializiation
 // (by Xavier Glorot & Bengio), e.g. for tanh activation
-void NGrid::weightinit_tanh_uniform(uint32_t fan_in, uint32_t fan_out) {
+NGrid& NGrid::weightinit_tanh_uniform(uint32_t fan_in, uint32_t fan_out) {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		fan_out,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), WEIGHTINIT_TANH_UNIFORM_SPIRV_BIN, WEIGHTINIT_TANH_UNIFORM_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, fan_in, fan_out, rnd::seed32());
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // fill with uniform "Xavier" weight initialization
 // for sigmoid activation
-void NGrid::weightinit_sigmoid(uint32_t fan_in, uint32_t fan_out) {
+NGrid& NGrid::weightinit_sigmoid(uint32_t fan_in, uint32_t fan_out) {
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		fan_out,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), WEIGHTINIT_SIGMOID_SPIRV_BIN, WEIGHTINIT_SIGMOID_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, fan_in, fan_out, rnd::seed32());
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // fill with "Kaiming He" normal weight initialization,
 // used for ReLU activation
-void NGrid::weightinit_relu(uint32_t fan_in) {
+NGrid& NGrid::weightinit_relu(uint32_t fan_in) {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), WEIGHTINIT_RELU_SPIRV_BIN, WEIGHTINIT_RELU_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, fan_in, rnd::seed32());
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // fill with modified "Kaiming He" nornal weight initialization,
 // used for ELU activation
-void NGrid::weightinit_elu(uint32_t fan_in) {
+NGrid& NGrid::weightinit_elu(uint32_t fan_in) {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), WEIGHTINIT_ELU_SPIRV_BIN, WEIGHTINIT_ELU_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, fan_in, rnd::seed32());
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // fills the array elements with their flat indices
-void NGrid::fill_index() {
+NGrid& NGrid::fill_index() {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FILL_INDEX_SPIRV_BIN, FILL_INDEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	return *this;
 }
 
 // +=================================+
@@ -1565,136 +2227,286 @@ void NGrid::fill_index() {
 // returns the lowest value of the NGrid,
 // across all dimensions
 float_t NGrid::min() const {
-	static ShaderModule shader(manager->get_device(), MIN_SPIRV_BIN, MIN_SPIRV_BYTES);
 
-	NGrid data_input = this->flatten();
-	NGrid local_results(1);
-	uint32_t input_elements, num_workgroups;
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), MIN_SPIRV_BIN, MIN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, sizeof(uint32_t), set_layout, workgroup_size_1d, 1, 1); // sizeof(uint32_t) is used because the push_constants only have a single value (=elements_A), which is type uint32_t
+
+	// calculate the required number of workgroups for the first iteration
+	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
+	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+
+	// create temporary buffers
+	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
+	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
+	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
+	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	uint32_t iteration = 0;
 
 	do {
-		// calculate number of workgroups required to cover all input elements
-		input_elements = data_input.get_elements();
-		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
+		// acquire an idle compute task (=one for each iteration)
+		ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-		// resize local results NGrid (one element for each workgroup)
-		local_results = local_results.reshape({ num_workgroups });
+		// define push constants (transient resource, owned by the task)
+		PushConstants& constants = task.add_constants(
+			elements_A
+		);
 
-		// define descriptor set
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
+		// add a descriptor set (transient resource, owned by the task)
+		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *input_buffer);
+		ds.bind_buffer(1, *local_results_buffer);
+		ds.write();
 
-		// define push constants
-		PushConstants constants(data_input.get_elements());
+		// begin command buffer recording
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.bind_pipeline(pipeline);
+		cb.bind_descriptor_set(ds, pipeline);
+		cb.bind_push_constants(constants, pipeline);
 
-		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
-
-		if (num_workgroups > 1) {
-			// turn the local results of this iteration into the input of the next one
-			data_input = local_results;
+		// first iteration: copy source data to input buffer
+		if (iteration == 0) {
+			cb.copy_buffer(*this->data_buffer, *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.record_barriers();
 		}
+
+		// pipeline dispatch
+		cb.dispatch(pipeline, elements_A, 1, 1);
+
+		// final iteration
+		if (num_workgroups == 1) {
+			// copy final result to staging buffer to allow host visibility
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+		}
+
+		// all other iterations
 		else {
-			float_t total_min = local_results.get(0);
-			return total_min;
+			input_buffer = input_buffer == &buffer_A ? &buffer_B : &buffer_A;					// ping-pong swap
+			local_results_buffer = local_results_buffer == &buffer_A ? &buffer_B : &buffer_A;	// "   "   "
 		}
+
+		cb.end_recording();
+		task.timeline_sync(*this->timeline_semaphore);
+
+		// ensure that the final result copy has finished before reading back from the staging buffer
+		if (num_workgroups == 1) {
+			task.wait_idle(); // = wait for fence
+		}
+
+		elements_A = num_workgroups;
+		num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+		iteration++;
 
 	} while (num_workgroups > 1);
+
+	float_t result = final_result_staging_buffer.read_element(0);
+	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
+	return result;
 }
 
 // returns the highest value of the NGrid,
 // across all dimensions
 float_t NGrid::max() const {
-	static ShaderModule shader(manager->get_device(), MAX_SPIRV_BIN, MAX_SPIRV_BYTES);
 
-	NGrid data_input = this->flatten();
-	NGrid local_results(1);
-	uint32_t input_elements, num_workgroups;
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), MAX_SPIRV_BIN, MAX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, sizeof(uint32_t), set_layout, workgroup_size_1d, 1, 1); // sizeof(uint32_t) is used because the push_constants only have a single value (=elements_A), which is type uint32_t
+
+	// calculate the required number of workgroups for the first iteration
+	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
+	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+
+	// create temporary buffers
+	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
+	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
+	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
+	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	uint32_t iteration = 0;
 
 	do {
-		// calculate number of workgroups required to cover all input elements
-		input_elements = data_input.get_elements();
-		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
+		// acquire an idle compute task (=one for each iteration)
+		ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-		// resize local results NGrid (one element for each workgroup)
-		local_results = local_results.reshape({ num_workgroups });
+		// define push constants (transient resource, owned by the task)
+		PushConstants& constants = task.add_constants(
+			elements_A
+		);
 
-		// define descriptor set
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
+		// add a descriptor set (transient resource, owned by the task)
+		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *input_buffer);
+		ds.bind_buffer(1, *local_results_buffer);
+		ds.write();
 
-		// define push constants
-		PushConstants constants(data_input.get_elements());
+		// begin command buffer recording
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.bind_pipeline(pipeline);
+		cb.bind_descriptor_set(ds, pipeline);
+		cb.bind_push_constants(constants, pipeline);
 
-		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
-
-		if (num_workgroups > 1) {
-			// turn the local results of this iteration into the input of the next one
-			data_input = local_results;
+		// first iteration: copy source data to input buffer
+		if (iteration == 0) {
+			cb.copy_buffer(*this->data_buffer, *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.record_barriers();
 		}
+
+		// pipeline dispatch
+		cb.dispatch(pipeline, elements_A, 1, 1);
+
+		// final iteration
+		if (num_workgroups == 1) {
+			// copy final result to staging buffer to allow host visibility
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+		}
+
+		// all other iterations
 		else {
-			float_t total_max = local_results.get(0);
-			return total_max;
+			input_buffer = input_buffer == &buffer_A ? &buffer_B : &buffer_A;					// ping-pong swap
+			local_results_buffer = local_results_buffer == &buffer_A ? &buffer_B : &buffer_A;	// "   "   "
 		}
+
+		cb.end_recording();
+		task.timeline_sync(*this->timeline_semaphore);
+
+		// ensure that the final result copy has finished before reading back from the staging buffer
+		if (num_workgroups == 1) {
+			task.wait_idle(); // = wait for fence
+		}
+
+		elements_A = num_workgroups;
+		num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+		iteration++;
 
 	} while (num_workgroups > 1);
+
+	float_t result = final_result_staging_buffer.read_element(0);
+	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
+	return result;
 }
 
 // returns the value of the NGrid with the highest
 // deviation from zero, across all dimensions
 float_t NGrid::maxabs() const {
-	static ShaderModule shader(manager->get_device(), MAXABS_SPIRV_BIN, MAXABS_SPIRV_BYTES);
 
-	NGrid data_input = this->flatten();
-	NGrid local_results(1);
-	uint32_t input_elements, num_workgroups;
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), MAXABS_SPIRV_BIN, MAXABS_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, sizeof(uint32_t), set_layout, workgroup_size_1d, 1, 1); // sizeof(uint32_t) is used because the push_constants only have a single value (=elements_A), which is type uint32_t
+
+	// calculate the required number of workgroups for the first iteration
+	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
+	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+
+	// create temporary buffers
+	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
+	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
+	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
+	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	uint32_t iteration = 0;
 
 	do {
-		// calculate number of workgroups required to cover all input elements
-		input_elements = data_input.get_elements();
-		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
+		// acquire an idle compute task (=one for each iteration)
+		ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-		// resize local results NGrid (one element for each workgroup)
-		local_results = local_results.reshape({ num_workgroups });
+		// define push constants (transient resource, owned by the task)
+		PushConstants& constants = task.add_constants(
+			elements_A
+		);
 
-		// define descriptor set
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
+		// add a descriptor set (transient resource, owned by the task)
+		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *input_buffer);
+		ds.bind_buffer(1, *local_results_buffer);
+		ds.write();
 
-		// define push constants
-		PushConstants constants(data_input.get_elements());
+		// begin command buffer recording
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.bind_pipeline(pipeline);
+		cb.bind_descriptor_set(ds, pipeline);
+		cb.bind_push_constants(constants, pipeline);
 
-		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
-
-		if (num_workgroups > 1) {
-			// turn the local results of this iteration into the input of the next one
-			data_input = local_results;
+		// first iteration: copy source data to input buffer
+		if (iteration == 0) {
+			cb.copy_buffer(*this->data_buffer, *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.record_barriers();
 		}
+
+		// pipeline dispatch
+		cb.dispatch(pipeline, elements_A, 1, 1);
+
+		// final iteration
+		if (num_workgroups == 1) {
+			// copy final result to staging buffer to allow host visibility
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+		}
+
+		// all other iterations
 		else {
-			float_t total_maxabs = local_results.get(0);
-			return total_maxabs;
+			input_buffer = input_buffer == &buffer_A ? &buffer_B : &buffer_A;					// ping-pong swap
+			local_results_buffer = local_results_buffer == &buffer_A ? &buffer_B : &buffer_A;	// "   "   "
 		}
+
+		cb.end_recording();
+		task.timeline_sync(*this->timeline_semaphore);
+
+		// ensure that the final result copy has finished before reading back from the staging buffer
+		if (num_workgroups == 1) {
+			task.wait_idle(); // = wait for fence
+		}
+
+		elements_A = num_workgroups;
+		num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+		iteration++;
 
 	} while (num_workgroups > 1);
+
+	float_t result = final_result_staging_buffer.read_element(0);
+	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
+	return result;
 }
 
-// returns the arrithmetic mean of all values of the NGrid
+// returns the arithmetic mean of all values of the NGrid
 float_t NGrid::mean() const {
 	return this->sum() / this->elements;
 }
@@ -1844,46 +2656,95 @@ float_t NGrid::kurt(const bool sample_kurt) const {
 
 // returns the sum of all array elements;
 float_t NGrid::sum() const {
-	static ShaderModule shader(manager->get_device(), SUM_SPIRV_BIN, SUM_SPIRV_BYTES);
 
-	NGrid data_input = this->flatten();
-	NGrid local_results(1);
-	uint32_t input_elements, num_workgroups;
-	float_t total_sum;
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), SUM_SPIRV_BIN, SUM_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, sizeof(uint32_t), set_layout, workgroup_size_1d, 1, 1); // sizeof(uint32_t) is used because the push_constants only have a single value (=elements_A), which is type uint32_t
+
+	// calculate the required number of workgroups for the first iteration
+	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
+	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+
+	// create temporary buffers
+	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
+	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
+	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
+	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	uint32_t iteration = 0;
 
 	do {
-		// calculate number of workgroups required to cover all input elements
-		input_elements = data_input.get_elements();
-		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
+		// acquire an idle compute task (=one for each iteration)
+		ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-		// resize local results NGrid (one element for each workgroup)
-		local_results = local_results.reshape({ num_workgroups });
+		// define push constants (transient resource, owned by the task)
+		PushConstants& constants = task.add_constants(
+			elements_A
+		);
 
-		// define descriptor set
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
+		// add a descriptor set (transient resource, owned by the task)
+		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *input_buffer);
+		ds.bind_buffer(1, *local_results_buffer);
+		ds.write();
 
-		// define push constants
-		PushConstants constants(data_input.get_elements());
+		// begin command buffer recording
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.bind_pipeline(pipeline);
+		cb.bind_descriptor_set(ds, pipeline);
+		cb.bind_push_constants(constants, pipeline);
 
-		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
-
-		if (num_workgroups > 1) {
-			// turn the local results of this iteration into the input of the next one
-			data_input = local_results;
+		// first iteration: copy source data to input buffer
+		if (iteration == 0) {
+			cb.copy_buffer(*this->data_buffer, *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.record_barriers();
 		}
+
+		// pipeline dispatch
+		cb.dispatch(pipeline, elements_A, 1, 1);
+
+		// final iteration
+		if (num_workgroups == 1) {
+			// copy final result to staging buffer to allow host visibility
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+		}
+
+		// all other iterations
 		else {
-			total_sum = local_results.get(0);
-			return total_sum;
+			input_buffer = input_buffer == &buffer_A ? &buffer_B : &buffer_A;					// ping-pong swap
+			local_results_buffer = local_results_buffer == &buffer_A ? &buffer_B : &buffer_A;	// "   "   "
 		}
+
+		cb.end_recording();
+		task.timeline_sync(*this->timeline_semaphore);
+
+		// ensure that the final result copy has finished before reading back from the staging buffer
+		if (num_workgroups == 1) {
+			task.wait_idle(); // = wait for fence
+		}
+
+		elements_A = num_workgroups;
+		num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+		iteration++;
 
 	} while (num_workgroups > 1);
+
+	float_t result = final_result_staging_buffer.read_element(0);
+	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
+	return result;
 }
 
 // elementwise addition of the specified value to all elements of the array
@@ -1891,20 +2752,45 @@ NGrid NGrid::operator+(const float_t value) const {
 
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), OPERATOR_PLUS_SPIRV_BIN, OPERATOR_PLUS_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, value);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.timeline_sync(*result.timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -1912,34 +2798,53 @@ NGrid NGrid::operator+(const float_t value) const {
 // returns the resulting array of the elementwise addition of two arrays
 NGrid NGrid::operator+(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OPERATOR_PLUS_OTHER_SPIRV_BIN, OPERATOR_PLUS_OTHER_SPIRV_BYTES);
-
-	// define result NGrid
 	NGrid result(this->shape);
 
-	// setup descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
 		other.get_elements()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_PLUS_OTHER_SPIRV_BIN, OPERATOR_PLUS_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.submit();
 
 	return result;
 }
@@ -1990,34 +2895,53 @@ NGrid NGrid::operator-(const float_t value) const {
 // two array of equal dimensions
 NGrid NGrid::operator-(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OPERATOR_MINUS_OTHER_SPIRV_BIN, OPERATOR_MINUS_OTHER_SPIRV_BYTES);
-
-	// define result NGrid
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
 		other.get_elements()
 	);
 
-	// execute compute shader
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_MINUS_OTHER_SPIRV_BIN, OPERATOR_MINUS_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2060,46 +2984,95 @@ void NGrid::operator-=(const NGrid& other) {
 // returns the product reduction, i.e. the result
 // of multiplication all individual elements of the array
 float_t NGrid::product() const {
-	static ShaderModule shader(manager->get_device(), PRODUCT_SPIRV_BIN, PRODUCT_SPIRV_BYTES);
 
-	NGrid data_input = this->flatten();
-	NGrid local_results(1);
-	uint32_t input_elements, num_workgroups;
-	float_t total_product;
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), PRODUCT_SPIRV_BIN, PRODUCT_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, sizeof(uint32_t), set_layout, workgroup_size_1d, 1, 1); // sizeof(uint32_t) is used because the push_constants only have a single value (=elements_A), which is type uint32_t
+
+	// calculate the required number of workgroups for the first iteration
+	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
+	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+
+	// create temporary buffers
+	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
+	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
+	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
+	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	uint32_t iteration = 0;
 
 	do {
-		// calculate number of workgroups required to cover all input elements
-		input_elements = data_input.get_elements();
-		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
+		// acquire an idle compute task (=one for each iteration)
+		ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-		// resize local results NGrid (one element for each workgroup)
-		local_results = local_results.reshape({ num_workgroups });
+		// define push constants (transient resource, owned by the task)
+		PushConstants& constants = task.add_constants(
+			elements_A
+		);
 
-		// define descriptor set
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
+		// add a descriptor set (transient resource, owned by the task)
+		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *input_buffer);
+		ds.bind_buffer(1, *local_results_buffer);
+		ds.write();
 
-		// define push constants
-		PushConstants constants(data_input.get_elements());
+		// begin command buffer recording
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.bind_pipeline(pipeline);
+		cb.bind_descriptor_set(ds, pipeline);
+		cb.bind_push_constants(constants, pipeline);
 
-		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
-
-		if (num_workgroups > 1) {
-			// turn the local results of this iteration into the input of the next one
-			data_input = local_results;
+		// first iteration: copy source data to input buffer
+		if (iteration == 0) {
+			cb.copy_buffer(*this->data_buffer, *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.record_barriers();
 		}
+
+		// pipeline dispatch
+		cb.dispatch(pipeline, elements_A, 1, 1);
+
+		// final iteration
+		if (num_workgroups == 1) {
+			// copy final result to staging buffer to allow host visibility
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+		}
+
+		// all other iterations
 		else {
-			total_product = local_results.get(0);
-			return total_product;
+			input_buffer = input_buffer == &buffer_A ? &buffer_B : &buffer_A;					// ping-pong swap
+			local_results_buffer = local_results_buffer == &buffer_A ? &buffer_B : &buffer_A;	// "   "   "
 		}
+
+		cb.end_recording();
+		task.timeline_sync(*this->timeline_semaphore);
+
+		// ensure that the final result copy has finished before reading back from the staging buffer
+		if (num_workgroups == 1) {
+			task.wait_idle(); // = wait for fence
+		}
+
+		elements_A = num_workgroups;
+		num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
+		iteration++;
 
 	} while (num_workgroups > 1);
+
+	float_t result = final_result_staging_buffer.read_element(0);
+	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
+	return result;
 }
 
 // elementwise multiplication with a scalar
@@ -2107,20 +3080,45 @@ NGrid NGrid::operator*(const float_t factor) const {
 
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		factor
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), OPERATOR_MULTIPLY_SPIRV_BIN, OPERATOR_MULTIPLY_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, factor);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2132,14 +3130,6 @@ void NGrid::operator*=(const float_t factor) {
 
 // Alias for 2D or 3D matrix multiplication
 NGrid NGrid::operator*(const NGrid& other) const {
-	return this->matrix_product(other);
-}
-
-CGrid CGrid::operator*(const NGrid& other) const {
-	return this->matrix_product(other);
-}
-
-CGrid CGrid::operator*(const CGrid& other) const {
 	return this->matrix_product(other);
 }
 
@@ -2160,7 +3150,6 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 		Log::error("invalid call of NGrid::matrix_product; first array has shape ", this->get_shapestring(), ", second array has shape ",
 			other.get_shapestring(), "; both arrays must be 1d or 2d");
 	}
-	static ShaderModule shader(manager->get_device(), MATRIX_PRODUCT_OTHER_SPIRV_BIN, MATRIX_PRODUCT_OTHER_SPIRV_BYTES);
 
 	uint32_t first_rows = this->shape[0];
 	uint32_t first_cols = this->dimensions == 1 ? 1 : this->shape[1];
@@ -2178,15 +3167,11 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 	// the matrix product of A{m,n} and B{n,p} has shape AxB=C{m,p}
 	NGrid result({ result_rows, result_cols });
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		first_rows,
 		first_cols,
@@ -2198,9 +3183,38 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 		result_cols
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), MATRIX_PRODUCT_OTHER_SPIRV_BIN, MATRIX_PRODUCT_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(3, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *other.get_buffer());
+	ds.bind_buffer(2, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2210,6 +3224,8 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 // resulting in the 'Hadamard product';
 // the dimensions of the two arrays must match!
 NGrid NGrid::Hadamard_product(const NGrid& other) const {
+
+	// check dimensions of 'this' versus 'other'
 	if (this->dimensions != other.get_dimensions()) {
 		if (this->dimensions == other.get_dimensions() + 1 && this->shape[this->dimensions - 1] == 1) {
 			// do nothing, the dimensions still match because the last dimension of 'this' is 1
@@ -2225,25 +3241,55 @@ NGrid NGrid::Hadamard_product(const NGrid& other) const {
 			return *this;
 		}
 	}
+
+	// declare result array
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->dimensions,
+		other.get_dimensions(),
+		this->elements,
+		other.get_elements()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), HADAMARD_PRODUCT_OTHER_SPIRV_BIN, HADAMARD_PRODUCT_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2270,25 +3316,72 @@ void NGrid::operator/=(const float_t divisor) {
 // resulting in the 'Hadamard division';
 // the dimensions of the two arrays must match!
 NGrid NGrid::Hadamard_division(const NGrid& other) const {
+
+	// check dimensions of 'this' versus 'other'
+	if (this->dimensions != other.get_dimensions()) {
+		if (this->dimensions == other.get_dimensions() + 1 && this->shape[this->dimensions - 1] == 1) {
+			// do nothing, the dimensions still match because the last dimension of 'this' is 1
+		}
+		else if (other.get_dimensions() == this->dimensions + 1 && other.get_shape()[other.get_dimensions() - 1] == 1) {
+			// do nothing, the dimensions still match because the last dimension of 'other' is 1
+		}
+		else {
+			// dimensions do not match, return 'this' unmodified
+			Log::warning("invalid call of NGrid::Hadamard_division: the dimensions of the two arrays do not match! ",
+				"this array has shape ", this->get_shapestring(), ", other array has shape ", other.get_shapestring(),
+				"; returning 'this' unmodified");
+			return *this;
+		}
+	}
+
+	// declare result array
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->dimensions,
+		other.get_dimensions(),
+		this->elements,
+		other.get_elements()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), HADAMARD_DIVISION_OTHER_SPIRV_BIN, HADAMARD_DIVISION_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2316,20 +3409,45 @@ NGrid NGrid::operator%(const float_t value) const {
 
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), OPERATOR_MODULO_SPIRV_BIN, OPERATOR_MODULO_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, value);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2344,19 +3462,45 @@ NGrid NGrid::pow(const float_t exponent) const {
 
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		exponent
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), POW_SPIRV_BIN, POW_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	PushConstants constants(this->elements, exponent);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2394,34 +3538,71 @@ void NGrid::operator^=(const float_t exponent) {
 // the dimensions of the two array must match!
 NGrid NGrid::pow(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), POW_OTHER_SPIRV_BIN, POW_OTHER_SPIRV_BYTES);
+	// check dimensions of 'this' versus 'other'
+	if (this->dimensions != other.get_dimensions()) {
+		if (this->dimensions == other.get_dimensions() + 1 && this->shape[this->dimensions - 1] == 1) {
+			// do nothing, the dimensions still match because the last dimension of 'this' is 1
+		}
+		else if (other.get_dimensions() == this->dimensions + 1 && other.get_shape()[other.get_dimensions() - 1] == 1) {
+			// do nothing, the dimensions still match because the last dimension of 'other' is 1
+		}
+		else {
+			// dimensions do not match, return 'this' unmodified
+			Log::warning("invalid call of NGrid::pow(other): the dimensions of the two arrays do not match! ",
+				"this array has shape ", this->get_shapestring(), ", other array has shape ", other.get_shapestring(),
+				"; returning 'this' unmodified");
+			return *this;
+		}
+	}
 
-	// define result NGrid
+	// declare result array
 	NGrid result(this->shape);
 
-	// setup descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
 		other.get_elements()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), POW_OTHER_SPIRV_BIN, POW_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2436,43 +3617,94 @@ NGrid NGrid::log(float_t base) const {
 	if (base <= 0) {
 		Log::error("invalid call of NGrid::log with base ", base, ", argument can't be <= 0, result is undefined)");
 	}
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		base
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), LOG_SPIRV_BIN, LOG_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, base);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::exp() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), EXP_SPIRV_BIN, EXP_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2484,22 +3716,47 @@ NGrid NGrid::exp() const {
 // rounds the values of the array elementwise
 // to their nearest integers
 NGrid NGrid::round() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ROUND_SPIRV_BIN, ROUND_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2507,22 +3764,47 @@ NGrid NGrid::round() const {
 // rounds the values of the array elementwise
 // to their next lower integers
 NGrid NGrid::floor() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), FLOOR_SPIRV_BIN, FLOOR_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2530,22 +3812,47 @@ NGrid NGrid::floor() const {
 // returns a copy of the array that stores the values as rounded
 // to their next higher integers
 NGrid NGrid::ceil() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), CEIL_SPIRV_BIN, CEIL_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2553,22 +3860,47 @@ NGrid NGrid::ceil() const {
 // returns a copy of the array that stores the
 // absolute values of the source array
 NGrid NGrid::abs() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ABS_SPIRV_BIN, ABS_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2580,22 +3912,48 @@ NGrid NGrid::abs() const {
 // elementwise minimum of the specified value
 // and the data elements of the array
 NGrid NGrid::min(const float_t value) const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), MIN_VALUE_SPIRV_BIN, MIN_VALUE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, value);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2603,22 +3961,48 @@ NGrid NGrid::min(const float_t value) const {
 // elementwise maximum of the specified value
 // and the data elements of the array
 NGrid NGrid::max(const float_t value) const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), MAX_VALUE_SPIRV_BIN, MAX_VALUE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, value);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2626,25 +4010,55 @@ NGrid NGrid::max(const float_t value) const {
 // returns the result of elementwise min() comparison
 // of 'this' vs 'other'
 NGrid NGrid::min(const NGrid& other) const {
+
+	// declare result array
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->dimensions,
+		other.get_dimensions(),
+		this->elements,
+		other.get_elements()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), MIN_OTHER_SPIRV_BIN, MIN_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2652,25 +4066,55 @@ NGrid NGrid::min(const NGrid& other) const {
 // returns the result of elementwise max() comparison
 // of 'this' vs 'other'
 NGrid NGrid::max(const NGrid& other) const {
+
+	// declare result array
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->dimensions,
+		other.get_dimensions(),
+		this->elements,
+		other.get_elements()
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), MAX_OTHER_SPIRV_BIN, MAX_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->dimensions, other.get_dimensions(), this->elements, other.get_elements());
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2682,23 +4126,50 @@ NGrid NGrid::max(const NGrid& other) const {
 // elementwise application of the cos() function;
 // the result is a dimensionless ratio (adjacent / hypotenuse)
 NGrid NGrid::cos(AngularUnit source_angle_unit) const {
+
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, source_angle_unit, RAD));
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		factor
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), COS_SPIRV_BIN, COS_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, factor);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2706,23 +4177,50 @@ NGrid NGrid::cos(AngularUnit source_angle_unit) const {
 // elementwise application of the sin() function;
 // the result is a dimensionless ratio (opposite / hypotenuse)
 NGrid NGrid::sin(AngularUnit source_angle_unit) const {
+
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, source_angle_unit, RAD));
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		factor
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), SIN_SPIRV_BIN, SIN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, factor);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2730,23 +4228,50 @@ NGrid NGrid::sin(AngularUnit source_angle_unit) const {
 // elementwise application of the tan function;
 // the result is a dimensionless ratio (opposite / adjacent)
 NGrid NGrid::tan(AngularUnit source_angle_unit) const {
+
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, source_angle_unit, RAD));
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		factor
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), TAN_SPIRV_BIN, TAN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, factor);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2756,22 +4281,48 @@ NGrid NGrid::tan(AngularUnit source_angle_unit) const {
 // whose cosine equals a given value
 NGrid NGrid::acos(AngularUnit result_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, RAD, result_angle_unit));
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		factor
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ACOS_SPIRV_BIN, ACOS_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, factor);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2781,22 +4332,48 @@ NGrid NGrid::acos(AngularUnit result_angle_unit) const {
 // whose sine equals a given value
 NGrid NGrid::asin(AngularUnit result_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, RAD, result_angle_unit));
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		factor
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ASIN_SPIRV_BIN, ASIN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, factor);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2806,154 +4383,330 @@ NGrid NGrid::asin(AngularUnit result_angle_unit) const {
 // whose tangens equals a given value
 NGrid NGrid::atan(AngularUnit result_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, RAD, result_angle_unit));
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		factor
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ATAN_SPIRV_BIN, ATAN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, factor);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 // elementwise application of the hyperbolic cosine function
 NGrid NGrid::cosh() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), COSH_SPIRV_BIN, COSH_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 // elementwise applicatiohn of the hyperbolic sine function
 NGrid NGrid::sinh() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), SINH_SPIRV_BIN, SINH_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 // elementwise application of the hyperbolic tangent function
 NGrid NGrid::tanh() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), TANH_SPIRV_BIN, TANH_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 // elementwise application of the hyperbolic arc cosine function
 NGrid NGrid::acosh() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ACOSH_SPIRV_BIN, ACOSH_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 // elementwise application of the hyperbolic arc sine function
 NGrid NGrid::asinh() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ASINH_SPIRV_BIN, ASINH_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 // elementwise application of the hyperbolic arc tangent function
 NGrid NGrid::atanh() const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ATANH_SPIRV_BIN, ATANH_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -2965,22 +4718,49 @@ NGrid NGrid::atanh() const {
 // searches the array buffer for the specified 'old_value' and
 // replaces all occurrences by the 'new_value'
 NGrid NGrid::replace(const float_t old_value, const float_t new_value) const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		old_value,
+		new_value
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), REPLACE_SPIRV_BIN, REPLACE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, old_value, new_value);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3009,22 +4789,46 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const NGrid& replacing_map) 
 
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), REPLACE_MAP_IF_OTHER_SPIRV_BIN, REPLACE_MAP_IF_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*condition_map.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*replacing_map.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(2, *condition_map.get_buffer());
+	ds.bind_buffer(3, *replacing_map.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3051,79 +4855,53 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const float_t replacing_valu
 
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		replacing_value
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), REPLACE_VALUE_IF_OTHER_SPIRV_BIN, REPLACE_VALUE_IF_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(3, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*condition_map.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(2, *condition_map.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, replacing_value);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 // returns the number of occurrences of the specified value;
 uint32_t NGrid::find(const float_t& value) const {
-
-	// load shader
-	static ShaderModule shader(manager->get_device(), FIND_SPIRV_BIN, FIND_SPIRV_BYTES);
-
-	// prepare variables
-	NGrid data_input = this->flatten();
-	NGrid local_results(1);
-	uint32_t input_elements, num_workgroups;
-	uint32_t total_findings;
-	uint32_t iteration = 0;
-
-	// main loop
-	do {
-		// calculate number of workgroups required to cover all input elements
-		input_elements = data_input.get_elements();
-		num_workgroups = (input_elements + workgroup_size_1d - 1) / workgroup_size_1d;
-
-		// resize local results NGrid (one element for each workgroup)
-		local_results = local_results.reshape({ num_workgroups });
-
-		// define descriptor set
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*data_input.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*local_results.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
-
-		// define push constants
-		PushConstants constants(
-			data_input.get_elements(),
-			value,
-			iteration
-		);
-
-		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, input_elements, 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
-
-		if (num_workgroups > 1) {
-			// turn the local results of this iteration into the input of the next one
-			data_input = local_results;
-
-			// update iteration counter
-			iteration++;
-		}
-		else {
-			total_findings = static_cast<uint32_t>(local_results.get(0));
-			return total_findings;
-		}
-
-	} while (num_workgroups > 1);
+	return (*this == value).sum();
 }
 
 // returns a NGrid array of equal dimensions as the source,
@@ -3132,20 +4910,44 @@ uint32_t NGrid::find(const float_t& value) const {
 NGrid NGrid::sign() const {
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), SIGN_SPIRV_BIN, SIGN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3157,31 +4959,55 @@ NGrid NGrid::sign() const {
 // scale to specified range
 NGrid NGrid::scale_minmax(float_t range_from, float_t range_to) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), SCALE_MINMAX_SPIRV_BIN, SCALE_MINMAX_SPIRV_BYTES);
-
-	// define result NGrid
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// store scaling information for later (required to undo the operation, e.g. for neural network label scaling)
+	result.scaling_method = ScalingMethod::SCALING_METHOD_MINMAX;
+	result.scaling_min = this->min();
+	result.scaling_max = this->max();
 
-	// define push constants
-	PushConstants constants(
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		range_from,
 		range_to,
-		this->min(),
-		this->max()
+		result.scaling_min,
+		result.scaling_max
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), SCALE_MINMAX_SPIRV_BIN, SCALE_MINMAX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3190,30 +5016,54 @@ NGrid NGrid::scale_minmax(float_t range_from, float_t range_to) const {
 // (x - mean) / (max - min)
 NGrid NGrid::scale_mean() const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), SCALE_MEAN_SPIRV_BIN, SCALE_MEAN_SPIRV_BYTES);
-
-	// define result NGrid
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// store scaling information for later (required to undo the operation, e.g. for neural network label scaling)
+	result.scaling_method = ScalingMethod::SCALING_METHOD_MEAN;
+	result.scaling_min = this->min();
+	result.scaling_max = this->max();
+	result.scaling_mean = this->mean();
 
-	// define push constants
-	PushConstants constants(
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
-		this->mean(),
-		this->max() - this->min() // = range
+		result.scaling_mean,
+		result.scaling_max - result.scaling_min // = range
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), SCALE_MEAN_SPIRV_BIN, SCALE_MEAN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3223,33 +5073,80 @@ NGrid NGrid::scale_mean() const {
 // ((x - mean) / sigma) * z_score
 NGrid NGrid::scale_zscore(const float_t z_score) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), SCALE_STD_SPIRV_BIN, SCALE_STD_SPIRV_BYTES);
-
-	// define result NGrid
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// store scaling information for later (required to undo the operation, e.g. for neural network label scaling)
+	result.scaling_method = ScalingMethod::SCALING_METHOD_ZSCORE;
+	result.scaling_mean = this->mean();
+	result.scaling_stdev = this->stdev();
+	result.scaling_zscore = z_score;
 
-	// define push constants
-	PushConstants constants(
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
-		this->mean(),
-		this->stdev(),
+		result.scaling_mean,
+		result.scaling_stdev,
 		z_score
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), SCALE_STD_SPIRV_BIN, SCALE_STD_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
+}
+
+// undo an earlier scaling operation
+NGrid NGrid::scale_undo() const {
+	switch (this->scaling_method) {
+	case ScalingMethod::SCALING_METHOD_MEAN: return (*this * (this->scaling_max - this->scaling_min)) + this->scaling_mean;
+	case ScalingMethod::SCALING_METHOD_MINMAX: return (*this * (this->scaling_max - this->scaling_min)) + this->scaling_min;
+	case ScalingMethod::SCALING_METHOD_ZSCORE: return ((*this / this->scaling_zscore) * this->scaling_stdev) + this->scaling_mean;
+	case ScalingMethod::SCALING_METHOD_NONE: return *this; break;
+	default: return *this;
+	}
+}
+
+// undo scaling by using the scaling parameters of another NGrid
+// (e.g. to scale back neural network outputs based on the input scaling parameters)
+NGrid NGrid::scale_undo(const NGrid& scaling_reference) const {
+	switch (scaling_reference.scaling_method) {
+	case ScalingMethod::SCALING_METHOD_MEAN: return (*this * (scaling_reference.scaling_max - scaling_reference.scaling_min)) + scaling_reference.scaling_mean;
+	case ScalingMethod::SCALING_METHOD_MINMAX: return (*this * (scaling_reference.scaling_max - scaling_reference.scaling_min)) + scaling_reference.scaling_min;
+	case ScalingMethod::SCALING_METHOD_ZSCORE: return ((*this / scaling_reference.scaling_zscore) * scaling_reference.scaling_stdev) + scaling_reference.scaling_mean;
+	case ScalingMethod::SCALING_METHOD_NONE: return *this; break;
+	default: return *this;
+	}
 }
 
 // +=================================+   
@@ -3331,22 +5228,47 @@ NGrid NGrid::ident_drv() const {
 // sigmoid activation function
 // 1/(1+exp(-x))
 NGrid NGrid::sigmoid() const {
-	static ShaderModule shader(manager->get_device(), SIGMOID_SPIRV_BIN, SIGMOID_SPIRV_BYTES);
 
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
 
-	PushConstants constants(this->elements);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), SIGMOID_SPIRV_BIN, SIGMOID_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3354,22 +5276,46 @@ NGrid NGrid::sigmoid() const {
 // sigmoid activation derivative
 // exp(x)/pow(exp(x)+1,2)
 NGrid NGrid::sigmoid_drv() const {
-	static ShaderModule shader(manager->get_device(), SIGMOID_DRV_SPIRV_BIN, SIGMOID_DRV_SPIRV_BYTES);
-
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
 
-	PushConstants constants(this->elements);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), SIGMOID_DRV_SPIRV_BIN, SIGMOID_DRV_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3377,22 +5323,47 @@ NGrid NGrid::sigmoid_drv() const {
 // ELU activation function;
 // x>0 ? x : alpha*(exp(x)-1)
 NGrid NGrid::elu(float_t alpha) const {
-	static ShaderModule shader(manager->get_device(), ELU_SPIRV_BIN, ELU_SPIRV_BYTES);
-
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		alpha
+	);
 
-	PushConstants constants(this->elements, alpha);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), ELU_SPIRV_BIN, ELU_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3402,22 +5373,47 @@ NGrid NGrid::elu(float_t alpha) const {
 // small alpha value like e.g. 0.01 for 'leaky' ELU
 // x>0 ? 1 : alpha*exp(x);
 NGrid NGrid::elu_drv(float_t alpha) const {
-	static ShaderModule shader(manager->get_device(), ELU_DRV_SPIRV_BIN, ELU_DRV_SPIRV_BYTES);
-
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		alpha
+	);
 
-	PushConstants constants(this->elements, alpha);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), ELU_DRV_SPIRV_BIN, ELU_DRV_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3427,22 +5423,47 @@ NGrid NGrid::elu_drv(float_t alpha) const {
 // chose alpha=0 for true ReLU function;
 // small alpha value like e.g. 0.01 for 'leaky' ReLU
 NGrid NGrid::relu(float_t alpha) const {
-	static ShaderModule shader(manager->get_device(), RELU_SPIRV_BIN, RELU_SPIRV_BYTES);
-
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		alpha
+	);
 
-	PushConstants constants(this->elements, alpha);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), RELU_SPIRV_BIN, RELU_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3451,44 +5472,93 @@ NGrid NGrid::relu(float_t alpha) const {
 // chose alpha=0 for true ReLU function;
 // small alpha value like e.g. 0.01 for 'leaky' ReLU
 NGrid NGrid::relu_drv(float_t alpha) const {
-	static ShaderModule shader(manager->get_device(), RELU_DRV_SPIRV_BIN, RELU_DRV_SPIRV_BYTES);
-
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		alpha
+	);
 
-	PushConstants constants(this->elements, alpha);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), RELU_DRV_SPIRV_BIN, RELU_DRV_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 // tanh activation derivative
 NGrid NGrid::tanh_drv() const {
-	static ShaderModule shader(manager->get_device(), TANH_DRV_SPIRV_BIN, TANH_DRV_SPIRV_BYTES);
-
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
 
-	PushConstants constants(this->elements);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), TANH_DRV_SPIRV_BIN, TANH_DRV_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3500,22 +5570,49 @@ NGrid NGrid::tanh_drv() const {
 // returns a copy of the array that stores the
 // values of the source array clamped in the range between a min and max value
 NGrid NGrid::outliers_clamp_minmax(const float_t min_value, const float_t max_value) const {
+
 	NGrid result(this->shape);
 
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		min_value,
+		max_value
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), CLAMP_SPIRV_BIN, CLAMP_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	descriptor_pool->allocate_set(set);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	PushConstants constants(this->elements, min_value, max_value);
-
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3528,30 +5625,48 @@ NGrid NGrid::outliers_clamp_zscore(const float_t z_score) const {
 	float_t upper_limit = mean + z_score * sigma;
 	float_t lower_limit = mean - z_score * sigma;
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OUTLIERS_TRUNCATE_SPIRV_BIN, OUTLIERS_TRUNCATE_SPIRV_BYTES);
-
-	// define result NGrid
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		upper_limit,
 		lower_limit
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OUTLIERS_TRUNCATE_SPIRV_BIN, OUTLIERS_TRUNCATE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3564,31 +5679,49 @@ NGrid NGrid::outliers_mean_imputation(const float_t z_score) const {
 	float_t upper_limit = mean + z_score * sigma;
 	float_t lower_limit = mean - z_score * sigma;
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OUTLIERS_MEAN_IMPUTATION_SPIRV_BIN, OUTLIERS_MEAN_IMPUTATION_SPIRV_BYTES);
-
-	// define result NGrid
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		upper_limit,
 		lower_limit,
 		mean
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OUTLIERS_MEAN_IMPUTATION_SPIRV_BIN, OUTLIERS_MEAN_IMPUTATION_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3601,31 +5734,49 @@ NGrid NGrid::outliers_value_imputation(const float_t z_score, const float_t valu
 	float_t upper_limit = mean + z_score * sigma;
 	float_t lower_limit = mean - z_score * sigma;
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OUTLIERS_VALUE_IMPUTATION_SPIRV_BIN, OUTLIERS_VALUE_IMPUTATION_SPIRV_BYTES);
-
-	// define result NGrid
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		upper_limit,
 		lower_limit,
 		value
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OUTLIERS_VALUE_IMPUTATION_SPIRV_BIN, OUTLIERS_VALUE_IMPUTATION_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3633,22 +5784,47 @@ NGrid NGrid::outliers_value_imputation(const float_t z_score, const float_t valu
 // recover -inf, +inf or nan values
 // (replace with -FLOAT_MAX, +FLOAT_MAX or 0)
 NGrid NGrid::recover() const {
-	static ShaderModule shader(manager->get_device(), RECOVER_SPIRV_BIN, RECOVER_SPIRV_BYTES);
 
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
 
-	PushConstants constants(this->elements);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), RECOVER_SPIRV_BIN, RECOVER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3658,128 +5834,284 @@ NGrid NGrid::recover() const {
 // +=================================+
 
 NGrid NGrid::operator>(const float_t value) const {
-	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_VALUE_SPIRV_BIN, OPERATOR_GREATER_VALUE_SPIRV_BYTES);
 
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
 
-	PushConstants constants(this->elements, value);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_VALUE_SPIRV_BIN, OPERATOR_GREATER_VALUE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 
 NGrid NGrid::operator>=(const float_t value) const {
-	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_EQUAL_VALUE_SPIRV_BIN, OPERATOR_GREATER_EQUAL_VALUE_SPIRV_BYTES);
 
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
 
-	PushConstants constants(this->elements, value);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_EQUAL_VALUE_SPIRV_BIN, OPERATOR_GREATER_EQUAL_VALUE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator==(const float_t value) const {
-	static ShaderModule shader(manager->get_device(), OPERATOR_EQUAL_VALUE_SPIRV_BIN, OPERATOR_EQUAL_VALUE_SPIRV_BYTES);
 
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
 
-	PushConstants constants(this->elements, value);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_EQUAL_VALUE_SPIRV_BIN, OPERATOR_EQUAL_VALUE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator!=(const float_t value) const {
-	static ShaderModule shader(manager->get_device(), OPERATOR_NOT_EQUAL_VALUE_SPIRV_BIN, OPERATOR_NOT_EQUAL_VALUE_SPIRV_BYTES);
 
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
 
-	PushConstants constants(this->elements, value);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_NOT_EQUAL_VALUE_SPIRV_BIN, OPERATOR_NOT_EQUAL_VALUE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator<(const float_t value) const {
-	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_VALUE_SPIRV_BIN, OPERATOR_SMALLER_VALUE_SPIRV_BYTES);
 
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
 
-	PushConstants constants(this->elements, value);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_VALUE_SPIRV_BIN, OPERATOR_SMALLER_VALUE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator<=(const float_t value) const {
-	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_EQUAL_VALUE_SPIRV_BIN, OPERATOR_SMALLER_EQUAL_VALUE_SPIRV_BYTES);
 
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		value
+	);
 
-	PushConstants constants(this->elements, value);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_EQUAL_VALUE_SPIRV_BIN, OPERATOR_SMALLER_EQUAL_VALUE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -3787,250 +6119,417 @@ NGrid NGrid::operator<=(const float_t value) const {
 // elementwise comparison with second NGrid
 NGrid NGrid::operator>(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_OTHER_SPIRV_BIN, OPERATOR_GREATER_OTHER_SPIRV_BYTES);
-
-	// define result NGrid
+	// declare result array
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// setup push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
 		other.get_dimensions()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_OTHER_SPIRV_BIN, OPERATOR_GREATER_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator>=(const NGrid& other) const {
-	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_EQUAL_OTHER_SPIRV_BIN, OPERATOR_GREATER_EQUAL_OTHER_SPIRV_BYTES);
 
-	// define result NGrid
+	// declare result array
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// setup push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
 		other.get_dimensions()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_GREATER_EQUAL_OTHER_SPIRV_BIN, OPERATOR_GREATER_EQUAL_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator==(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OPERATOR_EQUAL_OTHER_SPIRV_BIN, OPERATOR_EQUAL_OTHER_SPIRV_BYTES);
-
-	// define result NGrid
+	// declare result array
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// setup push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
 		other.get_dimensions()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_EQUAL_OTHER_SPIRV_BIN, OPERATOR_EQUAL_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator!=(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OPERATOR_NOT_EQUAL_OTHER_SPIRV_BIN, OPERATOR_NOT_EQUAL_OTHER_SPIRV_BYTES);
-
-	// define result NGrid
+	// declare result array
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// setup push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
 		other.get_dimensions()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_NOT_EQUAL_OTHER_SPIRV_BIN, OPERATOR_NOT_EQUAL_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator<(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_OTHER_SPIRV_BIN, OPERATOR_SMALLER_OTHER_SPIRV_BYTES);
-
-	// define result NGrid
+	// declare result array
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// setup push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
 		other.get_dimensions()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_OTHER_SPIRV_BIN, OPERATOR_SMALLER_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator<=(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_EQUAL_OTHER_SPIRV_BIN, OPERATOR_SMALLER_EQUAL_OTHER_SPIRV_BYTES);
-
-	// define result NGrid
+	// declare result array
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// setup push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
 		other.get_dimensions()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_SMALLER_EQUAL_OTHER_SPIRV_BIN, OPERATOR_SMALLER_EQUAL_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::isinf() const {
+
+	// declare result array
 	NGrid result(this->shape);
 
-	// load shader
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ISINF_SPIRV_BIN, ISINF_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	// setup descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	// setup push constants
-	PushConstants constants(this->elements);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::isnan() const {
+	// declare result array
 	NGrid result(this->shape);
 
-	// load shader
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
 	static ShaderModule shader(manager->get_device(), ISNAN_SPIRV_BIN, ISNAN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	// setup descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
 
-	// setup push constants
-	PushConstants constants(this->elements);
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -4064,89 +6563,156 @@ NGrid NGrid::operator||(const bool value) const {
 }
 
 NGrid NGrid::operator!() const {
-	static ShaderModule shader(manager->get_device(), OPERATOR_NOT_SPIRV_BIN, OPERATOR_NOT_SPIRV_BYTES);
 
+	// declare result array
 	NGrid result(this->shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
 
-	PushConstants constants(this->elements);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_NOT_SPIRV_BIN, OPERATOR_NOT_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator&&(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OPERATOR_AND_OTHER_SPIRV_BIN, OPERATOR_AND_OTHER_SPIRV_BYTES);
-
-	// setup result NGrid
+	// declare result array
 	NGrid result(this->shape);
 
-	// setup descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
 		other.get_dimensions()
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_AND_OTHER_SPIRV_BIN, OPERATOR_AND_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 NGrid NGrid::operator||(const NGrid& other) const {
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), OPERATOR_OR_OTHER_SPIRV_BIN, OPERATOR_OR_OTHER_SPIRV_BYTES);
-
-	// define result NGrid
+	// declare result array
 	NGrid result(this->shape);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// setup push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
 		other.get_dimensions()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_OR_OTHER_SPIRV_BIN, OPERATOR_OR_OTHER_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -4158,7 +6724,14 @@ NGrid NGrid::operator||(const NGrid& other) const {
 // conversion to 1d array
 NGrid NGrid::flatten() const {
 	NGrid result(this->elements);
-	result.get_buffer()->write(*this->data_buffer);
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.copy_buffer(*this->data_buffer, *result.get_buffer());
+	cb.end_recording();
+	task.timeline_sync(*this->timeline_semaphore);
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.submit();
 	return result;
 }
 
@@ -4173,20 +6746,11 @@ NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, float_t default_ini
 		result.fill(default_init_value);
 	}
 	else {
-		// load shader
-		static ShaderModule shader(manager->get_device(), RESHAPE_SPIRV_BIN, RESHAPE_SPIRV_BYTES);
+		// acquire an idle compute task
+		ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-		// bind buffers to a descriptor set
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
-
-		// define push constants
-		PushConstants constants(
+		// define push constants (transient resource, owned by the task)
+		PushConstants& constants = task.add_constants(
 			this->dimensions,
 			result.get_dimensions(),
 			this->elements,
@@ -4194,10 +6758,38 @@ NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, float_t default_ini
 			default_init_value
 		);
 
-		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
+		// static resources: only create once
+		static ShaderModule shader(manager->get_device(), RESHAPE_SPIRV_BIN, RESHAPE_SPIRV_BYTES);
+		static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+		static bool layout_initialized = false;
+		if (!layout_initialized) {
+			set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+			set_layout.finalize();
+			layout_initialized = true;
+		}
+		static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+		// add a descriptor set to the task (transient resource, owned by the task)
+		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *data_buffer);
+		ds.bind_buffer(1, *shape_buffer);
+		ds.bind_buffer(2, *result.get_buffer());
+		ds.bind_buffer(3, *result.get_shape_buffer());
+		ds.write();
+
+		// record command buffer
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.bind_pipeline(pipeline);
+		cb.bind_descriptor_set(ds, pipeline);
+		cb.bind_push_constants(constants, pipeline);
+		cb.dispatch(pipeline, result.get_elements(), 1, 1);
+		cb.end_recording();
+
+		// submit command buffer to compute queue on device
+		task.timeline_sync(result.get_timeline_semaphore());
+		task.timeline_sync(*this->timeline_semaphore);
+		task.submit();
 	}
 	return result;
 }
@@ -4214,6 +6806,7 @@ template<typename... Args> NGrid NGrid::reshape(Args... args) const {
 
 // stitch two NGrid arrays together along the specified axis
 NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
+
 	// check valid axis argument
 	if (axis > this->dimensions) {
 		Log::warning("invalid call of NGrid::concatenate() along axis ", axis, "; the array so far only has ",
@@ -4241,8 +6834,6 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 		}
 	}
 
-	static ShaderModule shader(manager->get_device(), CONCATENATE_SPIRV_BIN, CONCATENATE_SPIRV_BYTES);
-
 	std::vector<uint32_t> result_shape = this->shape;
 	if (axis == this->dimensions) {
 		result_shape.push_back(1);
@@ -4254,20 +6845,14 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 		result_shape[axis] += other.get_shape()[axis];
 	}
 
+	// declare result NGrid
 	NGrid result(result_shape);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		result.get_dimensions(),
@@ -4276,9 +6861,41 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 		axis
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), CONCATENATE_SPIRV_BIN, CONCATENATE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(6, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *other.get_buffer());
+	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(5, *result.get_shape_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(other.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -4290,19 +6907,15 @@ NGrid NGrid::padding(const uint32_t amount, const float_t init_value) const {
 	for (uint32_t i = 0; i < this->dimensions; i++) {
 		result_shape[i] += 2 * amount;
 	}
+
+	// declare result NGrid
 	NGrid result(result_shape);
 
-	static ShaderModule shader(manager->get_device(), PADDING_SPIRV_BIN, PADDING_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
@@ -4310,9 +6923,38 @@ NGrid NGrid::padding(const uint32_t amount, const float_t init_value) const {
 		init_value
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), PADDING_SPIRV_BIN, PADDING_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *result.get_buffer());
+	ds.bind_buffer(3, *result.get_shape_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -4326,21 +6968,25 @@ NGrid NGrid::pool_max(const std::vector<uint32_t>& window_shape, const std::vect
 		return *this; // return unmodified grid
 	}
 
-	// copy window shape to a storage buffer
-	Buffer<uint32_t> window_shape_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, window_shape.size());
-	window_shape_buffer.write(window_shape);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// copy window shape to a temporary staging buffer
+	Buffer<uint32_t>& window_shape_staging_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	window_shape_staging_buffer.write(window_shape);
+	Buffer<uint32_t>& window_shape_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// copy stride shape to a temporary staging buffer
+	// (if stride shape is empty, use window shape as default)
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
+	Buffer<uint32_t>& stride_shape_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
 	for (uint32_t i = 0; i < window_shape.size(); i++) {
 		window_N *= window_shape[i];
 	}
-
-	// copy stride shape to a storage buffer
-	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t> stride_shape_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
-	stride_shape_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-
 
 	// calculate result shape
 	std::vector<uint32_t> result_shape;
@@ -4356,30 +7002,58 @@ NGrid NGrid::pool_max(const std::vector<uint32_t>& window_shape, const std::vect
 			result_shape.push_back(std::max(1u, (this->shape[i] + stride_shape[i] - 1) / stride_shape[i]));
 		}
 	}
+
+	// declare result NGrid
 	NGrid result(result_shape);
 
-	static ShaderModule shader(manager->get_device(), POOL_MAX_SPIRV_BIN, POOL_MAX_SPIRV_BYTES);
-
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(window_shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(stride_shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
 		window_N
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), POOL_MAX_SPIRV_BIN, POOL_MAX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(6, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, window_shape_buffer);
+	ds.bind_buffer(3, *result.get_buffer());
+	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.bind_buffer(5, stride_shape_buffer);
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.copy_buffer(window_shape_staging_buffer, window_shape_buffer);
+	cb.copy_buffer(stride_shape_staging_buffer, stride_shape_buffer);
+	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+
 	return result;
 }
 
@@ -4391,17 +7065,27 @@ NGrid NGrid::pool_max(const std::initializer_list<uint32_t>& window_shape, const
 
 NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::vector<uint32_t>& stride_shape) const {
 	if (window_shape.size() != this->dimensions) {
-		Log::warning("invalid usage of NGrid::pool_max: window shape size must match the number of dimensions of the grid");
+		Log::warning("invalid usage of NGrid::pool_maxabs: window shape size must match the number of dimensions of the grid");
 		return *this; // return unmodified grid
 	}
 	if (stride_shape.size() != 0 && stride_shape.size() != this->dimensions) {
-		Log::warning("invalid usage of NGrid::pool_max: step shape size must match the number of dimensions of the grid");
+		Log::warning("invalid usage of NGrid::pool_maxabs: step shape size must match the number of dimensions of the grid");
 		return *this; // return unmodified grid
 	}
 
-	// copy window shape to a storage buffer
-	Buffer<uint32_t> window_shape_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, window_shape.size());
-	window_shape_buffer.write(window_shape);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// copy window shape to a temporary staging buffer
+	Buffer<uint32_t>& window_shape_staging_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	window_shape_staging_buffer.write(window_shape);
+	Buffer<uint32_t>& window_shape_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// copy stride shape to a temporary staging buffer
+	// (if stride shape is empty, use window shape as default)
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
+	Buffer<uint32_t>& stride_shape_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -4409,16 +7093,11 @@ NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::v
 		window_N *= window_shape[i];
 	}
 
-	// copy stride shape to a storage buffer
-	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t> stride_shape_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
-	stride_shape_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-
 	// calculate result shape
 	std::vector<uint32_t> result_shape;
 	for (uint32_t i = 0; i < this->dimensions; i++) {
 		if (window_shape[i] == 0) {
-			Log::warning("invalid usage of NGrid::pool_max: window shape must not contain zero values");
+			Log::warning("invalid usage of NGrid::pool_maxabs: window shape must not contain zero values");
 			return *this; // return unmodified grid
 		}
 		if (stride_shape.size() == 0) {
@@ -4428,30 +7107,58 @@ NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::v
 			result_shape.push_back(std::max(1u, (this->shape[i] + stride_shape[i] - 1) / stride_shape[i]));
 		}
 	}
+
+	// declare result NGrid
 	NGrid result(result_shape);
 
-	static ShaderModule shader(manager->get_device(), POOL_MAXABS_SPIRV_BIN, POOL_MAXABS_SPIRV_BYTES);
-
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(window_shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(stride_shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
 		window_N
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), POOL_MAXABS_SPIRV_BIN, POOL_MAXABS_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(6, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, window_shape_buffer);
+	ds.bind_buffer(3, *result.get_buffer());
+	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.bind_buffer(5, stride_shape_buffer);
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.copy_buffer(window_shape_staging_buffer, window_shape_buffer);
+	cb.copy_buffer(stride_shape_staging_buffer, stride_shape_buffer);
+	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+
 	return result;
 }
 
@@ -4463,17 +7170,27 @@ NGrid NGrid::pool_maxabs(const std::initializer_list<uint32_t>& window_shape, co
 
 NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vector<uint32_t>& stride_shape) const {
 	if (window_shape.size() != this->dimensions) {
-		Log::warning("invalid usage of NGrid::pool_max: window shape size must match the number of dimensions of the grid");
+		Log::warning("invalid usage of NGrid::pool_min: window shape size must match the number of dimensions of the grid");
 		return *this; // return unmodified grid
 	}
 	if (stride_shape.size() != 0 && stride_shape.size() != this->dimensions) {
-		Log::warning("invalid usage of NGrid::pool_max: step shape size must match the number of dimensions of the grid");
+		Log::warning("invalid usage of NGrid::pool_min: step shape size must match the number of dimensions of the grid");
 		return *this; // return unmodified grid
 	}
 
-	// copy window shape to a storage buffer
-	Buffer<uint32_t> window_shape_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, window_shape.size());
-	window_shape_buffer.write(window_shape);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// copy window shape to a temporary staging buffer
+	Buffer<uint32_t>& window_shape_staging_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	window_shape_staging_buffer.write(window_shape);
+	Buffer<uint32_t>& window_shape_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// copy stride shape to a temporary staging buffer
+	// (if stride shape is empty, use window shape as default)
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
+	Buffer<uint32_t>& stride_shape_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -4481,16 +7198,11 @@ NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vect
 		window_N *= window_shape[i];
 	}
 
-	// copy stride shape to a storage buffer
-	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t> stride_shape_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
-	stride_shape_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-
 	// calculate result shape
 	std::vector<uint32_t> result_shape;
 	for (uint32_t i = 0; i < this->dimensions; i++) {
 		if (window_shape[i] == 0) {
-			Log::warning("invalid usage of NGrid::pool_max: window shape must not contain zero values");
+			Log::warning("invalid usage of NGrid::pool_min: window shape must not contain zero values");
 			return *this; // return unmodified grid
 		}
 		if (stride_shape.size() == 0) {
@@ -4500,30 +7212,58 @@ NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vect
 			result_shape.push_back(std::max(1u, (this->shape[i] + stride_shape[i] - 1) / stride_shape[i]));
 		}
 	}
+
+	// declare result NGrid
 	NGrid result(result_shape);
 
-	static ShaderModule shader(manager->get_device(), POOL_MIN_SPIRV_BIN, POOL_MIN_SPIRV_BYTES);
-
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(window_shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(stride_shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
 		window_N
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), POOL_MIN_SPIRV_BIN, POOL_MIN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(6, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, window_shape_buffer);
+	ds.bind_buffer(3, *result.get_buffer());
+	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.bind_buffer(5, stride_shape_buffer);
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.copy_buffer(window_shape_staging_buffer, window_shape_buffer);
+	cb.copy_buffer(stride_shape_staging_buffer, stride_shape_buffer);
+	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+
 	return result;
 }
 
@@ -4535,17 +7275,27 @@ NGrid NGrid::pool_min(const std::initializer_list<uint32_t>& window_shape, const
 
 NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vector<uint32_t>& stride_shape) const {
 	if (window_shape.size() != this->dimensions) {
-		Log::warning("invalid usage of NGrid::pool_max: window shape size must match the number of dimensions of the grid");
+		Log::warning("invalid usage of NGrid::pool_mean: window shape size must match the number of dimensions of the grid");
 		return *this; // return unmodified grid
 	}
 	if (stride_shape.size() != 0 && stride_shape.size() != this->dimensions) {
-		Log::warning("invalid usage of NGrid::pool_max: step shape size must match the number of dimensions of the grid");
+		Log::warning("invalid usage of NGrid::pool_mean: step shape size must match the number of dimensions of the grid");
 		return *this; // return unmodified grid
 	}
 
-	// copy window shape to a storage buffer
-	Buffer<uint32_t> window_shape_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, window_shape.size());
-	window_shape_buffer.write(window_shape);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// copy window shape to a temporary staging buffer
+	Buffer<uint32_t>& window_shape_staging_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	window_shape_staging_buffer.write(window_shape);
+	Buffer<uint32_t>& window_shape_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// copy stride shape to a temporary staging buffer
+	// (if stride shape is empty, use window shape as default)
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
+	Buffer<uint32_t>& stride_shape_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -4553,16 +7303,11 @@ NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vec
 		window_N *= window_shape[i];
 	}
 
-	// copy stride shape to a storage buffer
-	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t> stride_shape_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
-	stride_shape_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-
 	// calculate result shape
 	std::vector<uint32_t> result_shape;
 	for (uint32_t i = 0; i < this->dimensions; i++) {
 		if (window_shape[i] == 0) {
-			Log::warning("invalid usage of NGrid::pool_max: window shape must not contain zero values");
+			Log::warning("invalid usage of NGrid::pool_mean: window shape must not contain zero values");
 			return *this; // return unmodified grid
 		}
 		if (stride_shape.size() == 0) {
@@ -4572,34 +7317,58 @@ NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vec
 			result_shape.push_back(std::max(1u, (this->shape[i] + stride_shape[i] - 1) / stride_shape[i]));
 		}
 	}
+
+	// declare result NGrid
 	NGrid result(result_shape);
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), POOL_MEAN_SPIRV_BIN, POOL_MEAN_SPIRV_BYTES);
-
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(window_shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(stride_shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
 		window_N
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), POOL_MEAN_SPIRV_BIN, POOL_MEAN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(6, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, window_shape_buffer);
+	ds.bind_buffer(3, *result.get_buffer());
+	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.bind_buffer(5, stride_shape_buffer);
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.copy_buffer(window_shape_staging_buffer, window_shape_buffer);
+	cb.copy_buffer(stride_shape_staging_buffer, stride_shape_buffer);
+	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+
 	return result;
 }
 
@@ -4622,24 +7391,15 @@ NGrid NGrid::convolution(const NGrid& kernel, uint32_t padding_amount, float_t p
 	for (uint32_t i = 0; i < this->dimensions; i++) {
 		result_shape[i] = result_shape[i] - kernel.get_shape()[i] + 1 + (2 * padding_amount);
 	}
+
+	// declare result NGrid
 	NGrid result(result_shape);
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), CONVOLUTION_SPIRV_BIN, CONVOLUTION_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*kernel.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*kernel.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
@@ -4648,10 +7408,42 @@ NGrid NGrid::convolution(const NGrid& kernel, uint32_t padding_amount, float_t p
 		padding_value
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), CONVOLUTION_SPIRV_BIN, CONVOLUTION_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(6, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, *kernel.get_buffer());
+	ds.bind_buffer(3, *kernel.get_shape_buffer());
+	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(5, *result.get_shape_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(kernel.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+
 	return result;
 }
 
@@ -4675,62 +7467,65 @@ NGrid NGrid::transpose(const std::vector<uint32_t> target_axis_order) const {
 		result_shape[i] = this->shape[target_axis_order[i]];
 	}
 
-	// create result + buffer to store the target axis order
+	// declare result NGrid
 	NGrid result(result_shape);
-	Buffer<uint32_t> target_axis_order_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, target_axis_order.size());
-	target_axis_order_buffer.write(target_axis_order);
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), TRANSPOSE_SPIRV_BIN, TRANSPOSE_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define push constants
-	PushConstants constants(
-		std::max(2u, this->dimensions),
+	// add a temporary staging buffer to store the target axis order
+	Buffer<uint32_t>& target_axis_order_staging_buffer = task.add_temp_buffer<uint32_t>(target_axis_order.size(), BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	target_axis_order_staging_buffer.write(target_axis_order);
+	Buffer<uint32_t>& target_axis_order_buffer = task.add_temp_buffer<uint32_t>(target_axis_order.size(), BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->dimensions,
+		result.get_dimensions(),
 		this->elements
 	);
 
-	// if 'this' is 1d, it has to be reshaped to a [n, 1] 2d matrix before transposing
-	// (a copy of 'this' is needed, because this is a non-destructive (const) operation)
-	if (this->dimensions == 1) {
-		NGrid data_cpy = *this;
-		data_cpy.reshape({ this->shape[0], 1 }); // reshape to [n, 1]
-
-		// define descriptor set
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*data_cpy.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(target_axis_order_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
-
-		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), TRANSPOSE_SPIRV_BIN, TRANSPOSE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
 	}
-	// if 'this' is 2d or higher, it can be transposed directly
-	else {
-		// define descriptor set
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(target_axis_order_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*result.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-		// execute compute pipeline
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
-	}
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, target_axis_order_buffer);
+	ds.bind_buffer(3, *result.get_buffer());
+	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.copy_buffer(target_axis_order_staging_buffer, target_axis_order_buffer);
+	cb.add_buffer_memory_barrier(target_axis_order_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+
 	return result;
 }
 
-// performs LU decomposition, returns the number of row swaps performed
+// performs LU decomposition
 LUresult NGrid::lu() const {
 	LUresult result;
 	// check if the grid is a 2d matrix
@@ -4745,63 +7540,102 @@ LUresult NGrid::lu() const {
 	result.L = result.L.reshape({ this->shape[0], this->shape[0] });	result.L.fill_identity();
 	result.U = *this; // U is initialized with the source matrix
 	result.P = result.P.reshape({ this->shape[0], this->shape[0] });	result.P.fill_identity();
+	result.swap_count_staging_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::TRANSFER_BUFFER, 1, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	result.swap_count_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	result.swap_row_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	// add a buffer to store the row to be swapped for current row 'k'
-	Buffer<uint32_t> swap_row(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1);
-
-	// add a buffer to count the number of performed row swaps
-	Buffer<uint32_t> swap_count(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1);
-
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*result.L.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.U.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.P.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(swap_row, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(swap_count, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	uint32_t k = 0;
-	PushConstants constants(
-		this->shape[0],		// source matrix rows
-		this->shape[1],		// source matrix columns
-		k					// current row index
-	);
+	// static resources: only create once
+	static ShaderModule check_swap_shader(manager->get_device(), LU_DECOMP_CHECK_ROWSWAP_SPIRV_BIN, LU_DECOMP_CHECK_ROWSWAP_SPIRV_BYTES);
+	static ShaderModule perform_swap_shader(manager->get_device(), LU_DECOMP_PERFORM_ROWSWAP_SPIRV_BIN, LU_DECOMP_PERFORM_ROWSWAP_SPIRV_BYTES);
+	static ShaderModule l_update_shader(manager->get_device(), LU_DECOMP_L_UPDATE_SPIRV_BIN, LU_DECOMP_L_UPDATE_SPIRV_BYTES);
+	static ShaderModule u_update_shader(manager->get_device(), LU_DECOMP_U_UPDATE_SPIRV_BIN, LU_DECOMP_U_UPDATE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static uint32_t constants_size = 3 * sizeof(uint32_t); // 3 push constants, each of type uint32_t, see below
+	static ComputePipeline check_swap_pipeline(manager->get_device(), check_swap_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
+	static ComputePipeline perform_swap_pipeline(manager->get_device(), perform_swap_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
+	static ComputePipeline l_update_pipeline(manager->get_device(), l_update_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
+	static ComputePipeline u_update_pipeline(manager->get_device(), u_update_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
 	// main iterative loop for LU decomposition;
-	for (k = 0; k < this->shape[0]; k++) {
+	for (uint32_t k = 0; k < this->shape[0]; k++) {
 
-		// update k in push constants (at offset 8 bytes)
-		constants.add_values(k, 8);
+		// acquire an idle compute task
+		ComputeTask& task_k = manager->get_compute_task(__FUNCTION__);
+
+
+
+		// define push constants (transient resource, owned by the task)
+		PushConstants& constants = task_k.add_constants(
+			this->shape[0],		// source matrix rows
+			this->shape[1],		// source matrix columns
+			k					// current row index
+		);
+
+		// define descriptor set (transient resource, owned by the task)
+		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *result.L.get_buffer());
+		ds.bind_buffer(1, *result.U.get_buffer());
+		ds.bind_buffer(2, *result.P.get_buffer());
+		ds.bind_buffer(3, *result.swap_row_buffer);
+		ds.bind_buffer(4, *result.swap_count_buffer);
+		ds.write();
+
+		// record command buffer
+		CommandBuffer& cb = task_k.get_command_buffer();
+		cb.begin_recording();
 
 		// check if row swap is needed
-		// (1d dispatch with one thread for each row)
-		static ShaderModule check_swap_shader(manager->get_device(), LU_DECOMP_CHECK_ROWSWAP_SPIRV_BIN, LU_DECOMP_CHECK_ROWSWAP_SPIRV_BYTES);
-		ComputePipeline check_swap_pipeline(manager->get_device(), check_swap_shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(check_swap_pipeline, this->shape[0], 1, 1, false, 0, true);
+		// (1d dispatch with one thread for each row)	
+		cb.bind_descriptor_set(ds, check_swap_pipeline);
+		cb.bind_push_constants(constants, check_swap_pipeline);
+		cb.dispatch(check_swap_pipeline, this->shape[0], 1, 1);
+		cb.add_buffer_memory_barrier(*result.swap_row_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
 
 		// perform row swap (=if needed)
 		// (1d dispatch with one thread for each column)
-		static ShaderModule perform_swap_shader(manager->get_device(), LU_DECOMP_PERFORM_ROWSWAP_SPIRV_BIN, LU_DECOMP_PERFORM_ROWSWAP_SPIRV_BYTES);
-		ComputePipeline perform_swap_pipeline(manager->get_device(), perform_swap_shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(perform_swap_pipeline, this->shape[1], 1, 1, false, 0, true);
+		cb.bind_descriptor_set(ds, perform_swap_pipeline);
+		cb.bind_push_constants(constants, perform_swap_pipeline);
+		cb.dispatch(perform_swap_pipeline, this->shape[1], 1, 1);
+		cb.add_buffer_memory_barrier(*result.P.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(*result.U.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(*result.L.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
 
 		// update L matrix in column k
 		// (1d dispatch with one thread for each row)
-		static ShaderModule l_update_shader(manager->get_device(), LU_DECOMP_L_UPDATE_SPIRV_BIN, LU_DECOMP_L_UPDATE_SPIRV_BYTES);
-		ComputePipeline l_update_pipeline(manager->get_device(), l_update_shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(l_update_pipeline, this->shape[0], 1, 1, false, 0, true);
+		cb.bind_descriptor_set(ds, l_update_pipeline);
+		cb.bind_push_constants(constants, l_update_pipeline);
+		cb.dispatch(l_update_pipeline, this->shape[0], 1, 1);
+		cb.add_buffer_memory_barrier(*result.L.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
 
 		// update U matrix in rows [k+1] to [rows-1]
-		static ShaderModule u_update_shader(manager->get_device(), LU_DECOMP_U_UPDATE_SPIRV_BIN, LU_DECOMP_U_UPDATE_SPIRV_BYTES);
-		ComputePipeline u_update_pipeline(manager->get_device(), u_update_shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(u_update_pipeline, result.U.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	}
-	descriptor_pool->release_set(set);
+		cb.bind_descriptor_set(ds, u_update_pipeline);
+		cb.bind_push_constants(constants, u_update_pipeline);
+		cb.dispatch(u_update_pipeline, result.U.get_elements(), 1, 1);
 
-	result.swap_count = swap_count.read_element(0);
+		// final iteration: copy swap count back to staging buffer
+		if (k == this->shape[0] - 1) {
+			cb.add_buffer_memory_barrier(*result.swap_count_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(*result.swap_count_buffer, *result.swap_count_staging_buffer);
+		}
+
+		// submit command buffer to compute queue on device
+		cb.end_recording();
+		task_k.timeline_sync(result.L.get_timeline_semaphore());
+		task_k.timeline_sync(result.U.get_timeline_semaphore());
+		task_k.timeline_sync(result.P.get_timeline_semaphore());
+		task_k.timeline_sync(*this->timeline_semaphore);
+		task_k.submit();
+	}
 
 	return result;
 }
@@ -4813,32 +7647,50 @@ NGrid NGrid::l_inverse() const {
 		return *this;
 	}
 
-	// load shader module
-	static ShaderModule shader(manager->get_device(), L_INVERSE_SPIRV_BIN, L_INVERSE_SPIRV_BYTES);
+	// initialize the result matrix as an identity matrix of this->shape
+	NGrid result(this->shape);
+	result.fill_identity();
 
-	// create an identity matrix of this->shape
-	NGrid I(this->shape);
-	I.fill_identity();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR); // 'this' must be in the form of a lower triangular matrix!
-	set.bind_buffer(*I.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->shape[0]
 	);
 
-	// execute compute pipeline
-	// (1d dispatch with one thread for each column)
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->shape[1], 1, 1, true, fence_timeout_nanosec, true);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), L_INVERSE_SPIRV_BIN, L_INVERSE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	descriptor_pool->release_set(set);
-	return I;
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);// 'this' must be in the form of a lower triangular matrix
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->shape[1], 1, 1); // (1d dispatch with one thread for each column)
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+
+	return result;
 }
 
 // get the inverse of an upper triangular matrix U (using backward substitution)
@@ -4849,32 +7701,50 @@ NGrid NGrid::u_inverse() const {
 		return *this;
 	}
 
-	// load shader module
-	static ShaderModule shader(manager->get_device(), U_INVERSE_SPIRV_BIN, U_INVERSE_SPIRV_BYTES);
+	// initialize the result matrix as an identity matrix of this->shape
+	NGrid result(this->shape);
+	result.fill_identity();
 
-	// create an identity matrix of this->shape
-	NGrid I(this->shape);
-	I.fill_identity();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR); // 'this' must be in the form of an upper triangular matrix
-	set.bind_buffer(*I.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->shape[0]
 	);
 
-	// execute compute pipeline
-	// (1d dispatch with one thread for each column)
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->shape[1], 1, 1, true, fence_timeout_nanosec, true);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), U_INVERSE_SPIRV_BIN, U_INVERSE_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	descriptor_pool->release_set(set);
-	return I;
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer); // 'this' must be in the form of an upper triangular matrix
+	ds.bind_buffer(1, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->shape[1], 1, 1); // (1d dispatch with one thread for each column)
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+
+	return result;
 }
 
 // QR decomposition using Householder Reflections
@@ -4896,102 +7766,200 @@ QRresult NGrid::qr(const bool hessenberg) const {
 	uint32_t k_max = hessenberg ? std::min(rows, cols) - 2 : std::min(rows, cols); // max iterations
 	uint32_t row_workgroups = (rows + workgroup_size_1d - 1) / workgroup_size_1d;
 
+	// acquire and idle compute task (this main task is used to manage the descriptor set and push constants and any temporary helper arrays, shared by the other tasks)
+	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
+
+	// create temporary buffers
+	Buffer<float_t>& Temp_w = main_task.add_temp_buffer<float_t>(cols, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_u = main_task.add_temp_buffer<float_t>(rows, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_y = main_task.add_temp_buffer<float_t>(hessenberg ? rows : 1, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // (small dummy for standard QR, only used for Hessenberg)
+	Buffer<float_t>& Alpha = main_task.add_temp_buffer<float_t>(k_max, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Gamma = main_task.add_temp_buffer<float_t>(k_max, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& LocalResults = main_task.add_temp_buffer<float_t>(row_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // to store local results from parallel reductions
+
+	// submit main task (with empty command buffer) to mark it as available for reset as soon as all other tasks are done
+	Semaphore& mt_semaphore = main_task.add_temp_timeline_semaphore(UINT64_MAX);
+	main_task.timeline_sync(mt_semaphore, k_max - 1, 0); // =triggered by the final iteration of the main loop
+	main_task.submit();
+
 	// initizialize result members
-	result.R = *this;
 	uint32_t cols_V = k_max;
 	result.V = result.V.reshape(rows, cols_V);
 	result.V.fill_zero();
 	result.Q = result.Q.reshape(rows, cols_Q);
 	result.Q.fill_identity();
 	result.Tau = result.Tau.reshape(cols_V);
+	result.R = *this;
 
-	// helper arrays
-	NGrid Temp_w(cols);
-	NGrid Temp_u(rows);
-	NGrid Temp_y(hessenberg ? rows : 1); // (small dummy for standard QR, only used for Hessenberg)
-	NGrid Alpha(k_max);
-	NGrid Gamma(k_max);
-	NGrid k_iterator(1); k_iterator.fill_zero();
-	NGrid LocalResults(row_workgroups); // to store local results from parallel reductions
+	// define descriptor set layout
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(10, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*result.Q.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.R.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.V.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.Tau.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*Temp_w.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*Temp_u.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*Temp_y.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*LocalResults.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*Alpha.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*k_iterator.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*Gamma.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	PushConstants constants(
-		rows,				// rows in the source matrix
-		cols,				// columns in the source matrix
-		cols_V,
-		cols_Q,
-		row_workgroups,		// number of elements in the local_results buffer (constant for all iterations)
-		uint32_t(hessenberg)// 0 for QR, 1 for Hessenberg
-	);
+	static uint32_t constants_size = 7 * sizeof(uint32_t);
 
 	// === DEFINE SHADERS & PIPELINES ===
 	static ShaderModule get_sum_of_squares_rk_shader(manager->get_device(), QR_GET_SUM_OF_SQUARES_RK_SPIRV_BIN, QR_GET_SUM_OF_SQUARES_RK_SPIRV_BYTES);
-	ComputePipeline get_sum_of_squares_rk_pipeline(manager->get_device(), get_sum_of_squares_rk_shader, constants, set, workgroup_size_1d, 1, 1);
+	static ComputePipeline get_sum_of_squares_rk_pipeline(manager->get_device(), get_sum_of_squares_rk_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
 	static ShaderModule get_alpha_shader(manager->get_device(), QR_GET_ALPHA_SPIRV_BIN, QR_GET_ALPHA_SPIRV_BYTES);
-	ComputePipeline get_alpha_pipeline(manager->get_device(), get_alpha_shader, constants, set, 1, 1, 1);
+	static ComputePipeline get_alpha_pipeline(manager->get_device(), get_alpha_shader, constants_size, set_layout, 1, 1, 1);
 
 	static ShaderModule compute_householder_vector_shader(manager->get_device(), QR_COMPUTE_HOUSEHOLDER_VECTOR_SPIRV_BIN, QR_COMPUTE_HOUSEHOLDER_VECTOR_SPIRV_BYTES);
-	ComputePipeline compute_householder_vector_pipeline(manager->get_device(), compute_householder_vector_shader, constants, set, workgroup_size_1d, 1, 1);
+	static ComputePipeline compute_householder_vector_pipeline(manager->get_device(), compute_householder_vector_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
 	static ShaderModule get_sum_of_squares_vk_shader(manager->get_device(), QR_GET_SUM_OF_SQUARES_VK_SPIRV_BIN, QR_GET_SUM_OF_SQUARES_VK_SPIRV_BYTES);
-	ComputePipeline get_sum_of_squares_vk_pipeline(manager->get_device(), get_sum_of_squares_vk_shader, constants, set, workgroup_size_1d, 1, 1);
+	static ComputePipeline get_sum_of_squares_vk_pipeline(manager->get_device(), get_sum_of_squares_vk_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
 	static ShaderModule get_tau_shader(manager->get_device(), QR_GET_TAU_SPIRV_BIN, QR_GET_TAU_SPIRV_BYTES);
-	ComputePipeline get_tau_pipeline(manager->get_device(), get_tau_shader, constants, set, 1, 1, 1);
+	static ComputePipeline get_tau_pipeline(manager->get_device(), get_tau_shader, constants_size, set_layout, 1, 1, 1);
 
 	static ShaderModule get_temp_w_shader(manager->get_device(), QR_GET_TEMP_W_SPIRV_BIN, QR_GET_TEMP_W_SPIRV_BYTES);
-	ComputePipeline get_temp_w_pipeline(manager->get_device(), get_temp_w_shader, constants, set, 1, workgroup_size_1d, 1);
+	static ComputePipeline get_temp_w_pipeline(manager->get_device(), get_temp_w_shader, constants_size, set_layout, 1, workgroup_size_1d, 1);
 
 	static ShaderModule get_temp_u_shader(manager->get_device(), QR_GET_TEMP_U_SPIRV_BIN, QR_GET_TEMP_U_SPIRV_BYTES);
-	ComputePipeline get_temp_u_pipeline(manager->get_device(), get_temp_u_shader, constants, set, workgroup_size_1d, 1, 1);
+	static ComputePipeline get_temp_u_pipeline(manager->get_device(), get_temp_u_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
 	static ShaderModule get_gamma_shader(manager->get_device(), QR_GET_GAMMA_SPIRV_BIN, QR_GET_GAMMA_SPIRV_BYTES);
-	ComputePipeline get_gamma_pipeline(manager->get_device(), get_gamma_shader, constants, set, workgroup_size_1d, 1, 1);
+	static ComputePipeline get_gamma_pipeline(manager->get_device(), get_gamma_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
 	static ShaderModule gamma_global_reduction_shader(manager->get_device(), QR_GAMMA_GLOBAL_REDUCTION_SPIRV_BIN, QR_GAMMA_GLOBAL_REDUCTION_SPIRV_BYTES);
-	ComputePipeline gamma_global_reduction_pipeline(manager->get_device(), gamma_global_reduction_shader, constants, set, 1, 1, 1);
+	static ComputePipeline gamma_global_reduction_pipeline(manager->get_device(), gamma_global_reduction_shader, constants_size, set_layout, 1, 1, 1);
 
 	static ShaderModule householder_transformation_shader(manager->get_device(), QR_HOUSEHOLDER_TRANSFORMATION_SPIRV_BIN, QR_HOUSEHOLDER_TRANSFORMATION_SPIRV_BYTES);
-	ComputePipeline householder_transformation_pipeline(manager->get_device(), householder_transformation_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
-
-	static ShaderModule increment_k_shader(manager->get_device(), QR_INCREMENT_K_SPIRV_BIN, QR_INCREMENT_K_SPIRV_BYTES);
-	ComputePipeline increment_k_pipeline(manager->get_device(), increment_k_shader, constants, set, 1, 1, 1);
+	static ComputePipeline householder_transformation_pipeline(manager->get_device(), householder_transformation_shader, constants_size, set_layout, workgroup_size_2d, workgroup_size_2d, 1);
 
 	// main loop
 	for (uint32_t k = 0; k < k_max; k++) {
 
-		command_buffer->compute(get_sum_of_squares_rk_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);			// Get local sums of squares of elements R[k:m-1][k] (store in local_results buffer)
-		command_buffer->compute(get_alpha_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);						// Get total sum of squares, norm_x and alpha_k
-		command_buffer->compute(compute_householder_vector_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);	// Compute Householder Vector v_k (V[k:m-1][k])
-		command_buffer->compute(get_sum_of_squares_vk_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);			// Get local sums of squares of elements V[k:m-1][k] (store in local_results buffer)
-		command_buffer->compute(get_tau_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);							// Get total sum of squares of elements V[k:m-1][k], then calculate tau[k] (single thread)
-		command_buffer->compute(get_temp_w_pipeline, 1, cols, 1, true, fence_timeout_nanosec, true);					// Get temp_w
-		command_buffer->compute(get_temp_u_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);					// Get temp_u
+		// acquire an idle compute task
+		ComputeTask& task_k = manager->get_compute_task(__FUNCTION__);
+
+		// define descriptor set (transient resource, managed by the main task)
+		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *result.Q.get_buffer());
+		ds.bind_buffer(1, *result.R.get_buffer());
+		ds.bind_buffer(2, *result.V.get_buffer());
+		ds.bind_buffer(3, *result.Tau.get_buffer());
+		ds.bind_buffer(4, Temp_w);
+		ds.bind_buffer(5, Temp_u);
+		ds.bind_buffer(6, Temp_y);
+		ds.bind_buffer(7, LocalResults);
+		ds.bind_buffer(8, Alpha);
+		ds.bind_buffer(9, Gamma);
+		ds.write();
+
+		// define push constants (transient resource, managed by the main task)
+		PushConstants& constants = task_k.add_constants(
+			rows,				// rows in the source matrix
+			cols,				// columns in the source matrix
+			cols_V,
+			cols_Q,
+			row_workgroups,		// number of elements in the local_results buffer (constant for all iterations)
+			uint32_t(hessenberg),// 0 for QR, 1 for Hessenberg
+			k
+		);
+
+		// begin command buffer recording
+		CommandBuffer& cb = task_k.get_command_buffer();
+		cb.begin_recording();
+
+		// Get local sums of squares of elements R[k:m-1][k] (store in local_results buffer)
+		cb.bind_pipeline(get_sum_of_squares_rk_pipeline);
+		cb.bind_descriptor_set(ds, get_sum_of_squares_rk_pipeline);
+		cb.bind_push_constants(constants, get_sum_of_squares_rk_pipeline);
+		cb.dispatch(get_sum_of_squares_rk_pipeline, rows, 1, 1);
+		cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// Get total sum of squares, norm_x and alpha_k
+		cb.bind_pipeline(get_alpha_pipeline);
+		cb.bind_descriptor_set(ds, get_alpha_pipeline);
+		cb.bind_push_constants(constants, get_alpha_pipeline);
+		cb.dispatch(get_alpha_pipeline, 1, 1, 1);
+		cb.add_buffer_memory_barrier(Alpha, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// Compute Householder Vector v_k (V[k:m-1][k])
+		cb.bind_pipeline(compute_householder_vector_pipeline);
+		cb.bind_descriptor_set(ds, compute_householder_vector_pipeline);
+		cb.bind_push_constants(constants, compute_householder_vector_pipeline);
+		cb.dispatch(compute_householder_vector_pipeline, rows, 1, 1);
+		cb.add_buffer_memory_barrier(*result.V.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// Get local sums of squares of elements V[k:m-1][k] (store in local_results buffer)
+		cb.bind_pipeline(get_sum_of_squares_vk_pipeline);
+		cb.bind_descriptor_set(ds, get_sum_of_squares_vk_pipeline);
+		cb.bind_push_constants(constants, get_sum_of_squares_vk_pipeline);
+		cb.dispatch(get_sum_of_squares_vk_pipeline, rows, 1, 1);
+		cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// Get total sum of squares of elements V[k:m-1][k], then calculate tau[k] (single thread)
+		cb.bind_pipeline(get_tau_pipeline);
+		cb.bind_descriptor_set(ds, get_tau_pipeline);
+		cb.bind_push_constants(constants, get_tau_pipeline);
+		cb.dispatch(get_tau_pipeline, 1, 1, 1);
+		cb.add_buffer_memory_barrier(*result.Tau.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// Get temp_w
+		cb.bind_pipeline(get_temp_w_pipeline);
+		cb.bind_descriptor_set(ds, get_temp_w_pipeline);
+		cb.bind_push_constants(constants, get_temp_w_pipeline);
+		cb.dispatch(get_temp_w_pipeline, 1, cols, 1);
+		cb.add_buffer_memory_barrier(Temp_w, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// Get temp_u
+		cb.bind_pipeline(get_temp_u_pipeline);
+		cb.bind_descriptor_set(ds, get_temp_u_pipeline);
+		cb.bind_push_constants(constants, get_temp_u_pipeline);
+		cb.dispatch(get_temp_u_pipeline, rows, 1, 1);
+		cb.add_buffer_memory_barrier(Temp_u, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(Temp_y, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
 		if (hessenberg) {
-			command_buffer->compute(get_gamma_pipeline, rows, 1, 1, true, fence_timeout_nanosec, true);						// local reduction for gamma (for Hessenberg)
-			command_buffer->compute(gamma_global_reduction_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);
+			// local reduction for gamma (for Hessenberg)
+			cb.bind_pipeline(get_gamma_pipeline);
+			cb.bind_descriptor_set(ds, get_gamma_pipeline);
+			cb.bind_push_constants(constants, get_gamma_pipeline);
+			cb.dispatch(get_gamma_pipeline, rows, 1, 1);
+			cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.record_barriers();
+
+			// global reduction for gamma (for Hessenberg)
+			cb.bind_pipeline(gamma_global_reduction_pipeline);
+			cb.bind_descriptor_set(ds, gamma_global_reduction_pipeline);
+			cb.bind_push_constants(constants, gamma_global_reduction_pipeline);
+			cb.dispatch(gamma_global_reduction_pipeline, 1, 1, 1);
+
+			cb.add_buffer_memory_barrier(Gamma, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.record_barriers();
 		}
-		command_buffer->compute(householder_transformation_pipeline, rows, std::max(cols, cols_Q), 1, true, fence_timeout_nanosec, true); // Update R, Q (2d dispatch)
-		command_buffer->compute(increment_k_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);						// increment k iterator in buffer
+
+		// Update R, Q (2d dispatch)
+		cb.bind_pipeline(householder_transformation_pipeline);
+		cb.bind_descriptor_set(ds, householder_transformation_pipeline);
+		cb.bind_push_constants(constants, householder_transformation_pipeline);
+		cb.dispatch(householder_transformation_pipeline, rows, std::max(cols, cols_Q), 1);
+
+		cb.end_recording();
+
+		task_k.timeline_sync(result.Q.get_timeline_semaphore());
+		task_k.timeline_sync(result.R.get_timeline_semaphore());
+		task_k.timeline_sync(result.V.get_timeline_semaphore());
+		task_k.timeline_sync(result.Tau.get_timeline_semaphore());
+		task_k.add_timeline_signal_semaphore(mt_semaphore, k);
+		task_k.submit();
 	}
-	descriptor_pool->release_set(set);
+
 	return result;
 }
 
@@ -5005,8 +7973,6 @@ QRresult NGrid::hess() const {
 // for an NxN matrix: max_iterations of the sub_problem = N * max_iterations_multiplier
 CGrid NGrid::eigen(const uint32_t max_iterations_multiplier, const float_t tolerance) const {
 	NGrid H = this->hess().R; // get Hessenberg form of 'this'
-	this->print("\nsource matrix X = ");
-	H.print("\nH = Hessenberg form of source matrix = ");
 	uint32_t n = H.rows();
 	CGrid result(n);
 	uint32_t max_iterations = n * max_iterations_multiplier;
@@ -5114,61 +8080,118 @@ CGrid NGrid::eigen(const uint32_t max_iterations_multiplier, const float_t toler
 // protected helper method for eigen values
 void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta_poly, uint32_t start_row, uint32_t end_row) {
 
-	// Create resources
+	// acquire an idle compute task (this main task manages descriptor set, push constants and temporary buffer to be shared by the other tasks)
+	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
+
+	// create temporary buffers
 	uint32_t current_size = end_row - start_row;
-	NGrid v_k(4); // element [3] is reserved to store tau_k
-	NGrid Temp_y(current_size);
-	NGrid Temp_w(current_size);
+	Buffer<float_t>& v_k = main_task.add_temp_buffer<float_t>(3, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& tau_k = main_task.add_temp_buffer<float_t>(1, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_y = main_task.add_temp_buffer<float_t>(current_size, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_w = main_task.add_temp_buffer<float_t>(current_size, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*v_k.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*Temp_y.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*Temp_w.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// submit main task (with empty command buffer) to mark it as available for reset as soon as all other tasks are done
+	Semaphore& mt_semaphore = main_task.add_temp_timeline_semaphore(UINT64_MAX);
+	main_task.timeline_sync(mt_semaphore, current_size - 2, 0); // =triggered by the final iteration of the main loop
+	main_task.submit();
 
-	// define push constants
-	PushConstants constants(
-		uint32_t(0),	// for bulge chase iterator 'k' (0, 1, 2...)
-		start_row,		// offset of the start of the current relevant submatrix within H
-		end_row,		// offset of the end of the current relevant submatrix within H
-		this->rows(),	// height, width of the full matrix H (needed for correct indexing)
-		alpha_poly,
-		beta_poly
-	);
+	// define descriptor set layout
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+
+	static uint32_t constants_size = 2 * sizeof(float_t) + 4 * sizeof(uint32_t);
+
 	// define shaders and pipelines
 	static ShaderModule compute_householder_shader(manager->get_device(), DOUBLESHIFT_COMPUTE_HOUSEHOLDER_VECTOR_SPIRV_BIN, DOUBLESHIFT_COMPUTE_HOUSEHOLDER_VECTOR_SPIRV_BYTES);
-	ComputePipeline compute_householder_pipeline(manager->get_device(), compute_householder_shader, constants, set, 1, 1, 1);
+	static ComputePipeline compute_householder_pipeline(manager->get_device(), compute_householder_shader, constants_size, set_layout, 1, 1, 1);
 
 	static ShaderModule get_temp_y_shader(manager->get_device(), DOUBLESHIFT_GET_TEMP_Y_SPIRV_BIN, DOUBLESHIFT_GET_TEMP_Y_SPIRV_BYTES);
-	ComputePipeline get_temp_y_pipeline(manager->get_device(), get_temp_y_shader, constants, set, 1, workgroup_size_1d, 1);
+	static ComputePipeline get_temp_y_pipeline(manager->get_device(), get_temp_y_shader, constants_size, set_layout, 1, workgroup_size_1d, 1);
 
 	static ShaderModule left_transformation_shader(manager->get_device(), DOUBLESHIFT_LEFT_TRANSFORMATION_SPIRV_BIN, DOUBLESHIFT_LEFT_TRANSFORMATION_SPIRV_BYTES);
-	ComputePipeline left_transformation_pipeline(manager->get_device(), left_transformation_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
+	static ComputePipeline left_transformation_pipeline(manager->get_device(), left_transformation_shader, constants_size, set_layout, workgroup_size_2d, workgroup_size_2d, 1);
 
 	static ShaderModule get_temp_w_shader(manager->get_device(), DOUBLESHIFT_GET_TEMP_W_SPIRV_BIN, DOUBLESHIFT_GET_TEMP_W_SPIRV_BYTES);
-	ComputePipeline get_temp_w_pipeline(manager->get_device(), get_temp_w_shader, constants, set, workgroup_size_1d, 1, 1);
+	static ComputePipeline get_temp_w_pipeline(manager->get_device(), get_temp_w_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
 	static ShaderModule right_transformation_shader(manager->get_device(), DOUBLESHIFT_RIGHT_TRANSFORMATION_SPIRV_BIN, DOUBLESHIFT_RIGHT_TRANSFORMATION_SPIRV_BYTES);
-	ComputePipeline right_transformation_pipeline(manager->get_device(), right_transformation_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
+	static ComputePipeline right_transformation_pipeline(manager->get_device(), right_transformation_shader, constants_size, set_layout, workgroup_size_2d, workgroup_size_2d, 1);
 
 	// --- BULGE CHASE LOOP ---
 	for (uint32_t chase_k = 0; chase_k < current_size - 1; chase_k++) {
-		constants.add_values(chase_k, 0); // in-place overwrite at offset 0 in push constant range
-		command_buffer->compute(compute_householder_pipeline, 1, 1, 1, true, fence_timeout_nanosec, true);
-		//v_k.print("\nbulge chase loop, result for v_k in iteration " + std::to_string(chase_k) + " (elements [0:2] store the householder vector, element [3] is reserved for tau_k)");
-		command_buffer->compute(get_temp_y_pipeline, 1, current_size, 1, true, fence_timeout_nanosec, true);
-		//Temp_y.print("\nbulge chase loop, result for Temp_y:");
-		command_buffer->compute(left_transformation_pipeline, current_size, current_size, 1, true, fence_timeout_nanosec, true);
-		//this->print("\nbulge chase loop, iteration " + std::to_string(chase_k) + ", after transformation from the left:", -1);
-		command_buffer->compute(get_temp_w_pipeline, current_size, 1, 1, true, fence_timeout_nanosec, true);
-		//Temp_w.print("\nbulge chase loop, result for Temp_w:");
-		command_buffer->compute(right_transformation_pipeline, current_size, current_size, 1, true, fence_timeout_nanosec, true);
-		//this->print("\nbulge chase loop, iteration " + std::to_string(chase_k) + ", after transformation from the right:", -1);
+
+		ComputeTask& task_k = manager->get_compute_task(__FUNCTION__);
+
+		// acquire an idle compute task
+		CommandBuffer& cb = task_k.get_command_buffer();
+
+		// define descriptor set
+		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *this->data_buffer);
+		ds.bind_buffer(1, v_k);
+		ds.bind_buffer(2, Temp_y);
+		ds.bind_buffer(3, Temp_w);
+		ds.bind_buffer(4, tau_k);
+		ds.write();
+
+		// define push constants
+		PushConstants& constants = task_k.add_constants(
+			start_row,		// offset of the start of the current relevant submatrix within H
+			end_row,		// offset of the end of the current relevant submatrix within H
+			this->rows(),	// height, width of the full matrix H (needed for correct indexing)
+			alpha_poly,
+			beta_poly,
+			chase_k
+		);
+
+		// begin command buffer recording
+		cb.begin_recording();
+
+		cb.bind_pipeline(compute_householder_pipeline);
+		cb.bind_descriptor_set(ds, compute_householder_pipeline);
+		cb.bind_push_constants(constants, compute_householder_pipeline);
+		cb.dispatch(compute_householder_pipeline, 1, 1, 1);
+		cb.add_buffer_memory_barrier(v_k, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(tau_k, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		cb.bind_pipeline(get_temp_y_pipeline);
+		cb.bind_descriptor_set(ds, get_temp_y_pipeline);
+		cb.bind_push_constants(constants, get_temp_y_pipeline);
+		cb.dispatch(get_temp_y_pipeline, 1, current_size, 1);
+		cb.add_buffer_memory_barrier(Temp_y, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		cb.bind_pipeline(left_transformation_pipeline);
+		cb.bind_descriptor_set(ds, left_transformation_pipeline);
+		cb.bind_push_constants(constants, left_transformation_pipeline);
+		cb.dispatch(left_transformation_pipeline, current_size, current_size, 1); // 2d dispatch
+		cb.add_buffer_memory_barrier(*this->data_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		cb.bind_pipeline(get_temp_w_pipeline);
+		cb.bind_descriptor_set(ds, get_temp_w_pipeline);
+		cb.bind_push_constants(constants, get_temp_w_pipeline);
+		cb.dispatch(get_temp_w_pipeline, current_size, 1, 1);
+		cb.add_buffer_memory_barrier(Temp_w, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		cb.bind_pipeline(right_transformation_pipeline);
+		cb.bind_descriptor_set(ds, right_transformation_pipeline);
+		cb.bind_push_constants(constants, right_transformation_pipeline);
+		cb.dispatch(right_transformation_pipeline, current_size, current_size, 1); // 2d dispatch
+
+		cb.end_recording();
+
+		task_k.timeline_sync(*this->timeline_semaphore);
+		task_k.add_timeline_signal_semaphore(mt_semaphore, chase_k);
+		task_k.submit();
 	}
-	descriptor_pool->release_set(set);
 }
 
 // 2d matrix inversion
@@ -5282,102 +8305,182 @@ RREF NGrid::rref(const NGrid& augment) const {
 	uint32_t aug_cols = augment.get_dimensions() == 1 ? 1 : augment.get_shape()[1];
 
 	// make copies of the augmentation matrix and 'this' to keep the originals unmodified
+	// (as a side-effect the assignment operator also enforces GPU->CPU synchronization so that the source data are up-to-date)
 	RREF result;
 	result.solution = augment;
 	result.coeffs = *this;
 
-	// add a buffer to store the row to be swapped for current row 'k'
-	Buffer<uint32_t> swap_row(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1);
+	// get an idle compute task
+	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
 
-	// add a buffer to keep track of the multipliers in column 'k'
-	Buffer<float_t> multipliers(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->shape[0]);
+	// add temporary buffers (owned by the main task)
+	Buffer<uint32_t>& swap_row = main_task.add_temp_buffer<uint32_t>(1, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // row to be swapped for current row 'k'
+	Buffer<float_t>& multipliers = main_task.add_temp_buffer<float_t>(this->shape[0], BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // multipliers in column 'k'
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*result.coeffs.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.solution.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(swap_row, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(multipliers, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// submit main task (with empty command buffer) to mark it as available for reset as soon as all other tasks are done
+	Semaphore& mt_semaphore = main_task.add_temp_timeline_semaphore(UINT64_MAX);
+	main_task.timeline_sync(mt_semaphore, 0, 0); // =triggered by the final iteration of the backsubstitution loop
+	main_task.submit();
 
-	// define push constants
-	uint32_t k = 0;
-	PushConstants constants(
-		this->shape[0],	// rows (is equal for left part and augmentation part)
-		this->shape[1],	// source matrix columns
-		aug_cols,		// augmentation matrix columns
-		k				// pivot iterator
-	);
+	// define descriptor set layout
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+
+	uint32_t constants_size = 4 * sizeof(uint32_t);
 
 	// === LOAD SHADERS & DEFINE PIPELINES ===
 
 	// check if row swap is needed
 	static ShaderModule check_swap_shader(manager->get_device(), RREF_CHECK_ROWSWAP_SPIRV_BIN, RREF_CHECK_ROWSWAP_SPIRV_BYTES);
-	ComputePipeline check_swap_pipeline(manager->get_device(), check_swap_shader, constants, set, workgroup_size_1d, 1, 1);
+	static ComputePipeline check_swap_pipeline(manager->get_device(), check_swap_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
 	// perform row swap (=if needed) and normalize the new row k to obtain a leading '1'
 	static ShaderModule perform_swap_shader(manager->get_device(), RREF_PERFORM_ROWSWAP_SPIRV_BIN, RREF_PERFORM_ROWSWAP_SPIRV_BYTES);
-	ComputePipeline perform_swap_pipeline(manager->get_device(), perform_swap_shader, constants, set, 1, workgroup_size_1d, 1);
+	static ComputePipeline perform_swap_pipeline(manager->get_device(), perform_swap_shader, constants_size, set_layout, 1, workgroup_size_1d, 1);
 
 	// keep track of multipliers (elements {row, k})
 	static ShaderModule track_multipliers_shader(manager->get_device(), RREF_TRACK_MULTIPLIERS_SPIRV_BIN, RREF_TRACK_MULTIPLIERS_SPIRV_BYTES);
-	ComputePipeline track_multipliers_pipeline(manager->get_device(), track_multipliers_shader, constants, set, workgroup_size_1d, 1, 1);
+	static ComputePipeline track_multipliers_pipeline(manager->get_device(), track_multipliers_shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
 	// normalize row k (this turning element {k,k} to 1
 	static ShaderModule normalize_row_k_shader(manager->get_device(), RREF_NORMALIZE_ROW_K_SPIRV_BIN, RREF_NORMALIZE_ROW_K_SPIRV_BYTES);
-	ComputePipeline normalize_row_k_pipeline(manager->get_device(), normalize_row_k_shader, constants, set, 1, workgroup_size_1d, 1);
+	static ComputePipeline normalize_row_k_pipeline(manager->get_device(), normalize_row_k_shader, constants_size, set_layout, 1, workgroup_size_1d, 1);
 
 	// update rows below k
 	static ShaderModule update_rows_shader(manager->get_device(), RREF_UPDATE_ROWS_SPIRV_BIN, RREF_UPDATE_ROWS_SPIRV_BYTES);
-	ComputePipeline update_rows_pipeline(manager->get_device(), update_rows_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
+	static ComputePipeline update_rows_pipeline(manager->get_device(), update_rows_shader, constants_size, set_layout, workgroup_size_2d, workgroup_size_2d, 1);
 
 	// perform backsubstitution
 	static ShaderModule backsubstitution_shader(manager->get_device(), RREF_BACKSUBSTITUTION_SPIRV_BIN, RREF_BACKSUBSTITUTION_SPIRV_BYTES);
-	ComputePipeline backsubstitution_pipeline(manager->get_device(), backsubstitution_shader, constants, set, workgroup_size_2d, workgroup_size_2d, 1);
+	static ComputePipeline backsubstitution_pipeline(manager->get_device(), backsubstitution_shader, constants_size, set_layout, workgroup_size_2d, workgroup_size_2d, 1);
 
 	// main loop: iterate over pivots 'k' within range [0,rows-1]
-	for (k = 0; k < this->shape[0]; k++) {
+	for (uint32_t k = 0; k < this->shape[0]; k++) {
 
-		// update k in push constants (at offset 12 bytes)
-		// please note that once created pipelines are immutable, but an in-place update (uses memcpy)
-		// without changing the memory location or range of the push constants should work:
-		constants.add_values(k, 12);
+		// acquire an idle compute task
+		ComputeTask& task_k = manager->get_compute_task(__FUNCTION__);
 
-		// find row for swap
-		command_buffer->compute(check_swap_pipeline, this->shape[0], 1, 1, false, 0, true);	// (1d dispatch with one thread for each row)
+		// define descriptor set
+		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *result.coeffs.get_buffer());
+		ds.bind_buffer(1, *result.solution.get_buffer());
+		ds.bind_buffer(2, swap_row);
+		ds.bind_buffer(3, multipliers);
+		ds.write();
 
-		// perform row swap
-		command_buffer->compute(perform_swap_pipeline, 1, this->shape[1] + aug_cols, 1, false, 0, true); // (1d dispatch with one thread for each column)
+		// define push constants
+		PushConstants& constants = task_k.add_constants(
+			this->shape[0],	// rows (is equal for left part and augmentation part)
+			this->shape[1],	// source matrix columns
+			aug_cols,		// augmentation matrix columns
+			k
+		);
 
-		// track multipliers column (elements {row,k})
-		command_buffer->compute(track_multipliers_pipeline, this->shape[0], 1, 1, false, 0, true); // (1d dispatch with one thread for each row)
+		// begin command buffer recording
+		CommandBuffer& cb = task_k.get_command_buffer();
+		cb.begin_recording();
 
-		// normalize row k (thus turning element {k,k} to 1
-		command_buffer->compute(normalize_row_k_pipeline, 1, this->shape[1] + aug_cols, 1, false, 0, true); // (1d dispatch with one thread for each column)
+		// find row for swap (1d dispatch with one thread for each row)
+		cb.bind_pipeline(check_swap_pipeline);
+		cb.bind_descriptor_set(ds, check_swap_pipeline);
+		cb.bind_push_constants(constants, check_swap_pipeline);
+		cb.dispatch(check_swap_pipeline, this->shape[0], 1, 1);
+		cb.add_buffer_memory_barrier(swap_row, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
 
-		// update rows below k
-		command_buffer->compute(update_rows_pipeline, this->shape[0], this->shape[1] + aug_cols, 1, true, fence_timeout_nanosec, true); // (2d dispatch with fence)
+		// perform row swap (1d dispatch with one thread for each column)
+		cb.bind_pipeline(perform_swap_pipeline);
+		cb.bind_descriptor_set(ds, perform_swap_pipeline);
+		cb.bind_push_constants(constants, perform_swap_pipeline);
+		cb.dispatch(perform_swap_pipeline, 1, this->shape[0] + aug_cols, 1);
+		cb.add_buffer_memory_barrier(*result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(*result.solution.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// track multipliers column (elements {row,k}) (1d dispatch with one thread for each row)
+		cb.bind_pipeline(track_multipliers_pipeline);
+		cb.bind_descriptor_set(ds, track_multipliers_pipeline);
+		cb.bind_push_constants(constants, track_multipliers_pipeline);
+		cb.dispatch(track_multipliers_pipeline, this->shape[0], 1, 1);
+		cb.add_buffer_memory_barrier(multipliers, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// normalize row k (thus turning element {k,k} to 1 (1d dispatch with one thread for each column)
+		cb.bind_pipeline(normalize_row_k_pipeline);
+		cb.bind_descriptor_set(ds, normalize_row_k_pipeline);
+		cb.bind_push_constants(constants, normalize_row_k_pipeline);
+		cb.dispatch(normalize_row_k_pipeline, 1, this->shape[1] + aug_cols, 1);
+		cb.add_buffer_memory_barrier(*result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(*result.solution.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// update rows below k (2d dispatch)
+		cb.bind_pipeline(update_rows_pipeline);
+		cb.bind_descriptor_set(ds, update_rows_pipeline);
+		cb.bind_push_constants(constants, update_rows_pipeline);
+		cb.dispatch(update_rows_pipeline, this->shape[0], this->shape[1] + aug_cols, 1);
+
+		cb.end_recording();
+		task_k.timeline_sync(*this->timeline_semaphore);
+		task_k.timeline_sync(result.coeffs.get_timeline_semaphore());
+		task_k.timeline_sync(result.solution.get_timeline_semaphore());
+		task_k.submit();
 	}
 
 	// perform back substitution to eliminate the upper triangle
 	// iterate over rows k in reverse order within range [0,rows-1]
 	for (int32_t k = this->shape[0] - 1; k >= 0; k--) {
 
-		// update k in push constants (at offset 12 bytes)
-		constants.add_values(k, 12);
+		// acquire an idle compute task
+		ComputeTask& task_k = manager->get_compute_task(__FUNCTION__);
 
-		// track multipliers column (elements {row,k})
-		command_buffer->compute(track_multipliers_pipeline, this->shape[0], 1, 1, false, 0, true); // (1d dispatch with one thread for each row)
+		// define descriptor set
+		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *result.coeffs.get_buffer());
+		ds.bind_buffer(1, *result.solution.get_buffer());
+		ds.bind_buffer(2, swap_row);
+		ds.bind_buffer(3, multipliers);
+		ds.write();
 
-		// backsubstitute
-		command_buffer->compute(backsubstitution_pipeline, this->shape[0], this->shape[1] + aug_cols, 1, true, fence_timeout_nanosec, true); // (2d dispatch with fence)
+		// define push constants
+		PushConstants& constants = task_k.add_constants(
+			this->shape[0],	// rows (is equal for left part and augmentation part)
+			this->shape[1],	// source matrix columns
+			aug_cols,		// augmentation matrix columns
+			k
+		);
+
+		// begin command buffer recording
+		CommandBuffer& cb = task_k.get_command_buffer();
+		cb.begin_recording();
+
+		// track multipliers column (elements {row,k}) (1d dispatch with one thread for each row)
+		cb.bind_pipeline(track_multipliers_pipeline);
+		cb.bind_descriptor_set(ds, track_multipliers_pipeline);
+		cb.bind_push_constants(constants, track_multipliers_pipeline);
+		cb.dispatch(track_multipliers_pipeline, this->shape[0], 1, 1);
+		cb.add_buffer_memory_barrier(multipliers, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
+		// backsubstitute (2d dispatch)
+		cb.bind_pipeline(backsubstitution_pipeline);
+		cb.bind_descriptor_set(ds, backsubstitution_pipeline);
+		cb.bind_push_constants(constants, backsubstitution_pipeline);
+		cb.dispatch(backsubstitution_pipeline, this->shape[0], this->shape[1] + aug_cols, 1);
+
+		cb.end_recording();
+
+		task_k.timeline_sync(*this->timeline_semaphore);
+		task_k.timeline_sync(result.coeffs.get_timeline_semaphore());
+		task_k.timeline_sync(result.solution.get_timeline_semaphore());
+		task_k.add_timeline_signal_semaphore(mt_semaphore, k);
+		task_k.submit();
 	}
-
-	descriptor_pool->release_set(set);
-
-	// get the augmented result (full RREF, with the 'left' coefficient matrix augmented by the solution matrix)
-	result.rref = result.coeffs.concatenate(result.solution, 1);
 
 	return result;
 }
@@ -5391,45 +8494,69 @@ NGrid NGrid::mirror(const std::vector<bool>& mirror_axes) const {
 		return *this; // return unmodified grid
 	}
 
+	// declare result array
+	NGrid result(this->shape);
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
 	// copy the mirror axes to a storage buffer
-	Buffer<uint32_t> mirror_axes_buffer(manager->get_device(), BufferUsage::STORAGE_BUFFER, this->dimensions);
+	Buffer<uint32_t>& mirror_axes_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& mirror_axes_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
 	if (mirror_axes.size() == 0) {
 		// if no axes are specified, mirror all axes
 		for (uint32_t i = 0; i < this->dimensions; i++) {
-			mirror_axes_buffer.write_element(i, 1); // 1 = true
+			mirror_axes_staging_buffer.write_element(i, 1); // 1 = true
 		}
 	}
 	else {
 		for (uint32_t i = 0; i < this->dimensions; i++) {
-			mirror_axes_buffer.write_element(i, uint32_t(mirror_axes[i]));
+			mirror_axes_staging_buffer.write_element(i, uint32_t(mirror_axes[i]));
 		}
 	}
 
-	// create a buffer for the result grid
-	NGrid result(this->shape);
-
-	// load shader
-	static ShaderModule shader(manager->get_device(), MIRROR_SPIRV_BIN, MIRROR_SPIRV_BYTES);
-
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		this->dimensions
 	);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(mirror_axes_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), MIRROR_SPIRV_BIN, MIRROR_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(2, mirror_axes_buffer);
+	ds.bind_buffer(3, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.copy_buffer(mirror_axes_staging_buffer, mirror_axes_buffer);
+	cb.add_buffer_memory_barrier(mirror_axes_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.record_barriers();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -5460,29 +8587,48 @@ NGrid NGrid::remap(const NGrid& target_index_map) const {
 		}
 	}
 
-	// create result NGrid with the same shape as the source grid
+	// declare result array
 	NGrid result(this->shape);
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), REMAP_SPIRV_BIN, REMAP_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*target_index_map.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), REMAP_SPIRV_BIN, REMAP_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(3, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *target_index_map.get_buffer());
+	ds.bind_buffer(2, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
@@ -5964,23 +9110,44 @@ NGrid NGrid::stationary(const uint32_t degree) const {
 	// create the result NGrid with one less element
 	NGrid differenced_result(this->elements - 1);
 
-	// Recursive Step: Perform one degree of differencing
-	static ShaderModule shader(manager->get_device(), STATIONARY_SPIRV_BIN, STATIONARY_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*differenced_result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		differenced_result.get_elements()
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, differenced_result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), STATIONARY_SPIRV_BIN, STATIONARY_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *differenced_result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, differenced_result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(differenced_result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	// Recursive Call for Higher Degrees
 	if (degree > 1) {
@@ -5998,13 +9165,13 @@ NGrid NGrid::stationary_log(const uint32_t degree, const float_t log_base) const
 
 	// check if 'this' is a 1d vector
 	if (this->dimensions > 2 || (this->dimensions == 2 && (this->shape[0] != 1 && this->shape[1] != 1))) {
-		Log::warning("NGrid::stationary() is only valid for 1d vectors (or 2d with shape {m,1} or {1,n}), but 'this' has shape ", this->get_shapestring(), "; returning 'this' unmodified");
+		Log::warning("NGrid::stationary_log() is only valid for 1d vectors (or 2d with shape {m,1} or {1,n}), but 'this' has shape ", this->get_shapestring(), "; returning 'this' unmodified");
 		return *this;
 	}
 
 	// Check if we have enough elements to difference
 	if (this->elements < 2) {
-		Log::warning("NGrid::stationary(): Not enough elements to perform differencing ('this' has only ", this->elements, " elements), returning 'this' unmodified.");
+		Log::warning("NGrid::stationary_log(): Not enough elements to perform differencing ('this' has only ", this->elements, " elements), returning 'this' unmodified.");
 		return *this;
 	}
 
@@ -6016,27 +9183,48 @@ NGrid NGrid::stationary_log(const uint32_t degree, const float_t log_base) const
 	// create the result NGrid with one less element
 	NGrid differenced_result(this->elements - 1);
 
-	// Recursive Step: Perform one degree of differencing
-	static ShaderModule shader(manager->get_device(), STATIONARY_LOG_SPIRV_BIN, STATIONARY_LOG_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*differenced_result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
-		differenced_result.get_elements(),
-		log_base
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		differenced_result.get_elements()
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, differenced_result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), STATIONARY_LOG_SPIRV_BIN, STATIONARY_LOG_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *differenced_result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, differenced_result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(differenced_result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	// Recursive Call for Higher Degrees
 	if (degree > 1) {
-		return differenced_result.stationary(degree - 1);
+		return differenced_result.stationary_log(degree - 1, log_base);
 	}
 
 	// if we reached this point, degree == 1 (this is the final and only step for degree 1)
@@ -6050,26 +9238,54 @@ NGrid NGrid::sort(const bool ascending) const {
 		return *this;
 	}
 
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), EVEN_ODD_SORT_SPIRV_BIN, EVEN_ODD_SORT_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static uint32_t constants_size = 3 * sizeof(uint32_t);
+	static ComputePipeline pipeline(manager->get_device(), shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
+
+	// create the result NGrid
 	NGrid result(this->shape);
 
-	static ShaderModule shader(manager->get_device(), EVEN_ODD_SORT_SPIRV_BIN, EVEN_ODD_SORT_SPIRV_BYTES);
+	for (uint32_t pass = 0; pass < this->elements; pass++) {
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
+		// acquire an idle compute task
+		ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	descriptor_pool->allocate_set(set);
-	uint32_t pass = 0;
-	PushConstants constants(this->elements, pass, static_cast<uint32_t>(ascending));
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
+		// define push constants (transient resource, owned by the task)
+		PushConstants& constants = task.add_constants(
+			this->elements,
+			pass,
+			static_cast<uint32_t>(ascending)
+		);
 
-	for (pass = 0; pass < this->elements; pass++) {
-		constants.add_values(pass, 4); // (over-)write pass (offset 4 bytes)
-		command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
+		// add a descriptor set to the task (transient resource, owned by the task)
+		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *data_buffer);
+		ds.bind_buffer(1, *result.get_buffer());
+		ds.write();
+
+		// begin command buffer recording
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.bind_pipeline(pipeline);
+		cb.bind_descriptor_set(ds, pipeline);
+		cb.bind_push_constants(constants, pipeline);
+		cb.dispatch(pipeline, this->elements, 1, 1);
+
+		cb.end_recording();
+
+		task.timeline_sync(result.get_timeline_semaphore());
+		task.timeline_sync(*this->timeline_semaphore);
+		task.submit();
 	}
 
-	descriptor_pool->release_set(set);
 	return result;
 }
 
@@ -6100,7 +9316,7 @@ float_t NGrid::determinant() const {
 
 		// The determinant of a permutation matrix is either 1 or −1:
 		// It's 1 if the number of row swaps(transpositions) is even, and −1 if the number of row swaps is odd.
-		float_t det_P = LUP.swap_count % 2 == 0 ? 1.0f : -1.0f;
+		float_t det_P = LUP.swap_count() % 2 == 0 ? 1.0f : -1.0f;
 
 		// For a triangular matrix, the determinant is the product of its diagonal elements,
 		// Therefore in case of the lower triangular (which has all ones for the diagonal):
@@ -6158,36 +9374,80 @@ NGrid NGrid::diagonal() const {
 	for (uint32_t i = 1; i < this->dimensions; i++) {
 		size = std::min(this->shape[i], size);
 	}
+
+	// create the result NGrid with one less element
 	NGrid result(size);
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), DIAGONAL_SPIRV_BIN, DIAGONAL_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		size,
 		this->dimensions
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, size, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), DIAGONAL_SPIRV_BIN, DIAGONAL_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(3, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *this->shape_buffer);
+	ds.bind_buffer(2, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, size, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
 
 	return result;
 }
 
 // +=================================+   
-// | Output                          |
+// | Miscellaneous                   |
 // +=================================+
+
+// force GPU->CPU synchronization of the currently active GPU operation
+// (=wait for the ready semaphore to signal (not host-visible), followed by a fence (host-visible))
+NGrid NGrid::flush() const {
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+	task.timeline_sync(*this->timeline_semaphore);
+	task.submit();
+	if (task.is_idle()) {
+		Log::debug("in method NGrid::flush(): already (or still?) in idle state at time of function call");
+	}
+	else {
+#ifdef _DEBUG
+		Log::debug("in method NGrid::flush(): busy state encountered at time of function call.");
+		Log::Timer timer(LogLevel::LEVEL_DEBUG);
+		task.wait_idle();
+		timer.stop();
+		Log::debug("in method NGrid::flush(): idle state reached.");
+#else
+		task.wait_idle();
+#endif
+	}
+	return *this;
+}
 
 // print the vector or array to the console
 // use precision argument for decimal places (use negative number for unformatted full available precision)
@@ -6198,40 +9458,66 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 	}
 
 	// read the entire array into a vector
-	std::vector<float_t> flat_data = this->data_buffer->read();
+	std::vector<float_t> flat_data = this->get();
 
 	uint32_t fract_significant_digits = precision < 0 ? std::numeric_limits<float_t>::max_digits10 : precision;
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), PRINTFORMAT_SPIRV_BIN, PRINTFORMAT_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	// define helper NGrid for element properties
-	NGrid required_digits(this->elements);
-	NGrid make_scientific(this->elements);
-	NGrid has_fractional(this->elements);
+	// define helper arrays
+	NGrid required_digits_ngrid(this->elements);
+	NGrid make_scientific_ngrid(this->elements);
+	NGrid has_fractional_ngrid(this->elements);
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->data_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*required_digits.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*make_scientific.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*has_fractional.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	// define push constants
-	PushConstants constants(
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
 		this->elements,
 		fract_significant_digits
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->elements, 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), PRINTFORMAT_SPIRV_BIN, PRINTFORMAT_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *data_buffer);
+	ds.bind_buffer(1, *required_digits_ngrid.get_buffer());
+	ds.bind_buffer(2, *make_scientific_ngrid.get_buffer());
+	ds.bind_buffer(3, *has_fractional_ngrid.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(*this->timeline_semaphore);
+	task.timeline_sync(required_digits_ngrid.get_timeline_semaphore());
+	task.timeline_sync(make_scientific_ngrid.get_timeline_semaphore());
+	task.timeline_sync(has_fractional_ngrid.get_timeline_semaphore());
+	task.submit();
+
+	// copy helper helper arrays to vectors
+	std::vector<float_t> required_digits = required_digits_ngrid.get();
+	std::vector<float_t> make_scientific = make_scientific_ngrid.get();
+	std::vector<float_t> has_fractional = has_fractional_ngrid.get();
 
 	// get the minimum width required to display all values
-	uint32_t value_digits = static_cast<uint32_t>(required_digits.max());
+	uint32_t value_digits = static_cast<uint32_t>(required_digits_ngrid.max());
 
 	// get the minimum width to display the indices
 	uint32_t index_digits_x = uint32_t(log10(this->shape[0]) + 1);
@@ -6251,8 +9537,8 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 			}
 
 			// output value
-			if (static_cast<bool>(make_scientific.get(x))) {
-				if (static_cast<bool>(has_fractional.get(x))) {
+			if (static_cast<bool>(make_scientific[x])) {
+				if (static_cast<bool>(has_fractional[x])) {
 					std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[x];
 				}
 				else {
@@ -6260,7 +9546,7 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 				}
 			}
 			else {
-				if (static_cast<bool>(has_fractional.get(x))) {
+				if (static_cast<bool>(has_fractional[x])) {
 					std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[x];
 				}
 				else {
@@ -6298,8 +9584,8 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 					uint32_t index = flat_index({ x, y });
 
 					// output value
-					if (static_cast<bool>(make_scientific.get(index))) {
-						if (static_cast<bool>(has_fractional.get(index))) {
+					if (static_cast<bool>(make_scientific[index])) {
+						if (static_cast<bool>(has_fractional[index])) {
 							std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[index];
 						}
 						else {
@@ -6307,7 +9593,7 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 						}
 					}
 					else {
-						if (static_cast<bool>(has_fractional.get(index))) {
+						if (static_cast<bool>(has_fractional[index])) {
 							std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[index];
 						}
 						else {
@@ -6340,8 +9626,8 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 						uint32_t index = flat_index({ x, y, z });
 
 						// output value
-						if (static_cast<bool>(make_scientific.get(index))) {
-							if (static_cast<bool>(has_fractional.get(index))) {
+						if (static_cast<bool>(make_scientific[index])) {
+							if (static_cast<bool>(has_fractional[index])) {
 								std::cout << std::scientific << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[index];
 							}
 							else {
@@ -6349,7 +9635,7 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 							}
 						}
 						else {
-							if (static_cast<bool>(has_fractional.get(index))) {
+							if (static_cast<bool>(has_fractional[index])) {
 								std::cout << std::fixed << std::setprecision(fract_significant_digits) << std::setw(value_digits) << flat_data[index];
 							}
 							else {
@@ -6400,7 +9686,7 @@ void NGrid::set_workgroup_size_1d(uint32_t size) {
 
 	// make sure that the workgroup size is not larger than the maximum allowed size
 	if (!manager) {
-		NGrid x; // create an empty dummy NGrid to make the manager available
+		NGrid x(1); // create a small dummy NGrid to make the manager available
 	}
 	uint32_t max_size = manager->get_device().get_properties().limits.maxComputeWorkGroupSize[0];
 	if (workgroup_size_1d > max_size) {
@@ -6450,12 +9736,6 @@ void NGrid::set_workgroup_size_2d(uint32_t size) {
 	}
 }
 
-// set the fence timeout in nanoseconds
-// (default is 1 second = 1e9 nanoseconds)
-void NGrid::set_fence_timeout_nanosec(uint64_t timeout) {
-	fence_timeout_nanosec = timeout;
-}
-
 // type conversion operator from NGrid to CGrid
 // (the imaginary part is initialized with zeros)
 NGrid::operator CGrid() const {
@@ -6468,22 +9748,6 @@ NGrid::operator CGrid() const {
 // +=================================+   
 // | Private Class Members           |
 // +=================================+
-
-// release resources from the shared static descriptor pool
-// (the function gets registered by the constructor to be called on program exit)
-void NGrid::release_descriptor_pool() {
-	if (descriptor_pool != nullptr) {
-		delete descriptor_pool;
-		descriptor_pool = nullptr;
-	}
-}
-
-void NGrid::release_command_buffer() {
-	if (command_buffer != nullptr) {
-		delete command_buffer;
-		command_buffer = nullptr;
-	}
-}
 
 // returns a 'flat' equivalent to a multidimensional index
 uint32_t NGrid::flat_index(std::initializer_list<uint32_t> multi_index_list) const {
@@ -6512,6 +9776,10 @@ uint32_t NGrid::flat_index(const std::vector<uint32_t>& multi_index) const {
 		return UINT32_MAX;
 	}
 	return static_cast<uint32_t>(flat_index_calc);
+}
+
+Semaphore& NGrid::get_timeline_semaphore() const {
+	return *timeline_semaphore;
 }
 
 // ==================================================================================================================================================================================
@@ -6607,12 +9875,6 @@ void CGrid::init_static_members() {
 	static bool initialized = false;
 	// copy static members from NGrid
 	if (!initialized) {
-		if (descriptor_pool == nullptr) {
-			descriptor_pool = NGrid::descriptor_pool;
-		}
-		if (command_buffer == nullptr) {
-			command_buffer = NGrid::command_buffer;
-		}
 		if (manager == nullptr) {
 			manager = NGrid::manager;
 		}
@@ -6642,6 +9904,12 @@ CGrid& CGrid::operator=(const CGrid& other) {
 	return *this;
 }
 
+// alias for CGrid::set(const float_t* data)
+void CGrid::operator=(const float_t* data) {
+	this->real.set(data, this->real.elements);
+	this->imag.fill_zero();
+}
+
 // CGrid move assignment operator
 CGrid& CGrid::operator=(NGrid&& other) noexcept {
 	Log::debug("CGrid move assignment invoked, moving from other NGrid (handle: ", other.data_buffer, ") to this CGrid (real handle: ", this->real.data_buffer, ", imag handle: ", this->imag.data_buffer, ")");
@@ -6664,38 +9932,64 @@ CGrid& CGrid::operator=(CGrid&& other) noexcept {
 // | getters & setters               |
 // +=================================+
 
+// return the complex value of an array element via its multidimensional index
+std::complex<float_t> CGrid::get(const std::initializer_list<uint32_t> index) const {
+	std::complex<float_t> value;
+	uint32_t flat_index = this->real.flat_index(index);
+	value.real(this->real.data_buffer->read_element(flat_index));
+	value.imag(this->imag.data_buffer->read_element(flat_index));
+	return value;
+}
+
+// returns a flat (= 1-dimensional) copy of ALL raw data of the underlying buffer as type std::vector<std::complex<float_t>>
+std::vector<std::complex<float_t>> CGrid::get(const uint32_t read_elements, const uint32_t source_offset_elements) const {
+	std::vector<float_t> real_data = this->real.data_buffer->read();
+	std::vector<float_t> imag_data = this->imag.data_buffer->read();
+	std::vector<std::complex<float_t>> result;
+	uint32_t elements = static_cast<uint32_t>(read_elements - source_offset_elements);
+	result.reserve(elements);
+	for (uint32_t i = 0; i < elements; i++) {
+		result.push_back(std::complex<float_t>(real_data[i + source_offset_elements], imag_data[i + source_offset_elements]));
+	}
+	return result;
+}
+
 // assigns a value to a CGrid data element via multi-dimensional index;
 // overload with index as std::initializer_list<uint32_t>;
 // note: because no imaginary part is passed, the imaginary part gets initialized with zero
-void CGrid::set(std::initializer_list<uint32_t> index, const float_t value) {
+CGrid& CGrid::set(std::initializer_list<uint32_t> index, const float_t value) {
 	uint32_t flat_index = this->real.flat_index(index);
 	this->real.data_buffer->write_element(flat_index, value);
 	this->imag.data_buffer->write_element(flat_index, 0.0f);
+	return *this;
 }
 
 // assigns a complex value to a CGrid data element via multi-dimensional index;
 // overload with index as std::initializer_list<uint32_t>;
-void CGrid::set(std::initializer_list<uint32_t> index, const std::complex<float_t> value) {
+CGrid& CGrid::set(std::initializer_list<uint32_t> index, const std::complex<float_t> value) {
 	uint32_t flat_index = this->real.flat_index(index);
 	this->real.data_buffer->write_element(flat_index, value.real());
 	this->imag.data_buffer->write_element(flat_index, value.imag());
+	return *this;
 }
 
 // assigns a value to a CGrid data element via multi-dimensional index;
 // overload with index as std::vector<uint32_t>;
 // because no imaginary part is passed, the imaginary part gets initialized with zero
-void CGrid::set(const std::vector<uint32_t>& index, const float_t value) {
+CGrid& CGrid::set(const std::vector<uint32_t>& index, const float_t value) {
 	uint32_t flat_index = this->real.flat_index(index);
 	this->real.data_buffer->write_element(flat_index, value);
 	this->imag.data_buffer->write_element(flat_index, 0.0f);
+	return *this;
 }
 
 // assigns a complex value to a CGrid data element via multi-dimensional index;
 // overload with index as std::vector<uint32_t>;
-void CGrid::set(const std::vector<uint32_t>& index, const std::complex<float_t> value) {
+CGrid& CGrid::set(const std::vector<uint32_t>& index, const std::complex<float_t> value) {
 	uint32_t flat_index = this->real.flat_index(index);
 	this->real.data_buffer->write_element(flat_index, value.real());
 	this->imag.data_buffer->write_element(flat_index, value.imag());
+	return *this;
 }
 
 // alias for CGrid::set(const std::vector<float_t>& data);
@@ -6731,9 +10025,9 @@ void CGrid::operator=(const std::vector<std::complex<float_t>>& data) {
 // copied_elements=0 means: copy ALL elements from the source buffer;
 // this method will typically not write beyond the boundaries of the CGrid, i.e. not automatic resizing occurs,
 // however, if the size is zero (=uninitialized CGrid), it will automatically be set to the size of the source vector (+target_offset);
-void CGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+CGrid& CGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
 	if (data.size() == 0) {
-		return; // nothing to copy
+		return *this; // nothing to copy
 	}
 	if (this->real.elements == 0) {
 		this->real = this->real.reshape({ target_offset_elements + uint32_t(data.size()) });
@@ -6749,6 +10043,7 @@ void CGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint
 		condition_map = (condition_map >= target_offset_elements) && (condition_map < target_offset_elements + copied_elements);
 		this->imag.replace_if(condition_map, 0.0f); // initialize the imaginary part for the copied elements with zeros
 	}
+	return *this;
 }
 
 // copies raw data from a std::vector<complex<float_t>> to the data buffers
@@ -6756,9 +10051,9 @@ void CGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint
 // copied_elements=0 means: copy ALL elements from the source buffer;
 // this method will typically not write beyond the boundaries of the CGrid, i.e. not automatic resizing occurs,
 // however, if the size is zero (=uninitialized CGrid), it will automatically be set to the size of the source vector (+target_offset);
-void CGrid::set(const std::vector<std::complex<float_t>>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+CGrid& CGrid::set(const std::vector<std::complex<float_t>>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
 	if (data.size() == 0) {
-		return; // nothing to copy
+		return *this; // nothing to copy
 	}
 	if (this->real.elements == 0) {
 		this->real = this->real.reshape({ target_offset_elements + uint32_t(data.size()) });
@@ -6778,6 +10073,27 @@ void CGrid::set(const std::vector<std::complex<float_t>>& data, uint32_t copied_
 	// write vector data to the real and imaginary buffers of the CGrid
 	this->real.data_buffer->write(real_data, copied_elements, source_offset_elements, target_offset_elements);
 	this->imag.data_buffer->write(imag_data, copied_elements, source_offset_elements, target_offset_elements);
+
+	return *this;
+}
+
+// copies raw data from a float_t array to the data buffer
+// of the real compontent of the underlying CGrid array;
+// the corresponding imaginary compontents are initialized with zeros
+CGrid& CGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+	uint32_t source_elements = copied_elements == 0 ? this->real.elements - source_offset_elements : copied_elements;
+	this->real.data_buffer->write(data, source_elements, source_offset_elements, target_offset_elements);
+
+	if (this->imag.elements == source_elements && target_offset_elements == 0) {
+		this->imag.fill_zero(); // initialize the entire imaginary part with zeros if the size matches the range of the copied elements
+	}
+	else {
+		NGrid condition_map(this->imag.elements);
+		condition_map.fill_index();
+		condition_map = (condition_map >= target_offset_elements) && (condition_map < target_offset_elements + copied_elements);
+		this->imag.replace_if(condition_map, 0.0f); // initialize the imaginary part for the copied elements with zeros
+	}
+	return *this;
 }
 
 // copies raw data from an NGrid array to the data buffer
@@ -6786,11 +10102,11 @@ void CGrid::set(const std::vector<std::complex<float_t>>& data, uint32_t copied_
 // offset parameters mostly makes sense for 1d arrays;
 // if arguments for copied_elements and offsets aren't used this method will also
 // work to copy multi-dimensional arrays (copy assignment may be used alternatively)
-void CGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+CGrid& CGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
 	// make sure 'other' is not empty
 	if (other.get_elements() == 0) {
 		Log::warning("attempt to use method NGrid::set(const NGrid& other, ...) with empty 'other' array");
-		return;
+		return *this;
 	}
 	// make sure 'this' has a buffer with size >0
 	if (this->real.elements == 0) {
@@ -6823,6 +10139,8 @@ void CGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_of
 	condition_map.fill_index();
 	condition_map = (condition_map >= target_offset_elements) && (condition_map < target_offset_elements + (copied_elements == 0 ? other.get_elements() - source_offset_elements : copied_elements));
 	this->imag.replace_if(condition_map, 0.0f); // initialize the imaginary part for the copied elements with zeros
+
+	return *this;
 }
 
 // copies raw data from a second CGrid array to the data buffers
@@ -6831,11 +10149,11 @@ void CGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_of
 // offset parameters mostly makes sense for 1d arrays;
 // if arguments for copied_elements and offsets aren't used this method will also
 // work to copy multi-dimensional arrays (copy assignment may be used alternatively)
-void CGrid::set(const CGrid& other, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+CGrid& CGrid::set(const CGrid& other, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
 	// make sure 'other' is not empty
 	if (other.get_elements() == 0) {
 		Log::warning("attempt to use method NGrid::set(const NGrid& other, ...) with empty 'other' array");
-		return;
+		return *this;
 	}
 	// make sure 'this' has a buffer with size >0
 	if (this->real.elements == 0) {
@@ -6864,6 +10182,8 @@ void CGrid::set(const CGrid& other, uint32_t copied_elements, uint32_t source_of
 	}
 	this->real.data_buffer->write(*other.real.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
 	this->imag.data_buffer->write(*other.imag.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
+
+	return *this;
 }
 
 // copies elements from 'other' n-dimensional NGrid to the real components of 'this' CGrid;
@@ -6871,20 +10191,22 @@ void CGrid::set(const CGrid& other, uint32_t copied_elements, uint32_t source_of
 // the target_origin_offset argument is used to shift the copy region relative
 // to the origin of 'this'
 // (overload with offset argument as std::vector)
-void CGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset) {
+CGrid& CGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset) {
 	this->real.set(other, target_origin_offset);
 	NGrid zeros(other.get_shape());
 	zeros.fill_zero();
 	this->imag.set(zeros, target_origin_offset);
+	return *this;
 }
 
 // copies complex elements from 'other' n-dimensional CGrid to the real and imaginary buffers of 'this' CGrid;
 // the target_origin_offset argument is used to shift the copy region relative
 // to the origin of 'this'
 // (overload with offset argument as std::vector)
-void CGrid::set(const CGrid& other, const std::vector<uint32_t>& target_origin_offset) {
+CGrid& CGrid::set(const CGrid& other, const std::vector<uint32_t>& target_origin_offset) {
 	this->real.set(other.real, target_origin_offset);
 	this->imag.set(other.imag, target_origin_offset);
+	return *this;
 }
 
 // copies from 'other' n-dimensional NGrid to the real components of 'this';
@@ -6892,22 +10214,24 @@ void CGrid::set(const CGrid& other, const std::vector<uint32_t>& target_origin_o
 // the target_origin_offset argument is used to shift the copy region relative
 // to the origin of 'this'
 // (overload with offset argument as std::initializer_list)
-void CGrid::set(const NGrid& other, const std::initializer_list<uint32_t>& target_offset_index) {
+CGrid& CGrid::set(const NGrid& other, const std::initializer_list<uint32_t>& target_offset_index) {
 	std::vector<uint32_t> offset(target_offset_index);
 	this->real.set(other, offset);
 	NGrid zeros(other.get_shape());
 	zeros.fill_zero();
 	this->imag.set(zeros, offset);
+	return *this;
 }
 
 // copies from 'other' complex n-dimensional CGrid to the real and imaginary buffers of 'this';
 // the target_origin_offset argument is used to shift the copy region relative
 // to the origin of 'this'
 // (overload with offset argument as std::initializer_list)
-void CGrid::set(const CGrid& other, const std::initializer_list<uint32_t>& target_offset_index) {
+CGrid& CGrid::set(const CGrid& other, const std::initializer_list<uint32_t>& target_offset_index) {
 	std::vector<uint32_t> offset(target_offset_index);
 	this->real.set(other.real, offset);
 	this->imag.set(other.imag, offset);
+	return *this;
 }
 
 // return the complex value of an array element via its flattend index
@@ -6947,7 +10271,7 @@ uint32_t CGrid::get_elements() const {
 }
 
 // returns the shape of the array as std::vector<uint32_t>
-std::vector<uint32_t> CGrid::get_shape() const {
+const std::vector<uint32_t>& CGrid::get_shape() const {
 	return this->real.shape;
 }
 
@@ -6984,14 +10308,22 @@ CGrid CGrid::subgrid(std::initializer_list<uint32_t> source_offset, std::initial
 // | Fill, Initialize                |
 // +=================================+
 
-void CGrid::fill(const float_t value) {
+CGrid& CGrid::fill(const float_t value) {
 	this->real.fill(value);
 	this->imag.fill_zero(); // initialize the imaginary part with zeros
+	return *this;
 }
 
-void CGrid::fill(const std::complex<float_t> value) {
+CGrid& CGrid::fill(const std::complex<float_t> value) {
 	this->real.fill(value.real());
 	this->imag.fill(value.imag());
+	return *this;
+}
+
+CGrid& CGrid::fill_zero() {
+	this->real.fill_zero();
+	this->imag.fill_zero();
+	return *this;
 }
 
 // +=================================+   
@@ -7194,30 +10526,64 @@ CGrid CGrid::operator*(const std::complex<float_t> complex_factor) const {
 		return *this * complex_factor.real();
 	}
 	else {
+
+		// define result CGrid
 		CGrid result(this->get_shape());
 
-		static ShaderModule shader(manager->get_device(), OPERATOR_MULTIPLY_COMPLEX_SPIRV_BIN, OPERATOR_MULTIPLY_COMPLEX_SPIRV_BYTES);
+		// acquire an idle compute task
+		ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-		DescriptorSet set(manager->get_device());
-		set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.finalize_layout();
-		descriptor_pool->allocate_set(set);
-
-		PushConstants constants(
+		PushConstants& constants = task.add_constants(
 			this->get_elements(),
 			complex_factor.real(),
 			complex_factor.imag()
 		);
 
-		ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-		command_buffer->compute(pipeline, this->get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-		descriptor_pool->release_set(set);
+		// static resources: only create once
+		static ShaderModule shader(manager->get_device(), OPERATOR_MULTIPLY_COMPLEX_SPIRV_BIN, OPERATOR_MULTIPLY_COMPLEX_SPIRV_BYTES);
+		static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+		static bool layout_initialized = false;
+		if (!layout_initialized) {
+			set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+			set_layout.finalize();
+			layout_initialized = true;
+		}
+		static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+		// add a descriptor set to the task (transient resource, owned by the task)
+		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		ds.bind_buffer(0, *this->real.get_buffer());
+		ds.bind_buffer(1, *this->imag.get_buffer());
+		ds.bind_buffer(2, *result.real.get_buffer());
+		ds.bind_buffer(3, *result.imag.get_buffer());
+		ds.write();
+
+		// record command buffer
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.bind_pipeline(pipeline);
+		cb.bind_descriptor_set(ds, pipeline);
+		cb.bind_push_constants(constants, pipeline);
+		cb.dispatch(pipeline, this->get_elements(), 1, 1);
+		cb.end_recording();
+
+		// submit command buffer to compute queue on device
+		task.timeline_sync(this->real.get_timeline_semaphore());
+		task.timeline_sync(this->imag.get_timeline_semaphore());
+		task.timeline_sync(result.real.get_timeline_semaphore());
+		task.timeline_sync(result.imag.get_timeline_semaphore());
+		task.submit();
 
 		return result;
 	}
+}
+
+CGrid CGrid::operator*(const NGrid& other) const {
+	return this->matrix_product(other);
+}
+
+CGrid CGrid::operator*(const CGrid& other) const {
+	return this->matrix_product(other);
 }
 
 void CGrid::operator*=(const float_t factor) {
@@ -7258,8 +10624,6 @@ CGrid CGrid::matrix_product(const CGrid& other) const {
 			other.get_shapestring(), "; both arrays must be 1d or 2d");
 	}
 
-	static ShaderModule shader(manager->get_device(), MATRIX_PRODUCT_OTHER_COMPLEX_SPIRV_BIN, MATRIX_PRODUCT_OTHER_COMPLEX_SPIRV_BYTES);
-
 	uint32_t first_rows = this->rows();
 	uint32_t first_cols = this->get_dimensions() == 1 ? 1 : this->cols();
 	uint32_t second_rows = other.get_dimensions() == 1 ? 1 : other.rows();
@@ -7276,17 +10640,11 @@ CGrid CGrid::matrix_product(const CGrid& other) const {
 	// the matrix product of A{m,n} and B{n,p} has shape AxB=C{m,p}
 	CGrid result({ result_rows, result_cols });
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	NGrid::descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	PushConstants constants(
+	// define push constants
+	PushConstants& constants = task.add_constants(
 		this->get_elements(),
 		first_rows,
 		first_cols,
@@ -7298,9 +10656,44 @@ CGrid CGrid::matrix_product(const CGrid& other) const {
 		result_cols
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), MATRIX_PRODUCT_OTHER_COMPLEX_SPIRV_BIN, MATRIX_PRODUCT_OTHER_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(6, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *other.real.get_buffer());
+	ds.bind_buffer(3, *other.imag.get_buffer());
+	ds.bind_buffer(4, *result.real.get_buffer());
+	ds.bind_buffer(5, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(other.real.get_timeline_semaphore());
+	task.timeline_sync(other.imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
 
 	return result;
 }
@@ -7329,31 +10722,59 @@ CGrid CGrid::Hadamard_product(const CGrid& other) const {
 		return *this;
 	}
 
-	Device* device = &NGrid::manager->get_device();
-	static ShaderModule shader(*device, HADAMARD_PRODUCT_OTHER_COMPLEX_SPIRV_BIN, HADAMARD_PRODUCT_OTHER_COMPLEX_SPIRV_BYTES);
-
 	CGrid result(this->get_shape());
 
-	DescriptorSet set(*device);
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	NGrid::descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	PushConstants constants(
+	// define push constants
+	PushConstants& constants = task.add_constants(
 		this->get_elements(),
 		result.get_dimensions()
 	);
 
-	ComputePipeline pipeline(*device, shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), HADAMARD_PRODUCT_OTHER_COMPLEX_SPIRV_BIN, HADAMARD_PRODUCT_OTHER_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(8, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *this->real.get_shape_buffer());
+	ds.bind_buffer(3, *other.real.get_buffer());
+	ds.bind_buffer(4, *other.imag.get_buffer());
+	ds.bind_buffer(5, *other.real.get_shape_buffer());
+	ds.bind_buffer(6, *result.real.get_buffer());
+	ds.bind_buffer(7, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(other.real.get_timeline_semaphore());
+	task.timeline_sync(other.imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
+
+	return result;
 }
 
 // +=================================+   
@@ -7378,25 +10799,50 @@ CGrid CGrid::operator/(const std::complex<float_t> complex_divisor) const {
 
 	CGrid result(this->get_shape());
 
-	static ShaderModule shader(manager->get_device(), OPERATOR_DIVIDE_COMPLEX_SPIRV_BIN, OPERATOR_DIVIDE_COMPLEX_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	NGrid::descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants
+	PushConstants& constants = task.add_constants(
 		this->get_elements(),
 		complex_divisor.real(),
 		complex_divisor.imag()
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), OPERATOR_DIVIDE_COMPLEX_SPIRV_BIN, OPERATOR_DIVIDE_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *result.real.get_buffer());
+	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
 
 	return result;
 }
@@ -7434,30 +10880,57 @@ CGrid CGrid::Hadamard_division(const CGrid& other) const {
 		return *this;
 	}
 
-	static ShaderModule shader(manager->get_device(), HADAMARD_DIVISION_OTHER_COMPLEX_SPIRV_BIN, HADAMARD_DIVISION_OTHER_COMPLEX_SPIRV_BYTES);
-
 	CGrid result(this->get_shape());
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other.real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	PushConstants constants(
+	// define push constants
+	PushConstants& constants = task.add_constants(
 		this->get_elements(),
 		result.get_dimensions()
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), HADAMARD_DIVISION_OTHER_COMPLEX_SPIRV_BIN, HADAMARD_DIVISION_OTHER_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(8, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *this->real.get_shape_buffer());
+	ds.bind_buffer(3, *other.real.get_buffer());
+	ds.bind_buffer(4, *other.imag.get_buffer());
+	ds.bind_buffer(5, *other.real.get_shape_buffer());
+	ds.bind_buffer(6, *result.real.get_buffer());
+	ds.bind_buffer(7, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(other.real.get_timeline_semaphore());
+	task.timeline_sync(other.imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
 
 	return result;
 }
@@ -7480,25 +10953,50 @@ CGrid CGrid::operator/(const CGrid& other) const {
 CGrid CGrid::pow(const float_t exponent_real, const float_t exponent_imag) const {
 	CGrid result(this->get_shape());
 
-	static ShaderModule shader(manager->get_device(), POW_COMPLEX_SPIRV_BIN, POW_COMPLEX_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	NGrid::descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants
+	PushConstants& constants = task.add_constants(
 		result.get_elements(),
 		exponent_real,
 		exponent_imag
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	NGrid::command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	NGrid::descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), POW_COMPLEX_SPIRV_BIN, POW_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *result.real.get_buffer());
+	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
 
 	return result;
 }
@@ -7541,37 +11039,61 @@ CGrid CGrid::pow(const NGrid& other_real, const NGrid& other_imag, bool other_is
 		return *this;
 	}
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), POW_OTHER_COMPLEX_SPIRV_BIN, POW_OTHER_COMPLEX_SPIRV_BYTES);
-
 	// define result CGrid
 	CGrid result(this->get_shape());
 
-	// setup descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->real.shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other_real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(other_is_complex ? *other_imag.get_buffer() : *other_real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*other_real.shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants constants(
+	PushConstants& constants = task.add_constants(
 		result.get_elements(),
 		result.get_dimensions(),
 		other_real.get_elements(),
 		uint32_t(other_is_complex)
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), POW_OTHER_COMPLEX_SPIRV_BIN, POW_OTHER_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(8, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *this->real.get_shape_buffer());
+	ds.bind_buffer(3, *other_real.get_buffer());
+	ds.bind_buffer(4, other_is_complex ? *other_imag.get_buffer() : *other_real.get_buffer());
+	ds.bind_buffer(5, *other_real.get_shape_buffer());
+	ds.bind_buffer(6, *result.real.get_buffer());
+	ds.bind_buffer(7, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(other_real.get_timeline_semaphore());
+	task.timeline_sync(other_imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
+
 	return result;
 }
 
@@ -7592,27 +11114,53 @@ CGrid CGrid::sqrt() const {
 
 // helper method for elementwise logarithm with the specified base (real or complex)
 CGrid CGrid::log(const float_t base_real, const float_t base_imag) const {
+
 	CGrid result(this->get_shape());
 
-	static ShaderModule shader(manager->get_device(), LOG_COMPLEX_SPIRV_BIN, LOG_COMPLEX_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants
+	PushConstants& constants = task.add_constants(
 		result.get_elements(),
 		base_real,
 		base_imag
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), LOG_COMPLEX_SPIRV_BIN, LOG_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *result.real.get_buffer());
+	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
 
 	return result;
 }
@@ -7629,25 +11177,51 @@ CGrid CGrid::log(const std::complex<float_t> base) const {
 
 // returns the result of the elementwise complex exponential function (exp(z) = e^(z))
 CGrid CGrid::exp() const {
+
 	CGrid result(this->get_shape());
 
-	static ShaderModule shader(manager->get_device(), EXP_COMPLEX_SPIRV_BIN, EXP_COMPLEX_SPIRV_BYTES);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants
+	PushConstants& constants = task.add_constants(
 		result.get_elements()
 	);
 
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
-	NGrid::command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, NGrid::fence_timeout_nanosec, true);
-	NGrid::descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), EXP_COMPLEX_SPIRV_BIN, EXP_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *result.real.get_buffer());
+	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
 
 	return result;
 }
@@ -7751,31 +11325,14 @@ CGrid CGrid::convolution(const CGrid& kernel, uint32_t padding_amount, std::comp
 	for (uint32_t i = 0; i < this->get_dimensions(); i++) {
 		result_shape[i] = result_shape[i] - kernel.get_shape()[i] + 1 + (2 * padding_amount);
 	}
-	CGrid result(result_shape);
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), CONVOLUTION_COMPLEX_SPIRV_BIN, CONVOLUTION_COMPLEX_SPIRV_BYTES);
+	CGrid result(this->get_shape());
 
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->real.shape_buffer, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-
-	set.bind_buffer(*kernel.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*kernel.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*kernel.real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-
-	set.bind_buffer(*result.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.real.get_shape_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants constants(
+	PushConstants& constants = task.add_constants(
 		this->get_dimensions(),
 		this->get_elements(),
 		result.get_elements(),
@@ -7785,10 +11342,46 @@ CGrid CGrid::convolution(const CGrid& kernel, uint32_t padding_amount, std::comp
 		padding_value.imag()
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	NGrid::command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	NGrid::descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), CONVOLUTION_COMPLEX_SPIRV_BIN, CONVOLUTION_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(9, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *this->real.get_shape_buffer());
+	ds.bind_buffer(3, *kernel.real.get_buffer());
+	ds.bind_buffer(4, *kernel.imag.get_buffer());
+	ds.bind_buffer(5, *kernel.real.get_shape_buffer());
+	ds.bind_buffer(6, *result.real.get_buffer());
+	ds.bind_buffer(7, *result.imag.get_buffer());
+	ds.bind_buffer(8, *result.real.get_shape_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
+
 	return result;
 }
 
@@ -7818,65 +11411,124 @@ LUresultComplex CGrid::lu() const {
 	result.U = *this; // U is initialized with the source matrix
 	result.P = result.P.reshape({ this->get_shape()[0], this->get_shape()[0] });	result.P.fill_identity();
 
-	// add a buffer to store the row to be swapped for current row 'k'
-	Device* device = &NGrid::manager->get_device();
-	Buffer<uint32_t> swap_row(*device, BufferUsage::STORAGE_BUFFER, 1);
+	// acquire an idle compute task
+	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
 
-	// add a buffer to count the number of performed row swaps
-	Buffer<uint32_t> swap_count(*device, BufferUsage::STORAGE_BUFFER, 1);
+	// add temporary buffers
+	Buffer<uint32_t>& swap_row = main_task.add_temp_buffer<uint32_t>(1, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& swap_count = main_task.add_temp_buffer<uint32_t>(1, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// create descriptor set layout (static resource)
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(7, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
 
 	// define descriptor set
-	DescriptorSet set(*device);
-	set.bind_buffer(*result.L.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.L.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.U.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.U.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.P.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(swap_row, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(swap_count, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	NGrid::descriptor_pool->allocate_set(set);
+	DescriptorSet& ds = main_task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *result.L.real.get_buffer());
+	ds.bind_buffer(1, *result.L.imag.get_buffer());
+	ds.bind_buffer(2, *result.U.real.get_buffer());
+	ds.bind_buffer(3, *result.U.imag.get_buffer());
+	ds.bind_buffer(4, *result.P.get_buffer());
+	ds.bind_buffer(5, swap_row);
+	ds.bind_buffer(6, swap_count);
+	ds.write();
 
-	// define push constants
-	uint32_t k = 0;
-	PushConstants constants(
-		this->get_shape()[0],	// source matrix rows
-		this->get_shape()[1],	// source matrix columns
-		k						// current row index
-	);
+	// submit main task (with empty command buffer) to mark it as available for reset as soon as all other tasks are done;
+	// copy the swap count back the the staging buffer after the main loop has finished
+	CommandBuffer& cb_main = main_task.get_command_buffer();
+	cb_main.begin_recording();
+	cb_main.add_buffer_memory_barrier(*result.swap_count_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT);
+	cb_main.copy_buffer(*result.swap_count_buffer, *result.swap_count_staging_buffer);
+	cb_main.end_recording();
+	Semaphore& mt_semaphore = main_task.add_temp_timeline_semaphore(UINT64_MAX);
+	main_task.timeline_sync(mt_semaphore, this->get_shape()[0], 0); // =triggered by the final iteration of the main loop
+	main_task.submit();
+
+	// create pipelines (static resources)
+	uint32_t constants_size = 3 * sizeof(uint32_t);
+	Device* device = &manager->get_device();
+	static ShaderModule check_swap_shader(manager->get_device(), LU_DECOMP_CHECK_ROWSWAP_COMPLEX_SPIRV_BIN, LU_DECOMP_CHECK_ROWSWAP_COMPLEX_SPIRV_BYTES);
+	static ComputePipeline check_swap_pipeline(*device, check_swap_shader, constants_size, set_layout, NGrid::workgroup_size_1d, 1, 1);
+
+	static ShaderModule perform_swap_shader(*device, LU_DECOMP_PERFORM_ROWSWAP_COMPLEX_SPIRV_BIN, LU_DECOMP_PERFORM_ROWSWAP_COMPLEX_SPIRV_BYTES);
+	static ComputePipeline perform_swap_pipeline(*device, perform_swap_shader, constants_size, set_layout, NGrid::workgroup_size_1d, 1, 1);
+
+	static ShaderModule l_update_shader(*device, LU_DECOMP_L_UPDATE_COMPLEX_SPIRV_BIN, LU_DECOMP_L_UPDATE_COMPLEX_SPIRV_BYTES);
+	static ComputePipeline l_update_pipeline(*device, l_update_shader, constants_size, set_layout, NGrid::workgroup_size_1d, 1, 1);
+
+	static ShaderModule u_update_shader(*device, LU_DECOMP_U_UPDATE_COMPLEX_SPIRV_BIN, LU_DECOMP_U_UPDATE_COMPLEX_SPIRV_BYTES);
+	static ComputePipeline u_update_pipeline(*device, u_update_shader, constants_size, set_layout, NGrid::workgroup_size_1d, 1, 1);
 
 	// main iterative loop for LU decomposition;
-	for (k = 0; k < this->get_shape()[0]; k++) {
+	for (uint32_t k = 0; k < this->get_shape()[0]; k++) {
 
-		// update k in push constants (at offset 8 bytes)
-		constants.add_values(k, 8);
+		// acquire an idle compute task for the current iteration
+		ComputeTask& task_k = manager->get_compute_task(__FUNCTION__);
+
+		// define push constants
+		PushConstants& constants = task_k.add_constants(
+			this->get_shape()[0],	// source matrix rows
+			this->get_shape()[1],	// source matrix columns
+			k						// current row index
+		);
 
 		// check if row swap is needed
 		// (1d dispatch with one thread for each row)
-		static ShaderModule check_swap_shader(*device, LU_DECOMP_CHECK_ROWSWAP_COMPLEX_SPIRV_BIN, LU_DECOMP_CHECK_ROWSWAP_COMPLEX_SPIRV_BYTES);
-		ComputePipeline check_swap_pipeline(*device, check_swap_shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
-		NGrid::command_buffer->compute(check_swap_pipeline, this->get_shape()[0], 1, 1, false, 0, true);
+		CommandBuffer& cb = task_k.get_command_buffer();
+		cb.begin_recording();
+		cb.bind_pipeline(check_swap_pipeline);
+		cb.bind_descriptor_set(ds, check_swap_pipeline);
+		cb.bind_push_constants(constants, check_swap_pipeline);
+		cb.dispatch(check_swap_pipeline, this->get_shape()[0], 1, 1);
+		cb.add_buffer_memory_barrier(swap_row, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
 
 		// perform row swap (=if needed)
 		// (1d dispatch with one thread for each column)
-		static ShaderModule perform_swap_shader(*device, LU_DECOMP_PERFORM_ROWSWAP_COMPLEX_SPIRV_BIN, LU_DECOMP_PERFORM_ROWSWAP_COMPLEX_SPIRV_BYTES);
-		ComputePipeline perform_swap_pipeline(*device, perform_swap_shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
-		NGrid::command_buffer->compute(perform_swap_pipeline, this->get_shape()[1], 1, 1, false, 0, true);
+		cb.bind_pipeline(perform_swap_pipeline);
+		cb.bind_descriptor_set(ds, perform_swap_pipeline);
+		cb.bind_push_constants(constants, perform_swap_pipeline);
+		cb.dispatch(perform_swap_pipeline, this->get_shape()[1], 1, 1);
+		cb.add_buffer_memory_barrier(*result.L.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(*result.L.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(*result.U.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(*result.U.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(*result.P.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
 
 		// update L matrix in column k
 		// (1d dispatch with one thread for each row)
-		static ShaderModule l_update_shader(*device, LU_DECOMP_L_UPDATE_COMPLEX_SPIRV_BIN, LU_DECOMP_L_UPDATE_COMPLEX_SPIRV_BYTES);
-		ComputePipeline l_update_pipeline(*device, l_update_shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
-		NGrid::command_buffer->compute(l_update_pipeline, this->get_shape()[0], 1, 1, false, 0, true);
+		cb.bind_pipeline(l_update_pipeline);
+		cb.bind_descriptor_set(ds, l_update_pipeline);
+		cb.bind_push_constants(constants, l_update_pipeline);
+		cb.dispatch(l_update_pipeline, this->get_shape()[0], 1, 1);
+		cb.add_buffer_memory_barrier(*result.L.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(*result.L.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.record_barriers();
+
 
 		// update U matrix in rows [k+1] to [rows-1]
-		static ShaderModule u_update_shader(*device, LU_DECOMP_U_UPDATE_COMPLEX_SPIRV_BIN, LU_DECOMP_U_UPDATE_COMPLEX_SPIRV_BYTES);
-		ComputePipeline u_update_pipeline(*device, u_update_shader, constants, set, NGrid::workgroup_size_1d, 1, 1);
-		NGrid::command_buffer->compute(u_update_pipeline, result.U.get_elements(), 1, 1, true, NGrid::fence_timeout_nanosec, true);
-	}
-	NGrid::descriptor_pool->release_set(set);
+		cb.bind_pipeline(u_update_pipeline);
+		cb.bind_descriptor_set(ds, u_update_pipeline);
+		cb.bind_push_constants(constants, u_update_pipeline);
+		cb.dispatch(u_update_pipeline, result.U.get_elements(), 1, 1);
 
-	result.swap_count = swap_count.read_element(0);
+		cb.end_recording();
+
+		// signal timeline semaphore when the iteration is finished
+		task_k.timeline_sync(result.L.real.get_timeline_semaphore());
+		task_k.timeline_sync(result.L.imag.get_timeline_semaphore());
+		task_k.timeline_sync(result.U.real.get_timeline_semaphore());
+		task_k.timeline_sync(result.U.imag.get_timeline_semaphore());
+		task_k.timeline_sync(result.P.get_timeline_semaphore());
+		task_k.add_timeline_signal_semaphore(mt_semaphore, k);
+		task_k.submit();
+	}
 
 	return result;
 }
@@ -7888,35 +11540,55 @@ CGrid CGrid::l_inverse() const {
 		return *this;
 	}
 
-	// load shader module
-	static ShaderModule shader(manager->get_device(), L_INVERSE_COMPLEX_SPIRV_BIN, L_INVERSE_COMPLEX_SPIRV_BYTES);
+	// initialize result with an identity matrix of this->shape
+	CGrid result(this->get_shape());
+	result.real.fill_identity();
+	result.imag.fill_zero();
 
-	// create an identity matrix of this->shape
-	CGrid I(this->get_shape());
-	I.real.fill_identity();
-	I.imag.fill_zero();
-
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*I.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*I.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants constants(
+	PushConstants& constants = task.add_constants(
 		this->get_shape()[0]
 	);
 
-	// execute compute pipeline
-	// (1d dispatch with one thread for each column)
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->get_shape()[1], 1, 1, true, fence_timeout_nanosec, true);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), L_INVERSE_COMPLEX_SPIRV_BIN, L_INVERSE_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	descriptor_pool->release_set(set);
-	return I;
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *result.real.get_buffer());
+	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->get_shape()[1], 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
+
+	return result;
 }
 
 // get the inverse of an upper triangular matrix U (using backward substitution)
@@ -7927,35 +11599,55 @@ CGrid CGrid::u_inverse() const {
 		return *this;
 	}
 
-	// load shader module
-	static ShaderModule shader(manager->get_device(), U_INVERSE_COMPLEX_SPIRV_BIN, U_INVERSE_COMPLEX_SPIRV_BYTES);
+	// initialize result as an identity matrix of this->shape
+	CGrid result(this->get_shape());
+	result.real.fill_identity();
+	result.imag.fill_zero();
 
-	// create an identity matrix of this->shape
-	CGrid I(this->get_shape());
-	I.real.fill_identity();
-	I.imag.fill_zero();
-
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*I.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*I.imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants constants(
+	PushConstants& constants = task.add_constants(
 		this->get_shape()[0]
 	);
 
-	// execute compute pipeline
-	// (1d dispatch with one thread for each column)
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	command_buffer->compute(pipeline, this->get_shape()[1], 1, 1, true, fence_timeout_nanosec, true);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), U_INVERSE_COMPLEX_SPIRV_BIN, U_INVERSE_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
-	descriptor_pool->release_set(set);
-	return I;
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *result.real.get_buffer());
+	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, this->get_shape()[1], 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(result.real.get_timeline_semaphore());
+	task.timeline_sync(result.imag.get_timeline_semaphore());
+	task.submit();
+
+	return result;
 }
 
 // inversion of a 2d complex matrix;
@@ -8083,26 +11775,49 @@ CGrid CGrid::remap(const NGrid& target_index_map) const {
 // returns the elementwise magnitude (=abs(), =modulus) of the complex CGrid;
 // the result is a real-valued NGrid with the same shape as the source CGrid
 NGrid CGrid::magnitude() const {
+
 	NGrid result(this->get_shape());
 
-	Device* device = &NGrid::manager->get_device();
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 
-	static ShaderModule shader(*device, MAGNITUDE_COMPLEX_SPIRV_BIN, MAGNITUDE_COMPLEX_SPIRV_BYTES);
-
-	DescriptorSet set(*device);
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*this->imag.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*result.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	NGrid::descriptor_pool->allocate_set(set);
-
-	PushConstants constants(
+	// define push constants
+	PushConstants& constants = task.add_constants(
 		result.get_elements()
 	);
 
-	ComputePipeline pipeline(*device, shader, constants, set, workgroup_size_1d, 1, 1);
-	NGrid::command_buffer->compute(pipeline, result.get_elements(), 1, 1, true, fence_timeout_nanosec, true);
-	NGrid::descriptor_pool->release_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), MAGNITUDE_COMPLEX_SPIRV_BIN, MAGNITUDE_COMPLEX_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(3, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, *this->real.get_buffer());
+	ds.bind_buffer(1, *this->imag.get_buffer());
+	ds.bind_buffer(2, *result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.dispatch(pipeline, result.get_elements(), 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	task.timeline_sync(this->real.get_timeline_semaphore());
+	task.timeline_sync(this->imag.get_timeline_semaphore());
+	task.timeline_sync(result.get_timeline_semaphore());
+	task.submit();
 
 	return result;
 }
@@ -8180,12 +11895,6 @@ void CGrid::set_workgroup_size_2d(uint32_t size) {
 	}
 }
 
-// set the fence timeout in nanoseconds
-// (default is 1 second = 1e9 nanoseconds)
-void CGrid::set_fence_timeout_nanosec(uint64_t timeout) {
-	fence_timeout_nanosec = timeout;
-}
-
 // convert the CGrid to an NGrid by extracting the real part;
 // the imaginary part is discarded
 CGrid::operator NGrid() const {
@@ -8206,45 +11915,102 @@ void CGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 
 	uint32_t fract_significant_digits = precision < 0 ? std::numeric_limits<float_t>::max_digits10 : precision;
 
-	// load shader
-	static ShaderModule shader(manager->get_device(), PRINTFORMAT_SPIRV_BIN, PRINTFORMAT_SPIRV_BYTES);
-
 	// define helper Grids for element properties
 	CGrid required_digits(elements);
 	CGrid make_scientific(elements);
 	CGrid has_fractional(elements);
 
-	// 1. === REAL PART ===
-	// define descriptor set
-	DescriptorSet set(manager->get_device());
-	set.bind_buffer(*this->real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*required_digits.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*make_scientific.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.bind_buffer(*has_fractional.real.get_buffer(), DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-	set.finalize_layout();
-	descriptor_pool->allocate_set(set);
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), PRINTFORMAT_SPIRV_BIN, PRINTFORMAT_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	uint32_t constants_size = 2 * sizeof(uint32_t);
+	static ComputePipeline pipeline(manager->get_device(), shader, constants_size, set_layout, workgroup_size_1d, 1, 1);
 
-	// define push constants
-	PushConstants constants(
+	// 1. === REAL PART ===
+
+	// acquire an idle compute task
+	ComputeTask& task_real = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants_real = task_real.add_constants(
 		elements,
 		fract_significant_digits
 	);
 
-	// execute compute pipeline
-	ComputePipeline pipeline(manager->get_device(), shader, constants, set, workgroup_size_1d, 1, 1);
-	NGrid::command_buffer->compute(pipeline, elements, 1, 1, true, fence_timeout_nanosec, true);
+	// define descriptor set
+	DescriptorSet& ds_real = task_real.add_descriptor_set(set_layout);
+	ds_real.bind_buffer(0, *this->real.get_buffer());
+	ds_real.bind_buffer(1, *required_digits.real.get_buffer());
+	ds_real.bind_buffer(2, *make_scientific.real.get_buffer());
+	ds_real.bind_buffer(3, *has_fractional.real.get_buffer());
+	ds_real.write();
+
+	// record command buffer
+	CommandBuffer& cb_real = task_real.get_command_buffer();
+	cb_real.begin_recording();
+	cb_real.bind_pipeline(pipeline);
+	cb_real.bind_descriptor_set(ds_real, pipeline);
+	cb_real.bind_push_constants(constants_real, pipeline);
+	cb_real.dispatch(pipeline, elements, 1, 1);
+	cb_real.end_recording();
+
+	// submit command buffer to compute queue on device
+	task_real.timeline_sync(this->real.get_timeline_semaphore());
+	task_real.timeline_sync(this->imag.get_timeline_semaphore());
+	task_real.timeline_sync(required_digits.real.get_timeline_semaphore());
+	task_real.timeline_sync(required_digits.imag.get_timeline_semaphore());
+	task_real.timeline_sync(make_scientific.real.get_timeline_semaphore());
+	task_real.timeline_sync(make_scientific.imag.get_timeline_semaphore());
+	task_real.timeline_sync(has_fractional.real.get_timeline_semaphore());
+	task_real.timeline_sync(has_fractional.imag.get_timeline_semaphore());
+	task_real.submit();
 
 	// 2. === IMAGINARY PART ===
 	if (has_imaginary_values) {
-		set.replace_buffer(*this->imag.get_buffer(), 0, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.replace_buffer(*required_digits.imag.get_buffer(), 1, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.replace_buffer(*make_scientific.imag.get_buffer(), 2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set.replace_buffer(*has_fractional.imag.get_buffer(), 3, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 
-		NGrid::command_buffer->compute(pipeline, elements, 1, 1, true, fence_timeout_nanosec, true);
+		// acquire an idle compute task
+		ComputeTask& task_imag = manager->get_compute_task(__FUNCTION__);
+
+		// define push constants (transient resource, owned by the task)
+		PushConstants& constants_imag = task_imag.add_constants(
+			elements,
+			fract_significant_digits
+		);
+
+		// define descriptor set
+		DescriptorSet& ds_imag = task_imag.add_descriptor_set(set_layout);
+		ds_imag.bind_buffer(0, *this->imag.get_buffer());
+		ds_imag.bind_buffer(1, *required_digits.imag.get_buffer());
+		ds_imag.bind_buffer(2, *make_scientific.imag.get_buffer());
+		ds_imag.bind_buffer(3, *has_fractional.imag.get_buffer());
+		ds_imag.write();
+
+		// record command buffer
+		CommandBuffer& cb_imag = task_imag.get_command_buffer();
+		cb_imag.begin_recording();
+		cb_imag.bind_pipeline(pipeline);
+		cb_imag.bind_descriptor_set(ds_imag, pipeline);
+		cb_imag.bind_push_constants(constants_imag, pipeline);
+		cb_imag.dispatch(pipeline, elements, 1, 1);
+		cb_imag.end_recording();
+
+		// submit command buffer to compute queue on device
+		task_imag.timeline_sync(this->real.get_timeline_semaphore());
+		task_imag.timeline_sync(this->imag.get_timeline_semaphore());
+		task_imag.timeline_sync(required_digits.real.get_timeline_semaphore());
+		task_imag.timeline_sync(required_digits.imag.get_timeline_semaphore());
+		task_imag.timeline_sync(make_scientific.real.get_timeline_semaphore());
+		task_imag.timeline_sync(make_scientific.imag.get_timeline_semaphore());
+		task_imag.timeline_sync(has_fractional.real.get_timeline_semaphore());
+		task_imag.timeline_sync(has_fractional.imag.get_timeline_semaphore());
+		task_imag.submit();
 	}
-
-	descriptor_pool->release_set(set);
 
 	// get the minimum width required to display all values
 	uint32_t value_digits_real = static_cast<uint32_t>(required_digits.real.max());

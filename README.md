@@ -1,7 +1,7 @@
 IMPORTANT:
 
-1. For [`NGrid`](docs/ngrid.md) and [`VkContext`](docs/vkcontext.md): THIS LIBRARY REQUIRES VULKAN TO BE INSTALLED.<br><br>
-2. For [`NGrid`](docs/ngrid.md): If (!) CMake is used as the build system with the provided CMake file (CMakeLists.txt, RECOMMENDED!), this relies on GlslLangValidator
+1. THIS LIBRARY REQUIRES VULKAN TO BE INSTALLED.<br><br>
+2. For [`NGrid`](docs/ngrid.md) / [`CGrid`](docs/cgrid.md): If (!) CMake is used as the build system with the provided CMake file (CMakeLists.txt, RECOMMENDED!), this relies on GlslLangValidator
 to be installed for the compilation of any GLSL shaders. CMake will then automatically take the compiled binaries and write them
 as string literals into a C++ readable header file (`spirv_bin.h`), typically to be found in `../out/build/[VERSION]/generated/` (on Windows).<br><br>
 If a different build system is used (or CMake without the provided CMakeLists.txt), `spirv_bin.h` will NOT be available.
@@ -13,7 +13,7 @@ on the Operating System in use.
 ___
 #   `Core`
 ### [______`NGrid`: n-dimensional data structures for GPU compute](docs/ngrid.md)
-### [______`CGrid`: extension of the `NGrid` class with support for complex numbers](docs/ngrid.md)
+### [______`CGrid`: extension of the `NGrid` class with support for complex numbers](docs/cgrid.md)
 ### [______`VkContext`: high-level wrapper for Vulkan objects](docs/vkcontext.md)
 _Note: Only tested for GPU compute; Graphics functionality is implemented for the most part, but not yet tested (TODO!)_
 ___ 

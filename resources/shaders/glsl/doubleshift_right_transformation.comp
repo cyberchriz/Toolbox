@@ -12,15 +12,16 @@ layout(set = 0, binding = 0) buffer H_buffer        {float H[];};
 layout(set = 0, binding = 1) buffer v_k_buffer      {float v_k[];};
 layout(set = 0, binding = 2) buffer Temp_y_buffer   {float Temp_y[];}; // shape: {current_size}
 layout(set = 0, binding = 3) buffer Temp_w_buffer   {float Temp_w[];}; // shape: {current_size}
+layout(set = 0, binding = 4) buffer Tau_k_buffer    {float Tau_k[];};  // single element
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
-    uint k;             // iterator
     uint start_offset;  // beginning of the current subproblem within H
     uint end_offset;    // end of the current subproblem within H
     uint size_H;        // full size of H (needed for correct indexing)
     float shift_alpha;
     float shift_beta;
+    uint k;
 };
 
 // avoid NAN/INF
@@ -32,11 +33,19 @@ float valid(float value) {
     else { return (abs(value) <= FLT_EPSILON) ? 0.0f : value; }
 }
 
+shared float tau_k;
+
 void main() {
 
     // relative indexing, referring to the subproblem (for the indexing within the full matrix H we need to add the start_offset):
     uint row = gl_GlobalInvocationID.x;
     uint col = gl_GlobalInvocationID.y;
+
+    // load global Tau_k into shared local memory (local thread[0][0])
+    if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 0) {
+        tau_k = Tau_k[0];     
+    }
+    memoryBarrierShared(); barrier();
     
     uint current_size = end_offset - start_offset; // current size of the subproblem
 
@@ -47,7 +56,7 @@ void main() {
 
         // Apply the transformation only to the relevant columns
         if (col >= k && col < (k + v_k_size)) {
-            float tau_k = v_k[3];
+
             uint v_k_index = col - k; // local index into v_k
 
             // Perform the rank-1 update

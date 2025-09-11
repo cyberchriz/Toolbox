@@ -10,17 +10,18 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 // setup buffers
 layout(set = 0, binding = 0) buffer H_buffer        {float H[];};
 layout(set = 0, binding = 1) buffer v_k_buffer      {float v_k[];};
-layout(set = 0, binding = 2) buffer Temp_y_buffer   {float Temp_y[];}; // shape: {current_size}
-layout(set = 0, binding = 3) buffer Temp_w_buffer   {float Temp_w[];}; // shape: {current_size}
+layout(set = 0, binding = 2) buffer Temp_y_buffer   {float Temp_y[];};      // shape: {current_size}
+layout(set = 0, binding = 3) buffer Temp_w_buffer   {float Temp_w[];};      // shape: {current_size}
+layout(set = 0, binding = 4) buffer Tau_k_buffer    {float Tau_k[];};       // single element
 
 // setup push constants layout
 layout(push_constant) uniform push_constants {
-    uint k;             // iterator
     uint start_offset;  // beginning of the current subproblem within H
     uint end_offset;    // end of the current subproblem within H
     uint size_H;        // full size of H (needed for correct indexing)
     float shift_alpha;
     float shift_beta;
+    uint k;
 };
 
 // main function
