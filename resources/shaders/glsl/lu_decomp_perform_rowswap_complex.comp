@@ -5,6 +5,7 @@
 // performs a row swap (if needed) for the current row 'k'
 
 #version 450 core
+#extension GL_EXT_shader_atomic_float : require
 
 // setup specialization constants
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -15,8 +16,7 @@ layout(set = 0, binding = 1) buffer l_imag_buffer { float L_imag[]; }; // Imagin
 layout(set = 0, binding = 2) buffer u_real_buffer { float U_real[]; }; // Real part of Upper triangular matrix U
 layout(set = 0, binding = 3) buffer u_imag_buffer { float U_imag[]; }; // Imaginary part of Upper triangular matrix U
 layout(set = 0, binding = 4) buffer p_buffer      { float P[]; };      // Permutation matrix P
-layout(set = 0, binding = 5) buffer swap_row_buffer { uint swap_row[]; }; // stores the row to swap for the current row 'k'
-layout(set = 0, binding = 6) buffer swap_count_buffer { uint swap_count[]; }; // stores the number of row swaps performed
+layout(set = 0, binding = 5) buffer swap_data_buffer {float swap_data[];};  // element 0 stores the row to swap for the current row 'k', element 1 stores the number of swaps performed
 
 // --- Push Constants ---
 layout(push_constant) uniform push_constants {
@@ -25,16 +25,14 @@ layout(push_constant) uniform push_constants {
     uint k;      // pivot iterator
 };
 
-shared uint swap_row_cpy;
+shared uint swap_row;
 
 // --- Main Function ---
 void main() {
     if (gl_LocalInvocationID.x == 0) {
-        swap_row_cpy = swap_row[0];         // Copy to shared local variable to reduce global memory access
-        if (k == 0) { swap_count[0] = 0; }  // Initialize counter in the first iteration
+        swap_row = uint(atomicAdd(swap_data[0], 0.0f));         // Copy to shared local variable to reduce global memory access
     }
-    memoryBarrierShared();
-    barrier();
+    memoryBarrierShared(); barrier();
 
     uint i = gl_GlobalInvocationID.x; // Column index for the swap
     uint cols_L = rows; // L is a rows x rows square matrix
@@ -42,38 +40,38 @@ void main() {
     float temp;
     
     // If swap_row_cpy is different from k, a swap is needed.
-    if (swap_row_cpy > k && swap_row_cpy < rows && i < cols) {
+    if (swap_row > k && swap_row < rows && i < cols) {
 
         // 1. Swap the entire row in the permutation matrix P
         if (i < cols_P) {
             temp = P[k * cols_P + i];
-            P[k * cols_P + i] = P[swap_row_cpy * cols_P + i];
-            P[swap_row_cpy * cols_P + i] = temp;
+            P[k * cols_P + i] = P[swap_row * cols_P + i];
+            P[swap_row * cols_P + i] = temp;
         }
 
         // 2. Swap the row in U matrix (both real and imaginary parts)
         temp = U_real[k * cols + i];
-        U_real[k * cols + i] = U_real[swap_row_cpy * cols + i];
-        U_real[swap_row_cpy * cols + i] = temp;
+        U_real[k * cols + i] = U_real[swap_row * cols + i];
+        U_real[swap_row * cols + i] = temp;
 
         temp = U_imag[k * cols + i];
-        U_imag[k * cols + i] = U_imag[swap_row_cpy * cols + i];
-        U_imag[swap_row_cpy * cols + i] = temp;
+        U_imag[k * cols + i] = U_imag[swap_row * cols + i];
+        U_imag[swap_row * cols + i] = temp;
         
         // 3. Swap the already computed part in the L matrix (columns 0 to k-1)
         if (i < k && i < cols_L) {
             temp = L_real[k * cols_L + i];
-            L_real[k * cols_L + i] = L_real[swap_row_cpy * cols_L + i];
-            L_real[swap_row_cpy * cols_L + i] = temp;
+            L_real[k * cols_L + i] = L_real[swap_row * cols_L + i];
+            L_real[swap_row * cols_L + i] = temp;
 
             temp = L_imag[k * cols_L + i];
-            L_imag[k * cols_L + i] = L_imag[swap_row_cpy * cols_L + i];
-            L_imag[swap_row_cpy * cols_L + i] = temp;
+            L_imag[k * cols_L + i] = L_imag[swap_row * cols_L + i];
+            L_imag[swap_row * cols_L + i] = temp;
         }
 
         // 4. Update swap counter (atomically, by a single thread)
         if (i == k) {
-            atomicAdd(swap_count[0], 1);
+            atomicAdd(swap_data[1], 1);
         }
     }
     memoryBarrierBuffer();

@@ -49,24 +49,27 @@ The `Instance` class manages the Vulkan instance, which is the entry point for a
 ### Device Management
 The `Device` class manages the physical and logical Vulkan devices.
 
-| **Method**                          | **Description**                                                                |
-|-------------------------------------|--------------------------------------------------------------------------------|
-| `Device(Instance& instance, ...)`   | Constructs a logical device for a selected physical device.                    |
-| `Device(Device&& other)`            | Move constructor to transfer ownership of the Vulkan device.                   |
-| `Device& operator=(Device&& other)` | Move assignment operator to transfer ownership of the Vulkan device.           |
-| `VkDevice& get_logical()`           | Returns the logical device handle.                                             |
-| `VkPhysicalDevice& get_physical()`  | Returns the physical device handle.                                            |
-| `VkQueue& get_graphics_queue()`     | Returns the graphics queue handle.                                             |
-| `VkQueue& get_compute_queue()`      | Returns the compute queue handle.                                              |
-| `VkQueue& get_transfer_queue()`     | Returns the transfer queue handle.                                             |
-| `uint32_t get_graphics_queue_family_index()` | Returns the graphics queue family index.                              |
-| `uint32_t get_compute_queue_family_index()` | Returns the compute queue family index.                                |
-| `uint32_t get_transfer_queue_family_index()` | Returns the transfer queue family index.                              |
-| `... get_properties()` | Returns the properties struct of the physical device.                                       |
-| `... get_properties2()` | Returns the properties2 struct of the physical device.                                     |
-| `... get_memory_properties()` | Returns the memory properties of the selected physical device.                       |
-| `... get_features()` | Returns the enabled features struct of the selected physical device.                          |
-| `... get_synchronization_features()` | Returns the synchronization features struct of the selected physical device.  |
+| **Method**| **Description**|
+| :--- | :--- |
+| `Device(const Instance& instance, ...)` | Constructs a logical device for a selected physical device. |
+| `Device(Device&& other)` | Move constructor to transfer ownership of the Vulkan device. |
+| `Device& operator=(Device&& other)` | Move assignment operator to transfer ownership of the Vulkan device. |
+| `~Device()` | Destructor that cleans up the logical device. |
+| `VkDevice get_logical()` | Returns the logical device handle. |
+| `VkPhysicalDevice get_physical()` | Returns the physical device handle. |
+| `VkQueue get_graphics_queue()` | Returns the graphics queue handle. |
+| `VkQueue get_compute_queue()` | Returns the compute queue handle. |
+| `VkQueue get_transfer_queue()` | Returns the transfer queue handle. |
+| `uint32_t get_graphics_queue_family_index()` | Returns the index of the graphics queue family. |
+| `uint32_t get_compute_queue_family_index()` | Returns the index of the compute queue family. |
+| `uint32_t get_transfer_queue_family_index()` | Returns the index of the transfer queue family. |
+| `const VkPhysicalDeviceProperties& get_properties()` | Returns the physical device properties. |
+| `const VkPhysicalDeviceProperties2& get_properties2()` | Returns the physical device properties (Vulkan 1.1+). |
+| `const std::vector<const char*>& get_extensions()` | Returns the list of enabled device extensions. |
+| `const VkPhysicalDeviceMemoryProperties& get_memory_properties()`| Returns the physical device memory properties. |
+| `const VkPhysicalDeviceFeatures2& get_features()` | Returns the enabled device features (Vulkan 1.1+). |
+| `const VkPhysicalDeviceSynchronization2Features& get_synchronization_features()` | Returns the enabled synchronization 2 features (Vulkan 1.3+). |
+
 
 ---
 ### Image Management
@@ -436,6 +439,7 @@ class `Buffer`
 | `VkDeviceMemory get_memory() const` | returns the Vulkan handle to the device memory of the buffer                   |
 | `VkBuffer get() const`              | returns the Vulkan handle of the underlying VkBuffer object                    |
 | `VkFlags get_memory_property_flags() const` | returns the flags of the buffer's memory properties                    |
+| `bool is_host_visible()` | Returns `true` if the buffer is host-visible. |
 
 ---
 ### Sampler

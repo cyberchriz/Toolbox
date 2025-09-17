@@ -13,8 +13,8 @@
 #include <ngrid.h>
 
 int main() {
-	NGrid::set_workgroup_size_1d(256);
-	NGrid::set_workgroup_size_2d(16);
+	Log::set_level(LogLevel::LEVEL_WARNING);
+
 
 	// +=================================+   
 	// | Introduction                    |

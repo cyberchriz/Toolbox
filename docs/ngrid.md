@@ -8,263 +8,383 @@ _Note: This library relies on a custom Vulkan wrapper ([`vkcontext.h`](../includ
 ---
 
 ## ✨ Features
-- **N-Dimensional Data**: Natively create and manipulate tensors of any shape and dimension.
+- **N-Dimensional Data**: Natively create and manipulate float type tensors of any shape and dimension.
 - **GPU Accelerated**: All mathematical operations are executed on the GPU via Vulkan compute shaders for maximum parallelism and speed.
+- **Asynchronous Execution**: all calculations execute asychronously on the GPU, whilst the host proceeds with its work, without waiting for intermediate results;<br>synchronization is only enforced when final results are read back to the host.
 - **Rich Mathematical Toolkit**: An extensive set of operations including linear algebra, statistical functions, random number generation, and element-wise calculations.
 - **Neural Network Support**: Includes specialized functions for weight initialization, activation functions, and their derivatives.
-- **Dynamic Manipulation**: Easily reshape, concatenate, pad, sort, flatten and perform complex transformations like convolution, pooling and stationary transformation.
-- **Advanced Matrix Operations**: Includes matrix multiplication, inverse, transpose, determinant, rank, Eigenvalues, LU decomposition, QR decomposition, Gauss-Jordan elimination (reduced row echelon form)
-- **High-Level Abstraction**: Simplifies complex GPU operations into intuitive C++ method calls and operator overloads.
+- **Dynamic Manipulation**: Easily reshape, concatenate, pad, sort, flatten and perform complex transformations like convolution, inverse, transpose, pooling,<br>stationary transformation, QR decomposition, LU decomposition, RREF, and more ...
+- **Seamless Interoperability**: Natively supports type conversion with the `CGrid` class for handling complex numbers.
+- **Non-destructive Manipulation**: Most methods, except for fill or assignment operations, don't directly manipulate the NGrid source object,<br>thereby following mathematical intuition. For example a = b + x would manipulate a, but not b or x.
 
 ---
 
-## Classes and Methods
-
-### 🧱 Constructors & Destructors
-These methods handle the creation, copying, moving, and destruction of `NGrid` objects.
+### 🛠️ Constructors & Destructors
+Methods for creating and destroying `NGrid` instances.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `NGrid()` | Default constructor that initializes an empty, shapeless grid. |
-| `NGrid(Args... args)` | Variadic template constructor to define the grid's shape, e.g., `NGrid(10, 20, 3)`. |
-| `NGrid(const std::vector<uint32_t>& shape)` | Constructs a grid with the specified shape from a vector. |
-| `NGrid(std::initializer_list<uint32_t> shape)`| Constructs a grid with the specified shape from an initializer list. |
-| `NGrid(std::vector<float_t> source_vector)` | Constructs a 1D grid and fills it with data from a `std::vector`. |
-| `NGrid(const NGrid& other)` | Copy constructor. Creates a deep copy of another grid's data on the GPU. |
-| `NGrid(NGrid&& other) noexcept` | Move constructor. Efficiently transfers ownership of GPU resources. |
-| `~NGrid()` | Destructor that cleans up and releases all associated GPU resources. |
+| `NGrid()` | The default constructor initializes an empty array. |
+| `NGrid(...)` | Parametric default constructor for multi-dimensional array, overload for variadic template. |
+| `NGrid(const std::vector<uint32_t>& shape)` | Parametric default constructor for multi-dimensional array, overload for `std::vector`. |
+| `NGrid(std::initializer_list<uint32_t> shape)`| Parametric default constructor for multi-dimensional array, overload for `std::initializer_list`. |
+| `NGrid(const std::vector<float_t>& source_vector)` | Constructs a 1D array and directly fills it with the contents of a `std::vector<float_t>`.|
+| `NGrid(NGrid&& other) noexcept`| Move constructor. |
+| `NGrid(const NGrid& other)`| Copy constructor. |
+| `~NGrid()` | Destructor. |
 
 ---
-### 🟰 Assignment
-Methods for assigning data to an existing `NGrid` instance.
+
+### 🔀 Assignment
+Methods for assigning values to an `NGrid` instance.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `operator=(const NGrid& other)` | Copy assignment. Replaces the grid's content with a copy of another grid's data. |
-| `operator=(NGrid&& other) noexcept` | Move assignment. Transfers ownership of GPU resources from another grid. |
-| `operator=(const std::vector<float_t>& data)` | Assigns data from a `std::vector` to the grid. Alias for `set()`. |
-| `operator=(const float_t* data)` | Assigns data from a raw C-style array to the grid. Alias for `set()`. |
+| `operator=` | Copy assignment. |
+| `operator=(NGrid&& other) noexcept`| Move assignment. |
+| `operator=` | Assigns the contents of a `std::vector<float_t>` or a `float_t*` pointer to the grid. These are aliases for the `set()` methods. |
 
 ---
-### ✔️ Getters & Setters
-Methods for retrieving information and data from the grid or setting specific values.
+
+### 📥 Getters & Setters
+Methods for getting and setting elements or properties of the `NGrid` instance.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `set(index, value)` | Sets the element at a specific multi-dimensional index to a given value. |
-| `set(data, ...)` | Sets grid contents from a `std::vector`, C-style array, or another `NGrid`. |
-| `set(const NGrid& other, ..)`| Construct the grid as full or partial copy of 'other'. |
-| `get(flat_index)` | Retrieves a single `float_t` value from a flattened 1D index. |
-| `get()` | Retrieves all grid elements as a `std::vector<float_t>`. |
-| `get(read_elements, offset)` | Retrieves a specific slice of the grid data into a `std::vector<float_t>`. |
-| `get_buffer()` | Returns a pointer to the underlying Vulkan buffer holding the grid data. |
-| `get_shape_buffer()` | Returns a pointer to the Vulkan buffer holding the grid's shape information. |
-| `get_dimensions()` | Returns the number of dimensions (rank) of the grid. |
-| `get_size(dimension)` | Returns the size of a specific dimension. |
-| `get_elements()` | Returns the total number of elements in the grid. |
-| `get_shape()` | Returns the shape of the grid as a `std::vector<uint32_t>`. |
-| `get_shapestring()` | Returns the shape of the grid as a formatted string (e.g., `"[10, 20, 3]"`). |
-| `subgrid(offset, shape)` | Extracts a new `NGrid` view from a region of the current grid. |
+| `set(...)` | Destructive setter methods that modify the `NGrid` instance itself, then return a reference to `this`. Overloads are provided to set a single value by index, or to copy data from a `std::vector`, a `float_t` pointer, or another `NGrid` instance with optional offset and element count. |
+| `get(...)` | Non-destructive getter methods that return a copy of the requested data. Overloads are provided to retrieve a single value by index, a subset of elements, or the entire underlying data as a `std::vector<float_t>`. |
+| `get_buffer()` | Returns a reference to the underlying `Buffer<float_t>` containing the array data. |
+| `get_shape_buffer()` | Returns a reference to the underlying `Buffer<uint32_t>` containing the shape data. |
+| `get_dimensions()` | Returns the number of dimensions of the array. |
+| `get_size(uint32_t dimension)` | Returns the size of the specified dimension. |
+| `get_elements()` | Returns the total number of elements in the array. |
+| `get_shape()` | Returns the shape of the array as a `const std::vector<uint32_t>&`. |
+| `rows()` | Returns the number of rows (size of the first dimension). |
+| `cols()` | Returns the number of columns (size of the second dimension). |
+| `get_shapestring()` | Returns the shape of the array as a formatted string, e.g., `{2,3,4}`. |
+| `subgrid(const std::vector<uint32_t>& source_offset, const std::vector<uint32_t>& subgrid_shape)`| Slices a subarray out of the parent array. |
+| `subgrid(const std::initializer_list<uint32_t> source_offset, const std::initializer_list<uint32_t> subgrid_shape)`| Slices a subarray out of the parent array. |
+| `set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset)`| Sets a subgrid by copying data from another NGrid using a multidimensional offset. |
+| `set(const NGrid& other, const std::initializer_list<uint32_t>& target_origin_offset)`| Sets a subgrid by copying data from another NGrid using a multidimensional offset. |
+| `operator=` | The assignment operator, aliased to `set()`.|
 
 ---
-### 🎲 Fill Operations
-Quickly populate the entire grid with specific values or random distributions.
+
+### 🔄 Fill
+Destructive methods that modify the `NGrid` instance by filling it with specific values.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `fill(value)` | Fills the entire grid with a specified floating-point value. |
-| `fill_zero()` | Fills the grid with `0.0f`. |
-| `fill_identity()` | Fills the grid with the identity matrix. |
-| `fill_random_gaussian(mu, sigma)` | Fills with random numbers from a Gaussian (normal) distribution. |
-| `fill_random_uniform(min, max)` | Fills with random numbers from a uniform distribution. |
-| `fill_random_uniform_int(min, max)`| Fills with random integers from a uniform distribution. |
-| `fill_random(min, max)` | Alias for fill_random_uniform(). |
-| `fill_random_int(min, max)`| Alias for fill_random_uniform_int(). |
-| `fill_random_binary(ratio)` | Fills with `0.0f` or `1.0f` based on a given ratio. |
-| `fill_random_sign(ratio)` | Fills with `-1.0f` or `1.0f` based on a given ratio. |
-| `fill_range(start, step)` | Fills the grid with a sequence of numbers. |
-| `fill_dropout(ratio)` | Applies dropout by setting a random fraction of elements to zero. |
-| `fill_index()` | Fills each element with its flattened 1D index. |
+| `fill(float_t value)` | Fills the entire grid with a single `float_t` value. |
+| `fill_zero()` | Fills the grid with zeros. |
+| `fill_identity()` | Fills a square grid with an identity matrix. |
+| `fill_random_gaussian(mu, sigma)`| Fills the grid with values drawn from a Gaussian (Normal) distribution. |
+| `fill_random_uniform(min, max)` | Fills the grid with values drawn from a uniform distribution. |
+| `fill_random_uniform_int(min, max)` | Fills the grid with random integer values from a uniform distribution. |
+| `fill_random(min, max)`| Alias for `fill_random_uniform()`. |
+| `fill_random_int(min, max)`| Alias for `fill_random_uniform_int()`. |
+| `fill_random_binary(ratio)` | Fills the grid with either 0.0 or 1.0 based on the specified ratio. |
+| `fill_random_sign(ratio)` | Fills the grid with either -1.0 or 1.0 based on the specified ratio. |
+| `fill_range(start, step)` | Fills the grid with a sequence of numbers, starting at `start` and increasing by `step`<br>(`step` can be negative). |
+| `fill_dropout(ratio)` | Fills a specified ratio of elements with zeros, leaving others unchanged. |
+| `fill_index()` | Fills the grid with the flat index of each element. |
 
 ---
+
+### ➕ Static Constructors
+Static methods that create and return new `NGrid` instances.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `static NGrid identity(const uint32_t size)` | Creates a new square identity `NGrid` of the specified size. |
+
+---
+
 ### 🧠 Neural Net Weight Initialization
-Specialized methods to initialize weight matrices for neural networks, based on common techniques.
+Methods for initializing weights for neural network layers.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `weightinit_tanh_normal(fan_in, fan_out)` | Glorot/Xavier normal initialization. |
-| `weightinit_tanh_uniform(fan_in, fan_out)`| Glorot/Xavier uniform initialization. |
-| `weightinit_sigmoid(fan_in, fan_out)` | Sigmoid-specific weight initialization. |
-| `weightinit_relu(fan_in)` | He normal initialization for ReLU activation. |
-| `weightinit_elu(fan_in)` | He normal initialization for ELU activation. |
+| `weightinit_tanh_normal(fan_in, fan_out)` | Initializes weights using a tanh normal distribution. |
+| `weightinit_tanh_uniform(fan_in, fan_out)`| Initializes weights using a tanh uniform distribution. |
+| `weightinit_sigmoid(fan_in, fan_out)` | Initializes weights suitable for a sigmoid activation function. |
+| `weightinit_relu(fan_in)` | Initializes weights suitable for a ReLU activation function. |
+| `weightinit_elu(fan_in)` | Initializes weights suitable for an ELU activation function. |
 
 ---
-### 📊 Distribution Properties & Statistics
-Calculates statistical properties of the grid's data, reducing the entire grid to a single value.
+
+### 📊 Distribution Properties
+Methods to analyze the statistical properties of the data.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `min()` | Returns the minimum value in the grid. |
-| `max()` | Returns the maximum value in the grid. |
-| `maxabs()` | Returns the maximum absolute value in the grid. |
-| `mean()` | Returns the arithmetic mean of all elements. |
-| `median()` | Returns the median value of all elements. |
-| `var(sample_var)` | Returns the variance (sample or population). |
-| `stdev()` | Returns the standard deviation of all elements. |
-| `kurt()` | Returns the kurtosis of the distribution. |
-| `skew()` | Returns the skewness of the distribution. |
-| `sum()` | Returns the sum of all elements. |
-| `product()` | Returns the product of all elements. |
-| `regression()` | Returns regression and correlation results of 'this' vs 'other' as a custom struct; Can be used for simple linear, multivariate linear, polynomial or multivariate polynomial regression.|
-| `Dickey_Fuller()`| Performs an augmented Dickey-Fuller test (=unit root test for stationarity) on a 1d NGrid. Returns a p-value as type `float_t`.|
-| `Engle_Granger(other)`|Performs an Engle-Granger test for cointegration (=long-term relationship) of 'this' vs 'other'. Returns a p-value as type `float_t`.|
-| `covariance(other)`||
+| `min()` | Returns the minimum value in the array. |
+| `max()` | Returns the maximum value in the array. |
+| `maxabs()` | Returns the maximum absolute value in the array. |
+| `mean()` | Returns the mean (average) of all elements. |
+| `median()` | Returns the median of all elements. |
+| `var(sample_var)`| Returns the variance of the elements. `sample_var=true` for sample variance, `false` for population variance. |
+| `stdev()` | Returns the standard deviation. |
+| `kurt(sample_kurt)` | Returns the kurtosis of the data. `sample_kurt=true` for sample kurtosis, `false` for population kurtosis. |
+| `skew(sample_skew)` | Returns the skewness of the data. `sample_skew=true` for sample skewness, `false` for population skewness. |
 
 ---
-### ➕ Arithmetic Operations
-Element-wise and scalar arithmetic using convenient operator overloads.
+
+### ➕ Addition
+Methods for addition operations.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `operator+(value)` / `operator-(value)` | Adds/subtracts a scalar value to/from each element. |
-| `operator+(other)` / `operator-(other)` | Performs element-wise addition/subtraction with another grid. |
-| `operator++()` / `operator--()` | Prefix increment/decrement. |
-| `operator++(int)` / `operator--(int)` | Postfix increment/decrement. |
-| `operator+=(value)` / `operator-=(value)` | In-place scalar addition/subtraction. |
-| `operator+=(other)` / `operator-=(other)` | In-place element-wise addition/subtraction. |
-| `operator*(factor)` / `operator/(quotient)`| Multiplies/divides each element by a scalar. |
-| `operator*=(factor)` / `operator/=(quotient)`| In-place scalar multiplication/division. |
-| `operator%(num)` / `operator%=(value)` | Computes element-wise or in-place modulo with a scalar. |
-
-___
-### ⚖️ Elementwise Comparison & Logical Operations
-These operators return a new `NGrid` where each element is `1` if the condition is true and `0` if false.
-
-| **Method**| **Description**|
-| :--- | :--- |
-| `operator>(value/other)` | Element-wise greater than. |
-| `operator>=(value/other)` | Element-wise greater than or equal to. |
-| `operator==(value/other)` | Element-wise equal to. |
-| `operator!=(value/other)` | Element-wise not equal to. |
-| `operator<(value/other)` | Element-wise less than. |
-| `operator<=(value/other)` | Element-wise less than or equal to. |
-| `operator&&(value/other)` | Element-wise logical AND. |
-| `operator||(value/other)` | Element-wise logical OR. |
-| `operator!()` | Element-wise logical NOT. |
+| `sum()` | Returns the sum of all array elements. |
+| `operator+(float_t value)`| Returns a new `NGrid` with `value` added to each element. |
+| `operator+(const NGrid& other)`| Returns a new `NGrid` that is the element-wise sum of this grid and another. |
+| `operator++()` | Prefix increment. |
+| `operator++(int)` | Postfix increment. |
+| `operator+=(float_t value)` | Adds `value` to each element in-place. |
+| `operator+=(const NGrid& other)` | Performs an element-wise addition with `other` in-place. |
 
 ---
-### 🔢 Matrix & Vector Operations
-Handles dot products, matrix multiplications, and element-wise products.
+
+### ➖ Subtraction
+Methods for subtraction operations.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `operator*(other)` | Alias for `matrix_product`. |
-| `operator*=(other)` | In-place matrix product. Modifies the current grid. |
-| `scalar_product(other)` | Computes the dot/scalar product with another grid. Returns a `float_t`. |
-| `matrix_product(other)` | Computes the matrix product (matmul). |
-| `Hadamard_product(other)` | Computes the element-wise (Hadamard) product. |
-| `Hadamard_division(other)` | Computes the element-wise (Hadamard) division. |
-| `operator/(other)` | Alias for matrix product with the inverse of `other`. |
+| `operator-(float_t value)`| Returns a new `NGrid` with `value` subtracted from each element. |
+| `operator-(const NGrid& other)`| Returns a new `NGrid` that is the element-wise difference of this grid and another. |
+| `operator--()` | Prefix decrement. |
+| `operator--(int)` | Postfix decrement. |
+| `operator-=(float_t value)` | Subtracts `value` from each element in-place. |
+| `operator-=(const NGrid& other)` | Performs an element-wise subtraction with `other` in-place. |
 
 ---
-### 🧮 Mathematical Functions
-Applies common mathematical functions to each element of the grid.
+
+### ✖️ Multiplication
+Methods for multiplication operations.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `pow(exponent)` / `operator^(exponent)` | Raises each element to a scalar power. |
-| `pow(other)` / `operator^(other)` | Performs element-wise exponentiation with another grid as the exponent. |
-| `sqrt()` | Computes the square root of each element. |
-| `log(base)` | Computes the logarithm of each element for a given base. Default is base `e`. |
-| `exp()` | Computes `e` raised to the power of each element. |
-| `round()` / `floor()` / `ceil()` | Rounds, floors, or ceils each element. |
-| `abs()` | Computes the absolute value of each element. |
-| `sign()` | Returns the sign of each element (`-1`, `0`, or `1`). |
-| `min(value)` / `max(value)` | Computes element-wise min/max against a scalar value. |
-| `min(other)` / `max(other)` | Computes element-wise min/max against another grid. |
-| `isinf()` | Returns `1.0` for all elements equal to `+INF` or `-INF`, `0` for all other elements.|
-| `isnan()` | Returns `1.0` for all `NAN` elements ('not a number'), `0` for all other elements.|
+| `product()` | Returns the product of all array elements. |
+| `operator*(float_t factor)`| Returns a new `NGrid` with each element multiplied by `factor`. |
+| `operator*=(float_t factor)`| Multiplies each element by `factor` in-place. |
+| `operator*(const NGrid& other)`| Alias for `matrix_product()`. |
+| `operator*=(const NGrid& other)`| Performs a matrix product with `other` in-place. |
+| `scalar_product(const NGrid& other)`| Returns the scalar (dot) product of this grid and another. |
+| `matrix_product(const NGrid& other)`| Returns a new `NGrid` that is the matrix product of this grid and another. |
+| `Hadamard_product(const NGrid& other)`| Returns a new `NGrid` that is the element-wise product of this grid and another. |
 
 ---
-### 📐 Trigonometry Functions
-Applies trigonometric and hyperbolic functions to each element.
+
+### ➗ Division
+Methods for division operations.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `cos(unit)` / `sin(unit)` / `tan(unit)` | Computes cosine, sine, or tangent. Input can be specified as `RAD`, `DEG`, `HOURS12`/`HOURS24`(12h/24h time angle), `GON`(geodetic, full circle = 400), `PERCENT` (full circle = 100) or `NORMAL` (full circle = 1.0)). |
-| `acos(unit)`/`asin(unit)`/`atan(unit)` | Computes arc-cosine, arc-sine, or arc-tangent. Output unit can be specified. |
-| `cosh()` / `sinh()` / `tanh()` | Computes hyperbolic cosine, sine, or tangent. |
-| `acosh()` / `asinh()` / `atanh()` | Computes inverse hyperbolic cosine, sine, or tangent. |
-
-___
-### 🔎 Find, Replace
-
-| **Method**| **Description**|
-| :--- | :--- |
-| `replace(query,replacement)`| Replaces all findings of a value with the replacement value. |
-| `replace_if(condition_map, replacing_map)`| Replaces elementwise with the values of the replacing NGrid depending on the corresponding element of the condition map being true (i.e. !=0).|
-| `replace_if(condition_map, value)`| Replaces all elements with the specified value where the corresponding element in the condition map is true (i.e. !=0).|
-| `find(value)`| returns the number of occurences of the specified value within the source NGrid.|
+| `operator/(float_t divisor)`| Returns a new `NGrid` with each element divided by `divisor`. |
+| `operator/=(float_t divisor)`| Divides each element by `divisor` in-place. |
+| `Hadamard_division(const NGrid& other)`| Performs element-wise division. |
+| `operator/(const NGrid& other)` | Returns a new `NGrid` that is the matrix product with the inverse of `other`. |
 
 ---
-### Activation Functions & Derivatives
-A suite of common neural network activation functions and their corresponding derivatives. The `ActFunc` enum (`RELU`, `LRELU`, `ELU`, `LELU`, `SIGMOID`, `TANH`, `IDENT`) can be used with the generic methods.
+
+### 🔢 Modulo
+Methods for modulo operations.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `activation(ActFunc)` | Applies a specified activation function element-wise. |
-| `derivative(ActFunc)` | Computes the derivative of a specified activation function element-wise. |
-| `ident()` / `ident_drv()` | Identity function (`f(x) = x`) and its derivative (`1`). |
-| `sigmoid()` / `sigmoid_drv()` | Sigmoid activation and its derivative. |
-| `relu(alpha)` / `relu_drv(alpha)` | (Leaky) Rectified Linear Unit and its derivative. |
-| `elu(alpha)` / `elu_drv(alpha)` | (Leaky) Exponential Linear Unit and its derivative. |
-| `tanh()` / `tanh_drv()` | Hyperbolic tangent activation and its derivative. |
+| `operator%=(float_t value)` | Performs element-wise modulo `value` in-place. |
+| `operator%(float_t value)` | Returns a new `NGrid` with each element's modulo `value`. |
 
 ---
-### 🛠️ Advance Matrix Operations
-Methods for transforming the grid's shape, structure, and content.
+
+### 📈 Exponentiation & Logarithm
+Methods for exponentiation and logarithm operations.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `flatten()` | Reshapes the grid into a 1D vector. |
-| `reshape(new_shape, ...)` | Changes the grid's shape whilst preserving elements which overlap with the previous shape. Can also be used for resizing. |
-| `concatenate(other, axis)` | Joins another grid along a specified axis. |
-| `padding(amount, value)` | Adds padding of a certain value around the grid. |
-| `stationary(degree)` | Performs a stationary transformation to the specified degree of differencing. |
-| `stationary_log(base,degree)`| Performs a logarithmic stationary transformation to the specified degree.|
-| `transpose(target_axis_order)` | Reorders the dimensions of the grid. |
-| `convolution(kernel, ...)` | Performs a 2D convolution with a given kernel. |
-| `pool_max(window, stride)`, `pool_min(window, stride)` | Performs max/min pooling over a window. |
-| `pool_mean(window, stride)` | Performs average pooling over a window. |
-| `sort(ascending)` | Sorts the elements of a 1D grid in ascending or descending order. |
-| `qr()`| Performs a QR decomposition and returns the results as a custom struct.|
-| `hess()`| Returns the Hessenberg form of the matrix (same as `qr(true)`).|
-| `eigen()`| Returns the eigenvalues of the matrix (may include complex numbers, therefore the result is type `CGrid`).|
-| `lu()` | Performs LU decomposition with partial pivoting. Returns the L, U, P and swap_count as a struct. |
-| `inverse()` | Computes the inverse of a square matrix (or pseudo-inverse in case of non-square 2d grids). |
-| `is_invertible()` / `is_invertible(U)`| Checks if 'this' 2d square NGrid is invertible or if a matrix which has the corresponding provided Upper Triangular matrix U is invertible.|
-| `rref()`| Performs Gauss-Jordan elimination to obtain the reduced row echelon form (RREF); useful as an alterantive method to get the inverse or for solving systems of linear equations.|
-| `rank()` / `rank(U)` / `rank(LUresult)`| Returns the 'rank' of a 2d matrix (=number of linearly independent rows) or of a 2D matrix which has the corresponding provided Upper Triangular matrix U.|
-| `determinant()`| Computes the determinant of a square matrix.|
-| `diagonal()`| Returns the diagonal elements as a vector (1d `NGrid`).|
-| `mirror(axes)` | Flips the grid along the specified axes. |
-| `remap(index_map)` | Reassigns each element to a new position as specified in the target index map (holding the target's flat indices). |
+| `pow(float_t exponent)` | Returns a new `NGrid` with each element raised to the power of `exponent`. |
+| `operator^(float_t exponent)` | Alias for `pow(exponent)`. |
+| `operator^=(float_t exponent)`| Performs `pow(exponent)` in-place. |
+| `pow(const NGrid& other)` | Returns a new `NGrid` with each element raised to the power of the corresponding element in `other`. |
+| `operator^(const NGrid& other)`| Alias for `pow(other)`. |
+| `sqrt()`| Returns a new `NGrid` with the square root of each element. |
+| `log(base)` | Returns a new `NGrid` with the logarithm of each element. Default base is `e` (2.718...). |
+| `exp()` | Returns a new `NGrid` with the exponent of each element. |
 
 ---
-### 🩹 Data Preprocessing
+
+### 📐 Rounding
+Methods for rounding values.
 
 | **Method**| **Description**|
 | :--- | :--- |
-| `scale_minmax(range_from, range_to)` | Shift the minimum and strech/compress the range to fit within [min,max]. |
-| `scale_mean()` | Shift to zero mean and stretch/compress to not exceed range[-1,1]. |
-| `scale_zscore()` | Shift to zero mean and strech/compress to match unit-variance (i.e. z_score = 1.0 = default) or the specified z_score. |
-| `outliers_clamp_minmax(min,max)` | Clamps the values of the array within range [min,max]. |
-| `outliers_clamp_zscore(z_score)` | Truncates outliers based on z_score. |
-| `outliers_mean_imputation(z_score)` | Replaces outliers which exceed +/- z_score*sigma by the arrithmetic mean of the values. |
-| `outliers_value_imputation(z_score)` | Replaces outliers which exceed +/- z_score*sigma by the specified value. |
-| `recover()` | 'Recovers' invalid data by replacing +INF with FLOAT_MAX, -INF with -FLOAT_MAX and NAN with 0. |
+| `round(precision)`| Returns a new `NGrid` with each element rounded to the specified precision. |
+| `floor()`| Returns a new `NGrid` with each element rounded down to the nearest integer. |
+| `ceil()`| Returns a new `NGrid` with each element rounded up to the nearest integer. |
+| `abs()` | Returns a new `NGrid` with the absolute value of each element. |
 
 ---
+
+### ⬇️ Min, Max
+Methods for element-wise minimum and maximum operations.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `min(float_t value)`| Returns a new `NGrid` with each element set to the minimum of its current value and `value`. |
+| `max(float_t value)`| Returns a new `NGrid` with each element set to the maximum of its current value and `value`. |
+| `min(const NGrid& other)`| Returns a new `NGrid` with each element set to the minimum of its current value and the corresponding element in `other`. |
+| `max(const NGrid& other)`| Returns a new `NGrid` with each element set to the maximum of its current value and the corresponding element in `other`. |
+
+---
+
+### 📏 Trigonometric Functions
+Methods for trigonometric and hyperbolic functions.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `cos(source_angle_unit)` | Calculates the cosine of each element. `source_angle_unit` specifies if input is in `RAD` (default) or `DEG`.|
+| `sin(source_angle_unit)` | Calculates the sine of each element. `source_angle_unit` specifies if input is in `RAD` (default) or `DEG`.|
+| `tan(source_angle_unit)` | Calculates the tangent of each element. `source_angle_unit` specifies if input is in `RAD` (default) or `DEG`.|
+| `acos(result_angle_unit)` | Calculates the arc cosine of each element. `result_angle_unit` specifies if output should be in `RAD` (default) or `DEG`.|
+| `asin(result_angle_unit)` | Calculates the arc sine of each element. `result_angle_unit` specifies if output should be in `RAD` (default) or `DEG`.|
+| `atan(result_angle_unit)` | Calculates the arc tangent of each element. `result_angle_unit` specifies if output should be in `RAD` (default) or `DEG`.|
+| `cosh()` | Calculates the hyperbolic cosine of each element. |
+| `sinh()` | Calculates the hyperbolic sine of each element. |
+| `tanh()` | Calculates the hyperbolic tangent of each element. |
+| `acosh()` | Calculates the inverse hyperbolic cosine of each element. |
+| `asinh()` | Calculates the inverse hyperbolic sine of each element. |
+| `atanh()` | Calculates the inverse hyperbolic tangent of each element. |
+
+---
+
+### ⚖️ Elementwise Comparison
+Methods for element-wise comparison. Results are a new `NGrid` with 1.0 for true and 0.0 for false.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `operator>(...)`, `operator>=(...)`, etc. | Compares each element of the array to a `float_t` value or another `NGrid`. |
+
+---
+
+### 🎭 Activation Functions
+Methods for common neural network activation functions.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `activation(ActFunc)` | Applies the specified activation function to each element. |
+| `derivative(ActFunc)` | Applies the specified activation function's derivative to each element. |
+| `ident()` | Applies the identity function (f(x) = x). |
+| `ident_drv()` | Applies the derivative of the identity function (f'(x) = 1). |
+| `sigmoid()` | Applies the sigmoid activation function. |
+| `sigmoid_drv()`| Applies the derivative of the sigmoid function. |
+| `elu(alpha)` | Applies the ELU (Exponential Linear Unit) function. |
+| `elu_drv(alpha)` | Applies the derivative of the ELU function. |
+| `relu(alpha)` | Applies the ReLU (Rectified Linear Unit) function. `alpha=0` for true ReLU, `0.01` for leaky ReLU. |
+| `relu_drv(alpha)` | Applies the derivative of the ReLU function. |
+| `tanh_drv()`| Applies the derivative of the hyperbolic tangent function. |
+
+---
+
+### 🔍 Find, Replace
+Methods for searching and replacing values.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `replace(old_value, new_value)` | Replaces all occurrences of `old_value` with `new_value`. |
+| `replace_if(condition_map, replacing_map)` | Replaces elements where `condition_map` is non-zero with the corresponding elements from `replacing_map`. |
+| `replace_if(condition_map, replacing_value)` | Replaces elements where `condition_map` is non-zero with `replacing_value`. |
+| `find(value)` | Returns the flat index of the first occurrence of `value`. |
+| `sign()` | Returns a new `NGrid` with the sign of each element (-1, 0, or 1). |
+| `isinf()` | Returns a new `NGrid` where each element is 1.0 if the corresponding source element is infinite, otherwise 0.0. |
+| `isnan()` | Returns a new `NGrid` where each element is 1.0 if the corresponding source element is NaN, otherwise 0.0. |
+
+---
+
+### 📈 Outlier Treatment
+Methods for handling outliers and invalid data.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `outliers_clamp_minmax(min, max)` | Clamps the values of the array within the range `[min, max]`. |
+| `outliers_clamp_zscore(z_score)` | Truncates outliers based on `z_score`. |
+| `outliers_mean_imputation(z_score)`| Replaces outliers which exceed +/- `z_score`*sigma by the arithmetic mean. |
+| `outliers_value_imputation(z_score, value)`| Replaces outliers which exceed +/- `z_score`*sigma by the specified `value`. |
+| `recover()` | 'Recovers' invalid data by replacing `+INF` with `FLOAT_MAX`, `-INF` with `-FLOAT_MAX`, and `NAN` with 0. |
+
+---
+
+### ⚖️ Scaling
+Methods for normalizing and scaling data.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `scale_minmax(range_from, range_to)`| Shifts the minimum and stretches/compresses the range to fit within `[range_from, range_to]`. |
+| `scale_mean()` | Shifts to zero mean and stretches/compresses to not exceed range `[-1,1]`. |
+| `scale_zscore(z_score)`| Shifts to zero mean and stretches/compresses to match unit-variance (i.e., `z_score = 1.0` = default) or the specified `z_score`. |
+| `scale_undo()`| Undoes the last scaling operation. |
+| `scale_undo(const NGrid& scaling_reference)`| Undoes the scaling operation based on a reference `NGrid`. |
+
+---
+
+### 🧠 Advanced Matrix Operations
+Methods for complex data transformations.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `flatten()` | Returns a new `NGrid` with all dimensions collapsed into a single dimension. |
+| `reshape(new_shape, ...)` | Returns a new `NGrid` with the specified new shape. Overloads exist for `std::vector`, `std::initializer_list`, and variadic templates. |
+| `concatenate(other, axis)` | Concatenates this `NGrid` with another along the specified `axis`. |
+| `padding(amount, init_value)` | Adds a specified amount of padding to all sides of the array. |
+| `stationary(degree)`| Applies the stationary transform to the `NGrid` data for time-series analysis. |
+| `stationary_log(degree, log_base)`| Applies the log-stationary transform. |
+| `sort(ascending)` | Returns a new `NGrid` with the elements sorted. |
+| `pool_max(window_shape, stride_shape)` | Performs max pooling on the array. |
+| `pool_maxabs(window_shape, stride_shape)`| Performs max-absolute pooling on the array. |
+| `pool_min(window_shape, stride_shape)` | Performs min pooling on the array. |
+| `pool_mean(window_shape, stride_shape)` | Performs mean pooling on the array. |
+| `convolution(kernel, padding_amount, padding_value)`| Performs a 2D convolution with a specified kernel. |
+| `transpose(target_axis_order)`| Transposes the axes of the array. |
+| `mirror(mirror_axes)` | Mirrors the array along the specified axes. |
+| `remap(target_index_map)` | Creates a new `NGrid` by remapping elements using an index map. |
+
+---
+
+### ➕ Linear Algebra
+Methods for linear algebra operations.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `qr(hessenberg)`| Performs QR decomposition on the `NGrid`. |
+| `hess()` | Performs Hessenberg decomposition. |
+| `eigen(max_iterations_multiplier, tolerance)`| Calculates the eigenvalues and eigenvectors of a matrix. Returns a `CGrid` object. |
+| `lu()` | Performs LU decomposition. |
+| `l_inverse()`| Calculates the inverse of the L matrix from an LU decomposition. |
+| `u_inverse()`| Calculates the inverse of the U matrix from an LU decomposition. |
+| `inverse()` | Calculates the inverse of the `NGrid` matrix. |
+| `static inverse(LUP)`| Calculates the inverse from a given `LUresult` struct. |
+| `is_invertible()`| Checks if the `NGrid` matrix is invertible. |
+| `static is_invertible(U)` | Checks if a given matrix `U` is invertible. |
+| `rref(augment)` | Calculates the reduced row echelon form of the matrix. |
+| `determinant()`| Calculates the determinant of the matrix. |
+| `rank()` | Returns the rank of the matrix. |
+| `static rank(U)` | Returns the rank of a given matrix `U`. |
+| `static rank(LUP)` | Returns the rank from a given `LUresult` struct. |
+| `diagonal()` | Returns a 1D `NGrid` containing the diagonal elements. |
+
+---
+
+### 📊 Statistics
+Methods for statistical analysis.
+
+| **Method**| **Description**|
+| :--- | :--- |
+| `regression(other, sample, degree)`| Performs a linear or polynomial regression of this `NGrid` against `other`. |
+| `Dickey_Fuller()`| Performs the Dickey-Fuller test for stationarity. |
+| `Engle_Granger(other)` | Performs the Engle-Granger test for cointegration. |
+| `covariance(other)`| Calculates the covariance between this `NGrid` and another. |
+
+---
+
 ### 🎁 Miscellaneous
 Utility and configuration methods.
 
@@ -272,6 +392,8 @@ Utility and configuration methods.
 | :--- | :--- |
 | `print(...)` | Prints a formatted representation of the grid to the console. |
 | `set_workgroup_size_1d(size)` | Sets the default Vulkan workgroup size for 1D dispatches. |
-| `set_workgroup_size_2d(size)` | Sets the default Vulkan workgroup size (x & y) for 2D dispatches. |
-| `set_fence_timeout_nanosec(timeout)`| Sets the GPU synchronization fence timeout in nanoseconds. |
-| `flat_index(multi_index)`| Returns the flat index representation of a multidimensional index (row-major).|
+| `set_workgroup_size_2d(size)` | Sets the default Vulkan workgroup size for 2D dispatches. |
+| `get_tasks_finished_semaphore_counter()` | Returns the value of the semaphore counter. |
+| `set_tasks_finished_semaphore_counter(value)`| Sets the value of the semaphore counter. |
+| `operator CGrid()`| Explicit type conversion to `CGrid`. |
+| `flat_index(multi_index)` | Returns the 1D flat index from a multidimensional index. |

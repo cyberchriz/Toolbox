@@ -15,8 +15,7 @@ layout(set = 0, binding = 1) buffer l_imag_buffer { float L_imag[]; }; // Imagin
 layout(set = 0, binding = 2) buffer u_real_buffer { float U_real[]; }; // Real part of Upper triangular matrix U
 layout(set = 0, binding = 3) buffer u_imag_buffer { float U_imag[]; }; // Imaginary part of Upper triangular matrix U
 layout(set = 0, binding = 4) buffer p_buffer      { float P[]; };      // Permutation matrix P
-layout(set = 0, binding = 5) buffer swap_row_buffer { uint swap_row[]; }; // (not used here)
-layout(set = 0, binding = 6) buffer swap_count_buffer { uint swap_count[]; }; // (not used here)
+layout(set = 0, binding = 5) buffer swap_data_buffer {float swap_data[];};  // element 0 stores the row to swap for the current row 'k', element 1 stores the number of swaps performed
 
 // --- Push Constants ---
 layout(push_constant) uniform push_constants {

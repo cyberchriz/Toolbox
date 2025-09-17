@@ -17,6 +17,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #ifdef _MEMLOG
 #include <unordered_map>
@@ -62,6 +63,7 @@ public:
 		void stop();
 		void restart();
 		double elapsed_sec();
+		static void sleep(int64_t nanosec, LogLevel level = LEVEL_DEBUG);
 	private:
 		LogLevel log_level;
 		std::chrono::high_resolution_clock::time_point begin, end;
@@ -280,6 +282,11 @@ void Log::Timer::stop() {
 void Log::Timer::restart() {
 	begin = std::chrono::high_resolution_clock::now();
 	stopped = false;
+}
+
+void Log::Timer::sleep(int64_t nanosec, LogLevel level) {
+	Log::log(level, "'sleeping' for ", nanosec, " nanosec");
+	std::this_thread::sleep_for(std::chrono::nanoseconds(nanosec));
 }
 
 // destructor

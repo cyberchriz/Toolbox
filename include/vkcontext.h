@@ -8,6 +8,7 @@
 
 // include headers
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -408,7 +409,7 @@ public:
 	Device() = delete;
 
 	// parametric constructor
-	Device(const Instance& instance, const VkPhysicalDeviceFeatures& enabled_features = {}, const std::vector<const char*>& enabled_extension_names = {}, uint32_t id = 0) {
+	Device(const Instance& instance, const VkPhysicalDeviceFeatures& enabled_features = {}, const std::vector<const char*>& enabled_extension_names = {}, uint32_t preferred_id = 0) : id(preferred_id) {
 		// confirm valid instance
 		if (instance.get() == nullptr) {
 			Log::error("Device constructor called with invalid instance parameter: create a valid object of the Instance() class first!");
@@ -429,26 +430,26 @@ public:
 		vkEnumeratePhysicalDevices(instance.get(), &num_devices, devices.data());
 
 		// default: select first available device (at index 0)
-		uint32_t selected_index = 0;
-		physical = devices[selected_index];
-		uint32_t selected_id = 0;
+		this->index = 0;
+		physical = devices[this->index];
+
 		Log::info("available physical devices with Vulkan support:");
 
 		for (uint32_t i = 0; i < num_devices; i++) {
 			vkGetPhysicalDeviceProperties(devices[i], &properties);
-			if (i == selected_index) {
-				selected_id = properties.deviceID;
+			if (i == this->index) {
+				this->id = properties.deviceID;
 			}
 			Log::info("(", i, ") ", properties.deviceName, ", deviceID ", properties.deviceID, ", vendorID ", properties.vendorID,
 				", type ", properties.deviceType, ", API version ", properties.apiVersion, ", driver version ", properties.driverVersion);
 			// chose specific device (instead of default index 0) if passed id matches
 			if (id == properties.deviceID) {
 				physical = devices[i];
-				selected_id = properties.deviceID;
-				selected_index = i;
+				this->id = properties.deviceID;
+				this->index = i;
 			}
 		}
-		Log::info("Selected physical device ", selected_index, " with ID ", selected_id);
+		Log::info("Selected physical device ", this->index, " with ID ", this->id);
 
 		// store properties for selected device
 		vkGetPhysicalDeviceProperties(physical, &properties);
@@ -678,6 +679,8 @@ public:
 	const VkPhysicalDeviceProperties2& get_properties2() const { return properties2; }
 	const std::vector<const char*>& get_extensions() const { return extensions; }
 	const std::vector<const char*>& get_device_extension_names() const { return device_extension_names; }
+	const uint32_t get_index() const { return this->index; }
+	const uint32_t get_id() const { return this->id; }
 
 	const VkPhysicalDeviceMemoryProperties& get_memory_properties() {
 		static bool properties_queried = false;
@@ -734,6 +737,8 @@ protected:
 
 	VkPhysicalDevice physical = nullptr;
 	VkDevice logical = nullptr;
+	uint32_t index = 0;
+	uint32_t id = 0;
 	VkQueue graphics_queue = nullptr;
 	VkQueue compute_queue = nullptr;
 	VkQueue transfer_queue = nullptr;
@@ -1489,43 +1494,45 @@ public:
 	}
 
 	// query fence status
-	bool signaled() const {
+	bool signaled(std::string caller_function = "UNKNOWN") const {
 		VkResult result = vkGetFenceStatus(logical, fence);
 		if (result == VK_SUCCESS) {
+			Log::debug("The fence with Vulkan handle ", fence, " has reached the signaled state.");
 			return true; // Fence is signaled
 		}
 		else if (result == VK_NOT_READY) {
-			Log::debug("in method Fence::signaled(): fence not signaled");
+			Log::debug("in method Fence::signaled() for calling function ", caller_function, ": fence (handle: ", fence, " is unsignaled or not ready");
 			return false; // Fence is not signaled
 		}
 		else if (result == VK_ERROR_DEVICE_LOST) {
-			Log::error("in method Fence::signaled(): device lost!");
+			Log::error("in method Fence::signaled() for calling function ", caller_function, ": device lost! Fence handle: ", fence);
 		}
 		else {
-			Log::warning("in method Fence::signaled(): unknown error (VkResult=", result, ", ", vkresult_to_string(result), ")");
+			Log::warning("in method Fence::signaled() for calling function ", caller_function, ": unknown error(VkResult = ", result, ", ", vkresult_to_string(result), "); Fence handle: ", fence);
 		}
 		return false; // Fence is not signaled or an error occurred
 	}
 
 	// reset the fence to unsignaled state
-	VkResult reset() const {
+	VkResult reset(std::string caller_function = "UNKNOWN") const {
+		Log::debug("Fence::reset(): resetting fence (handle: ", fence, ") for calling function ", caller_function);
 		return vkResetFences(logical, 1, &fence);
 	}
 
 	// wait for the fence to be signaled
-	VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) const {
+	VkResult wait(std::string caller_function = "UNKNOWN", uint64_t timeout_nanosec = UINT64_MAX) const {
 		VkResult result = vkWaitForFences(logical, 1, &fence, VK_TRUE, timeout_nanosec);
 		if (result == VK_SUCCESS) {
 			return result; // Fence is signaled
 		}
 		else if (result == VK_TIMEOUT) {
-			Log::warning("in method Fence::wait(): wait for fence has timed out!");
+			Log::warning("in method Fence::wait(): wait for fence (fence handle: ", fence, ", caller function : ", caller_function, ") has timed out!");
 		}
 		else if (result == VK_ERROR_DEVICE_LOST) {
-			Log::error("in method Fence::wait(): device lost!");
+			Log::error("in method Fence::wait(): device lost! (fence handle: ", fence, ", caller function : ", caller_function, ")");
 		}
 		else {
-			Log::warning("in method Fence::wait(): unknown error (VkResult=", result, ", ", vkresult_to_string(result), ")");
+			Log::warning("in method Fence::wait(): unknown error (fence handle: ", fence, ", caller function : ", caller_function, ", VkResult = ", result, ", ", vkresult_to_string(result), ")");
 		}
 		return result;
 	}
@@ -1543,7 +1550,10 @@ public:
 	Semaphore() = delete;
 
 	// constructor for a binary semaphore
-	explicit Semaphore(const Device& device, VkPipelineStageFlagBits dst_stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT) : logical(device.get_logical()), dst_stage_mask(dst_stage_mask) {
+	explicit Semaphore(const Device& device, VkPipelineStageFlagBits2 wait_dst_stage_mask, VkPipelineStageFlagBits2 signal_dst_stage_mask) :
+		logical(device.get_logical()),
+		wait_dst_stage_mask(wait_dst_stage_mask),
+		signal_dst_stage_mask(signal_dst_stage_mask) {
 
 		this->type = VK_SEMAPHORE_TYPE_BINARY;
 
@@ -1559,7 +1569,10 @@ public:
 	}
 
 	// Constructor for a timeline semaphore
-	Semaphore(const Device& device, uint64_t initial_value, VkPipelineStageFlagBits dst_stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT) : logical(device.get_logical()), dst_stage_mask(dst_stage_mask) {
+	Semaphore(const Device& device, uint64_t initial_value, VkPipelineStageFlagBits2 wait_dst_stage_mask, VkPipelineStageFlagBits2 signal_dst_stage_mask) :
+		logical(device.get_logical()),
+		wait_dst_stage_mask(wait_dst_stage_mask),
+		signal_dst_stage_mask(signal_dst_stage_mask) {
 
 		this->type = VK_SEMAPHORE_TYPE_TIMELINE;
 
@@ -1575,7 +1588,7 @@ public:
 
 		VkResult result = vkCreateSemaphore(device.get_logical(), &create_info, nullptr, &semaphore);
 		if (result != VK_SUCCESS) {
-			Log::warning("Semaphore constructor (for binary semaphore) has failed with VkResult = ", result, ", ", vkresult_to_string(result));
+			Log::warning("Semaphore constructor (for timeline semaphore) has failed with VkResult = ", result, ", ", vkresult_to_string(result));
 		}
 	}
 
@@ -1606,23 +1619,59 @@ public:
 	Semaphore(const Semaphore&) = delete;
 	Semaphore& operator=(const Semaphore&) = delete;
 
-	// wait for the semaphore to be signaled
+	// wait for a timeline semaphore to reach the counter value as currently stored in the counter member variable (CPU call)
 	// note: use with caution! this is a blocking CPU call and defeats the purpose of semaphores (=GPU/GPU synchronization) in most scenarios!
-	// better approach: use wait semaphore on queue submit
-	VkResult wait(uint64_t timeout_nanosec = UINT64_MAX) {
+	// better approach: use wait semaphore on queue submit;
+	// this method may still be useful when e.g. the semaphore is expected to already have signaled and to confirm before releasing resources
+	VkResult wait(uint64_t timeout_nanosec) {
+		if (this->type != VK_SEMAPHORE_TYPE_TIMELINE) {
+			Log::warning("Semaphore::wait() should only be used with timeline semaphores");
+			return VK_ERROR_UNKNOWN;
+		}
 		VkSemaphoreWaitInfo wait_info = {};
 		wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
 		wait_info.pNext = NULL;
 		wait_info.flags = VK_SEMAPHORE_WAIT_ANY_BIT;
 		wait_info.semaphoreCount = 1;
 		wait_info.pSemaphores = &semaphore;
-		return vkWaitSemaphores(logical, &wait_info, timeout_nanosec);
+		uint64_t wait_value = this->get_counter_var();
+		wait_info.pValues = &wait_value;
+		VkResult result = vkWaitSemaphores(logical, &wait_info, timeout_nanosec);
+		if (result != VK_SUCCESS) {
+			Log::warning("in method Semaphore::wait(): the semaphore (", semaphore, ") has not signaled within the requested max waiting period of ",
+				timeout_nanosec, " nano-seconds; VkResult = ", result, "(", vkresult_to_string(result), ")");
+		}
+		return result;
+	}
+
+	// wait for a timeline semaphore to reach a specific counter value (CPU call)
+	// note: use with caution! this is a blocking CPU call and defeats the purpose of semaphores (=GPU/GPU synchronization) in most scenarios!
+	// better approach: use wait semaphore on queue submit;
+	// this method may still be useful when e.g. the semaphore is expected to already have signaled and to confirm before releasing resources
+	VkResult wait(uint64_t wait_value, uint64_t timeout_nanosec) {
+		if (this->type != VK_SEMAPHORE_TYPE_TIMELINE) {
+			Log::warning("Semaphore::wait() should only be used with timeline semaphores");
+			return VK_ERROR_UNKNOWN;
+		}
+		VkSemaphoreWaitInfo wait_info = {};
+		wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+		wait_info.pNext = NULL;
+		wait_info.flags = VK_SEMAPHORE_WAIT_ANY_BIT;
+		wait_info.semaphoreCount = 1;
+		wait_info.pSemaphores = &semaphore;
+		wait_info.pValues = &wait_value;
+		VkResult result = vkWaitSemaphores(logical, &wait_info, timeout_nanosec);
+		if (result != VK_SUCCESS) {
+			Log::warning("in method Semaphore::wait(): the semaphore (", semaphore, ") has not signaled within the requested max waiting period of ",
+				timeout_nanosec, " nano-seconds; VkResult = ", result, "(", vkresult_to_string(result), ")");
+		}
+		return result;
 	}
 
 	// query a timeline semaphore counter value (CPU call)
-	uint64_t counter() const {
+	uint64_t get_counter() const {
 		if (this->type != VK_SEMAPHORE_TYPE_TIMELINE) {
-			Log::warning("method Semaphore::counter() should only be used with timeline semaphores!");
+			Log::warning("method Semaphore::get_counter() should only be used with timeline semaphores!");
 			return UINT64_MAX;
 		}
 		uint64_t value;
@@ -1630,9 +1679,9 @@ public:
 		return value;
 	}
 
-	// query the current value of the counter member variable
-	uint64_t counter_var() const {
-		return counter_value;
+	// query the current value of the counter (member variable)
+	uint64_t get_counter_var() const {
+		return counter_value.load(std::memory_order_relaxed);
 	}
 
 	// signal a timeline semaphore with a specified value (CPU call)
@@ -1659,41 +1708,45 @@ public:
 		signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
 		signal_info.pNext = NULL;
 		signal_info.semaphore = semaphore;
-		signal_info.value = counter_value;
+		signal_info.value = counter_value.load();
 		vkSignalSemaphore(logical, &signal_info);
 	}
 
 	// setters
+
+	// increment counter (member variable (atomic))
 	uint64_t increment_counter() {
 		if (this->type != VK_SEMAPHORE_TYPE_TIMELINE) {
 			Log::warning("method Semaphore::increment_counter() should only be used with timeline semaphores!");
 			return UINT64_MAX;
 		}
-		counter_value++;
-		return counter_value;
+		// atomic increment by 1; return new value after increment
+		return counter_value.fetch_add(1, std::memory_order_acq_rel) + 1;
 	}
 
-	// set counter member variable to a specific value
-	void set_counter(uint64_t value) {
+	// set counter member variable atomically to a specific value
+	void set_counter_var(uint64_t value) {
 		if (this->type != VK_SEMAPHORE_TYPE_TIMELINE) {
 			Log::warning("method Semaphore::set_counter() should only be used with timeline semaphores!");
 			return;
 		}
-		counter_value = value;
+		counter_value.store(value, std::memory_order_relaxed);
 	}
 
 	// getters
 	VkSemaphore get() const { return semaphore; }
 	VkSemaphoreType get_type() const { return type; }
 	const VkSemaphore* get_ptr() const { return &semaphore; }
-	VkPipelineStageFlags get_dst_stage_mask() const { return static_cast<VkPipelineStageFlags>(dst_stage_mask); }
+	VkPipelineStageFlags2 get_wait_dst_stage_mask() const { return static_cast<VkPipelineStageFlags2>(wait_dst_stage_mask); }
+	VkPipelineStageFlags2 get_signal_dst_stage_mask() const { return static_cast<VkPipelineStageFlags2>(signal_dst_stage_mask); }
 
 private:
 	VkSemaphore semaphore = VK_NULL_HANDLE;
 	VkSemaphoreType type;
 	VkDevice logical = VK_NULL_HANDLE;
-	VkPipelineStageFlagBits dst_stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT; // default value
-	uint64_t counter_value = 0; // only used for timeline semaphores
+	VkPipelineStageFlagBits2 wait_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT; // default value
+	VkPipelineStageFlagBits2 signal_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT; // default value
+	std::atomic<uint64_t> counter_value{ 0 }; // only used for timeline semaphores
 };
 
 // events are used for synchronization between the CPU and GPU
@@ -2199,7 +2252,7 @@ public:
 			}
 		}
 		if (type_index == UINT32_MAX) {
-			Log::warning("in Buffer::Buffer() constructor:: no suitable memory type found");
+			Log::error("in Buffer::Buffer() constructor:: no suitable memory type found. Aborting.");
 		}
 
 		// allocate memory
@@ -2304,6 +2357,7 @@ public:
 			Log::debug("in Buffer<T>::write(): requested copy region has size ", vector_size_bytes, " bytes, i.e.nothing to copy");
 			return;
 		}
+		Log::debug("writing from a vector<T> to buffer ", buffer, " (memory: ", memory, "), ", vector_elements, " vector elements (", vector_size_bytes, " bytes, with ", source_offset_elements, " elements offset in source and ", target_offset_elements, " elements offset in target");
 		void* data;
 		vkMapMemory(logical, memory, target_offset_bytes, vector_size_bytes, VkMemoryMapFlags(0), &data);
 		memcpy(data, source_vector.data() + source_offset_elements, vector_size_bytes);
@@ -2346,6 +2400,7 @@ public:
 			Log::debug("in Buffer<T>::write(): requested copy region has size ", list_size_bytes, " bytes, i.e.nothing to copy");
 			return;
 		}
+		Log::debug("writing from a std::initializer_list<T> to buffer ", buffer, " (memory: ", memory, "), ", list.size(), " list elements (", list_size_bytes, " bytes, with ", target_offset_elements, " elements offset in target");
 		void* data;
 		vkMapMemory(logical, memory, target_offset_bytes, list_size_bytes, VkMemoryMapFlags(0), &data);
 		memcpy(data, list.begin(), list_size_bytes);
@@ -2387,7 +2442,7 @@ public:
 	}
 
 
-	// flush host writes to host memory demain
+	// flush host writes to host memory domain
 	// this is only necessary if the memory allocation doesn't have the flag VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	// (can be made available to the device memory domain by using a pipeline barrier with the VK_ACCESS_HOST_WRITE_BIT access type flag)
 	void flush(uint64_t offset = 0, uint64_t size = VK_WHOLE_SIZE) {
@@ -2414,7 +2469,7 @@ public:
 		vkUnmapMemory(logical, this->memory);
 	}
 
-	// returns a continous data sequence from a host visible data buffer as a std::vector<T>
+	// returns a continuous data sequence from a host visible data buffer as a std::vector<T>
 	// (set read_elements to 0 to read all)
 	std::vector<T> read(uint32_t read_elements = 0, uint32_t source_offset_elements = 0) {
 		if (!is_host_visible) {
@@ -2449,7 +2504,7 @@ public:
 	// returns a single element from a host visible data buffer
 	T read_element(uint32_t element_index) const {
 		if (!is_host_visible) {
-			Log::error("Buffer::get(uint32_t element_index) called on non-host-visible buffer");
+			Log::error("Buffer::read_element(uint32_t element_index) called on non-host-visible buffer");
 		}
 		if (element_index >= this->elements) {
 			Log::error("in method Buffer::get(): element index ", element_index, " is out of bounds (allowed indices: 0-", this->elements - 1, ")");
@@ -2513,6 +2568,7 @@ public:
 	VkDeviceMemory get_memory() const { return memory; }
 	VkBuffer get() const { return buffer; }
 	VkMemoryPropertyFlags get_memory_property_flags() const { return memory_property_flags; }
+	bool host_visible() const { return is_host_visible; }
 
 	// destructor
 	~Buffer() {
@@ -4137,6 +4193,7 @@ public:
 		device_memory_barriers(std::exchange(other.device_memory_barriers, {})),
 		buffer_memory_barriers(std::exchange(other.buffer_memory_barriers, {})),
 		image_memory_barriers(std::exchange(other.image_memory_barriers, {})) {
+		Log::debug("command buffer moved from other(", &other, ") to this (", this, ")");
 	}
 
 	// move assignment
@@ -4152,6 +4209,7 @@ public:
 			buffer_memory_barriers = std::exchange(other.buffer_memory_barriers, {});
 
 		}
+		Log::debug("command buffer moved from other(", &other, ") to this (", this, ")");
 		return *this;
 	}
 
@@ -4185,14 +4243,17 @@ public:
 		event.get_dependency_info_ptr()->imageMemoryBarrierCount = image_memory_barriers.has_value() ? static_cast<uint32_t>(image_memory_barriers.value().size()) : 0;
 		event.get_dependency_info_ptr()->pImageMemoryBarriers = image_memory_barriers.has_value() ? image_memory_barriers.value().data() : nullptr;
 		vkCmdSetEvent2(this->buffer, event.get(), &event.get_dependency_info());
+		Log::debug("command buffer: recording event ", event.get());
 		return event;
 	}
 
 	void reset_event(const Event& event, VkPipelineStageFlags stage_mask) const {
+		Log::debug("command buffer", buffer, ": recording reset for event ", event.get());
 		vkCmdResetEvent(buffer, event.get(), stage_mask);
 	}
 
 	void wait_event(const Event& event) const {
+		Log::debug("command buffer", buffer, ": recording waiting for event ", event.get());
 		vkCmdWaitEvents2(buffer, 1, &event.get(), &event.get_dependency_info());
 	}
 
@@ -4201,28 +4262,30 @@ public:
 			Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support graphics (queue family mismatch)");
 		}
 		if (pipeline.get() != nullptr) {
+			Log::debug("command buffer ", buffer, ": recording pipeline binding for graphics pipeline ", pipeline.get());
 			vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.get());
 		}
 		else {
-			Log::error("CommandBuffer::bind_pipeline() has invalid pipeline argument");
+			Log::error("CommandBuffer::bind_pipeline() on command buffer ", buffer, " has invalid pipeline argument");
 		}
 	}
 
 	void bind_pipeline(ComputePipeline& pipeline) {
 		if (usage != QueueFamily::COMPUTE_QUEUE) {
-			Log::error("invalid usage of CommandBuffer::bind_pipeline(): this command buffer doesn't support compute (queue family mismatch)");
+			Log::error("invalid usage of CommandBuffer::bind_pipeline() on command buffer ", buffer, ": this command buffer doesn't support compute (queue family mismatch)");
 		}
 		if (pipeline.get() != nullptr) {
-			Log::debug("binding pipeline ", pipeline.get(), " to compute bindpoint type at command buffer ", buffer);
+			Log::debug("command buffer ", buffer, ": recording pipeline binding to compute bindpoint type");
 			vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.get());
 		}
 		else {
-			Log::error("CommandBuffer::bind_pipeline() has invalid pipeline argument");
+			Log::error("CommandBuffer::bind_pipeline() on command buffer ", buffer, "has invalid pipeline argument");
 		}
 	}
 
 	// bind pipeline push constants to command buffer
 	void bind_push_constants(PushConstants& constants, ComputePipeline& pipeline) const {
+		Log::debug("recording push constants binding on command buffer ", buffer);
 		vkCmdPushConstants(
 			buffer,
 			pipeline.get_layout(),
@@ -4235,25 +4298,33 @@ public:
 
 	// bind descriptor set to command buffer
 	void bind_descriptor_set(DescriptorSet& set, ComputePipeline& pipeline) const {
+		Log::debug("recording descriptor set (set: ", set.get(), ", compute pipeline: ", pipeline.get(), ") on command buffer ", buffer);
 		VkDescriptorSet set_handle = set.get();
 		vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.get_layout(), 0, 1, &set_handle, 0, nullptr);
 	}
 
 	// bind descriptor set to command buffer
 	void bind_descriptor_set(DescriptorSet& set, GraphicsPipeline& pipeline) {
+		Log::debug("recording descriptor set (set: ", set.get(), ", graphics pipeline: ", pipeline.get(), ") on command buffer ", buffer);
 		VkDescriptorSet set_handle = set.get();
 		vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.get_layout(), 0, 1, &set_handle, 0, nullptr);
 	}
 
-	// Add or update this method in CommandBuffer to match the usage in NGrid::create
+	// copy data between two buffers;
+	// this method has automatic boundary checks and shrinks the copy region to fit if the size_bytes argument is too large
 	template<typename T>
 	void copy_buffer(const Buffer<T>& src_buffer, Buffer<T>& dst_buffer, uint64_t size_bytes = UINT64_MAX, uint64_t src_offset_bytes = 0, uint64_t dst_offset_bytes = 0) {
-		if (size_bytes == 0) return;
+		// fit to boundaries
 		VkBufferCopy copy_region = {};
 		copy_region.srcOffset = src_offset_bytes;
 		copy_region.dstOffset = dst_offset_bytes;
-		copy_region.size = std::min(size_bytes, src_buffer.get_size_bytes() - src_offset_bytes); // shrink copy region to fit if the boundaries of the source buffer are exceeded
-		copy_region.size = std::min(copy_region.size, dst_buffer.get_size_bytes() - dst_offset_bytes); // shrink copy region to fit if the boundaries of the destination buffer are exceeded
+		copy_region.size = size_bytes;
+		uint64_t source_size = src_buffer.get_size_bytes();
+		copy_region.size = std::min(copy_region.size, source_size - src_offset_bytes);
+		uint64_t target_size = dst_buffer.get_size_bytes();
+		copy_region.size = std::min(copy_region.size, target_size - dst_offset_bytes);
+		if (copy_region.size == 0) return; // nothing to copy
+		Log::debug("command buffer ", buffer, ": recording buffer copy (", copy_region.size, " bytes) from buffer ", src_buffer.get(), " (source offset: ", src_offset_bytes, " bytes) to ", dst_buffer.get(), " (target offset: ", dst_offset_bytes, " bytes)");
 		vkCmdCopyBuffer(buffer, src_buffer.get(), dst_buffer.get(), 1, &copy_region);
 	}
 
@@ -4271,6 +4342,7 @@ public:
 		device_barrier.dstStageMask = target_stage_flags;
 		device_barrier.dstAccessMask = target_access_flags;
 
+		Log::debug("command buffer ", this->buffer, ": adding device memory barrier");
 		device_memory_barriers.push_back(device_barrier);
 	}
 
@@ -4297,6 +4369,7 @@ public:
 		buffer_barrier.offset = 0;
 		buffer_barrier.size = VK_WHOLE_SIZE;
 
+		Log::debug("command buffer ", this->buffer, ": adding buffer memory barrier for buffer ", buffer.get());
 		buffer_memory_barriers.push_back(buffer_barrier);
 	}
 
@@ -4326,6 +4399,7 @@ public:
 		image_barrier.image = image;
 		image_barrier.subresourceRange = subresource_range;
 
+		Log::debug("command buffer ", this->buffer, ": adding image memory barrier");
 		image_memory_barriers.push_back(image_barrier);
 	}
 
@@ -4340,6 +4414,7 @@ public:
 		dependency_info.imageMemoryBarrierCount = image_memory_barriers.size();
 		dependency_info.pImageMemoryBarriers = image_memory_barriers.data();
 
+		Log::debug("command buffer ", buffer, ": recording barriers");
 		vkCmdPipelineBarrier2(buffer, &dependency_info);
 
 		device_memory_barriers.clear();
@@ -4406,6 +4481,10 @@ public:
 		const uint32_t workgroups_x = (global_size_x + pipeline.get_workgroup_size_x() - 1) / pipeline.get_workgroup_size_x();
 		const uint32_t workgroups_y = (global_size_y + pipeline.get_workgroup_size_y() - 1) / pipeline.get_workgroup_size_y();
 		const uint32_t workgroups_z = (global_size_z + pipeline.get_workgroup_size_z() - 1) / pipeline.get_workgroup_size_z();
+		Log::debug("command buffer ", buffer, ": recording dispatch for compute; ",
+			"workgroups_x=", workgroups_x, "(*", pipeline.get_workgroup_size_x(), " elements), ",
+			"workgroups_y=", workgroups_y, "(*", pipeline.get_workgroup_size_y(), " elements), ",
+			"workgroups_z=", workgroups_z, "(*", pipeline.get_workgroup_size_z(), " elements)");
 		vkCmdDispatch(buffer, workgroups_x, workgroups_y, workgroups_z);
 	}
 
@@ -4479,6 +4558,9 @@ public:
 			default: Log::warning("in CommandBuffer::end_recording(): VK_ERROR_UNKNOWN");
 			}
 		}
+		else {
+			Log::debug("ended command buffer recording state (command buffer is now executable)");
+		}
 	}
 
 	VkResult reset(VkCommandBufferResetFlags flags = VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT) {
@@ -4520,7 +4602,6 @@ public:
 	// constructor
 	ComputeTask() = delete;
 	ComputeTask(Device& device, CommandPool& command_pool, DescriptorPool& descriptor_pool, std::string calling_function = "UNKNOWN") : device(&device), command_pool(&command_pool), descriptor_pool(&descriptor_pool), calling_function(calling_function) {
-		fence = std::make_unique<Fence>(device, false);
 		num_created++;
 	}
 
@@ -4554,6 +4635,8 @@ public:
 		BufferUsage usage = BufferUsage::STORAGE_BUFFER,
 		VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
 
+		Log::debug("ComputeTask::add_temp_buffer(): creating temporary buffer (owned by task ", this, ") of type ", typeid(T).name(), " with ", elements, " elements(", elements * sizeof(T), " bytes) for calling function ", calling_function);
+
 		if constexpr (std::is_same_v<T, float_t>) {
 			temp_float_buffers.push_back(std::make_unique<Buffer<float>>(*device, usage, elements, memory_property_flags));
 			return *temp_float_buffers.back();
@@ -4571,7 +4654,7 @@ public:
 			return *temp_int_buffers.back();
 		}
 		else {
-			Log::warning("Method ComputeTask::add_temp_buffer() has been called with invalid type argument. Allowed are: float_t, double_t, uint32_t, int32_t");
+			Log::warning("Method ComputeTask::add_temp_buffer() for task ", this, " has been called with invalid type argument.Allowed are : float_t, double_t, uint32_t, int32_t");
 			static Buffer<T> dummy_buffer(nullptr, BufferUsage::STORAGE_BUFFER, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 			return dummy_buffer;
 		}
@@ -4584,8 +4667,9 @@ public:
 	// if you need multiple layouts, please create them externally and provide them to the task using ComputeTask::add_descriptor_set(DescriptorSetLayout&);
 	// also keep in mind that a descriptor set layout owned by the task is no longer valid beyond the lifetime of the task!
 	DescriptorSetLayout& add_descriptor_set_layout() {
+		Log::debug("ComputeTask::add_descriptor_set_layout(): creating descriptor set layout (owned by task ", this, ") for calling function ", calling_function);
 		if (this->set_layout != nullptr) {
-			Log::warning("in method ComputeTask::add_descriptor_set_layout(): a single compute task is designed to own only one descriptor set layout; this compute task already has a descriptor set layout, therefore the previous layout will be replaced!");
+			Log::warning("in method ComputeTask::add_descriptor_set_layout(): a single compute task is designed to own only one descriptor set layout; this compute task (", this, ") already has a descriptor set layout, therefore the previous layout will be replaced!");
 			this->set_layout.reset();
 		}
 		this->set_layout = std::make_unique<DescriptorSetLayout>(*this->device);
@@ -4594,12 +4678,13 @@ public:
 
 	// add a descriptor set for the set layout owned by this compute task
 	DescriptorSet& add_descriptor_set() {
+		Log::debug("ComputeTask::add_descriptor_set(): creating descriptor set (owned by task ", this, ") for calling function ", calling_function);
 		if (this->set_layout == nullptr) {
-			Log::warning("method ComputeTask::add_descriptor_set() has failed: please provide a referenced descriptor set layout as function argument or define a descriptor set layout owned by this task first (using ComputeTask::add_descriptor_set_layout())");
+			Log::warning("method ComputeTask::add_descriptor_set() for task ", this, " has failed : please provide a referenced descriptor set layout as function argument or define a descriptor set layout owned by this task first(using ComputeTask::add_descriptor_set_layout())");
 		}
 		else {
 			if (this->set != nullptr) {
-				Log::warning("in method ComputeTask::add_descriptor_set(): a single compute task is designed to own only one descriptor set; this compute task already has a descriptor set, therefore the previous set will be replaced!");
+				Log::warning("in method ComputeTask::add_descriptor_set(): a single compute task is designed to own only one descriptor set; this compute task (", this, ") already has a descriptor set, therefore the previous set will be replaced!");
 				VkDescriptorSet set_handle = this->set->get();
 				this->descriptor_pool->release_set(set_handle);
 				this->set.reset();
@@ -4611,9 +4696,10 @@ public:
 
 	// add a descriptor set for the referenced (=externally owned) set layout
 	DescriptorSet& add_descriptor_set(DescriptorSetLayout& descriptor_set_layout) {
+		Log::debug("ComputeTask::add_descriptor_set(): creating descriptor set (owned by task ", this, ") for calling function ", calling_function);
 		// delete old descriptor set, if any
 		if (set != nullptr) {
-			Log::warning("in method ComputeTask::add_descriptor_set(): a single compute task is designed to own only one descriptor set; this compute task already has a descriptor set, therefore the previous set will be replaced!");
+			Log::warning("in method ComputeTask::add_descriptor_set(): a single compute task is designed to own only one descriptor set; this compute task (", this, ") already has a descriptor set, therefore the previous set will be replaced!");
 			VkDescriptorSet set_handle = this->set->get();
 			this->descriptor_pool->release_set(set_handle);
 			this->set.reset();
@@ -4624,6 +4710,7 @@ public:
 
 	// add a compute shader module from SPIR-V binary data and returns its ID within this task
 	uint32_t add_shader(const unsigned char* compute_shader_spirv_bin, size_t compute_shader_spirv_bytes) {
+		Log::debug("ComputeTask::add_shader(): creating shader module (owned by task ", this, ") for calling function ", calling_function);
 		uint32_t shader_id = static_cast<uint32_t>(shaders.size());
 		shaders.push_back(std::make_unique<ShaderModule>(*device, compute_shader_spirv_bin, compute_shader_spirv_bytes));
 		return shader_id;
@@ -4635,6 +4722,7 @@ public:
 	}
 
 	ComputePipeline& add_pipeline(uint32_t shader_id, uint32_t push_constants_range_size, DescriptorSetLayout& set_layout, uint32_t workgroup_size_x, uint32_t workgroup_size_y = 1, uint32_t workgroup_size_z = 1, std::vector<uint32_t> addon_specialization_constants = {}) {
+		Log::debug("ComputeTask::add_pipeline(): creating compute pipeline (owned by task ", this, ") for calling function ", calling_function);
 		uint32_t pipeline_id = static_cast<uint32_t>(pipelines.size());
 		pipelines.push_back(std::make_unique<ComputePipeline>(*device, *shaders[shader_id], push_constants_range_size, set_layout, workgroup_size_x, workgroup_size_y, workgroup_size_z, addon_specialization_constants));
 		return *pipelines[pipeline_id];
@@ -4653,20 +4741,24 @@ public:
 
 	ComputePipeline& add_pipeline(uint32_t shader_id, uint32_t workgroup_size_x, uint32_t workgroup_size_y = 1, uint32_t workgroup_size_z = 1, std::vector<uint32_t> addon_specialization_constants = {}) {
 		if (this->set_layout == nullptr) {
-			Log::error("invalid call of ComputeTask::add_pipeline(): either a descriptor set layout must have been added to the task or provided as function argument");
+			Log::error("invalid call of ComputeTask::add_pipeline(): either a descriptor set layout must have been added to the task (", this, ") or provided as function argument");
 		}
 		return this->add_pipeline(shader_id, this->constants->get_size(), *this->set_layout, workgroup_size_x, workgroup_size_y, workgroup_size_z, addon_specialization_constants);
 	}
 
-	// creates and adds a temporary timeline semaphore owned by this task
-	Semaphore& add_temp_timeline_semaphore(uint64_t initial_value = 0) {
-		temp_semaphores.push_back(std::make_unique<Semaphore>(*device, initial_value, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT));
+	// creates and adds a temporary timeline semaphore owned by this task;
+	// this resource can then be used as a wait or signal semaphore
+	Semaphore& add_temp_timeline_semaphore(uint64_t initial_value = 0, VkPipelineStageFlagBits2 wait_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VkPipelineStageFlagBits2 signal_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT) {
+		temp_semaphores.push_back(std::make_unique<Semaphore>(*device, initial_value, wait_dst_stage_mask, signal_dst_stage_mask));
+		Log::debug("ComputeTask::add_temp_timeline_semaphore(): new timeline semaphore (owned by task ", this, ") created at memory location ", temp_semaphores.back(), " for calling function ", calling_function, "; initial value = ");
 		return *temp_semaphores.back();
 	}
 
-	// creates and adds a temporary binary semaphore owned by this task
-	Semaphore& add_temp_binary_semaphore() {
-		temp_semaphores.push_back(std::make_unique<Semaphore>(*device, VK_SEMAPHORE_TYPE_TIMELINE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT));
+	// creates and adds a temporary binary semaphore owned by this task;
+	// this resource can then be used as a wait or signal semaphore
+	Semaphore& add_temp_binary_semaphore(VkPipelineStageFlagBits2 wait_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VkPipelineStageFlagBits2 signal_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT) {
+		temp_semaphores.push_back(std::make_unique<Semaphore>(*device, wait_dst_stage_mask, signal_dst_stage_mask));
+		Log::debug("ComputeTask::add_temp_binary_semaphore(): new binary semaphore (owned by task ", this, ") created at memory location ", temp_semaphores.back(), " for calling function ", calling_function);
 		return *temp_semaphores.back();
 	}
 
@@ -4675,10 +4767,12 @@ public:
 	// returns the total number of binary wait semaphores which are currently observed by this task
 	uint32_t add_binary_wait_semaphore(Semaphore& semaphore) {
 		if (semaphore.get_type() != VK_SEMAPHORE_TYPE_BINARY) {
-			Log::warning("method ComputeTask::add_wait_semaphore() has failed: this overload expects a binary semaphore (VK_SEMAPHORE_TYPE_BINARY).");
+			Log::warning("method ComputeTask::add_wait_semaphore() for task ", this, " has failed : this overload expects a binary semaphore(VK_SEMAPHORE_TYPE_BINARY).");
 			return static_cast<uint32_t>(binary_wait_semaphores.size());
 		}
-		binary_wait_semaphores_dst_stage_masks.push_back(semaphore.get_dst_stage_mask());
+		Log::debug("ComputeTask::add_binary_wait_semaphore(): adding binary wait semaphore for task ", this, " (externally owned, memory location : ", &semaphore, ") for calling function ", calling_function);
+		binary_wait_semaphores_dst_stage_masks.push_back(semaphore.get_wait_dst_stage_mask());
+		binary_signal_semaphores_dst_stage_masks.push_back(semaphore.get_signal_dst_stage_mask());
 		binary_wait_semaphores.push_back(semaphore.get());
 		return static_cast<uint32_t>(binary_wait_semaphores.size());
 	}
@@ -4688,54 +4782,68 @@ public:
 	// returns the total number of signal semaphores which are currently affected by this task
 	uint32_t add_binary_signal_semaphore(Semaphore& semaphore) {
 		if (semaphore.get_type() != VK_SEMAPHORE_TYPE_BINARY) {
-			Log::warning("method ComputeTask::add_signal_semaphore() has failed: this overload expects a binary semaphore (VK_SEMAPHORE_TYPE_BINARY).");
+			Log::warning("method ComputeTask::add_signal_semaphore() for task ", this, " has failed : this overload expects a binary semaphore(VK_SEMAPHORE_TYPE_BINARY).");
 			return static_cast<uint32_t>(binary_signal_semaphores.size());
 		}
+		Log::debug("ComputeTask::add_binary_signal_semaphore(): adding binary signal semaphore for task ", this, " (externally owned, memory location ", &semaphore, ") for calling function ", calling_function);
+		binary_wait_semaphores_dst_stage_masks.push_back(semaphore.get_wait_dst_stage_mask());
+		binary_signal_semaphores_dst_stage_masks.push_back(semaphore.get_signal_dst_stage_mask());
 		binary_signal_semaphores.push_back(semaphore.get());
 		return static_cast<uint32_t>(binary_signal_semaphores.size());
 	}
 
-	// adds a single semaphore which functions as a wait semaphore at the beginning of the command buffer execution,
+	// adds a single binary semaphore which functions as a wait semaphore at the beginning of the command buffer execution,
 	// then finally it changes back to the signaled state at the end of execution;
 	// the semaphore MUST be expected to initially reach the signaled state (or already be in the signaled state),
 	// otherwise a deadlock will occur (waiting for the signaled state indefinitely) !!!
-	// the function expects a reference to an externally owned semaphore (i.e. not owned by this task)
+	// the function expects a reference to an externally owned binary semaphore (i.e. not owned by this task)
 	void binary_wait_and_signal(Semaphore& semaphore) {
 		if (semaphore.get_type() != VK_SEMAPHORE_TYPE_BINARY) {
-			Log::warning("method ComputeTask::add_combined_semaphore() has failed: this overload expects a binary semaphore (VK_SEMAPHORE_TYPE_BINARY).");
+			Log::warning("method ComputeTask::add_combined_semaphore() for task ", this, " has failed : this overload expects a binary semaphore(VK_SEMAPHORE_TYPE_BINARY).");
 		}
+		Log::debug("ComputeTask::binary_wait_and_signal():");
 		this->add_binary_wait_semaphore(semaphore);
 		this->add_binary_signal_semaphore(semaphore);
 	}
 
+	// adds a single timeline semaphore which functions as a wait semaphore at the beginning of the command buffer execution,
+	// then it signals the specified signal_value at the end of execution;
+	// this function expects a reference to an externally owned timeline semaphore (i.e. not owned by this task)
 	void timeline_sync(Semaphore& semaphore, uint64_t wait_value, uint64_t signal_value) {
 		if (semaphore.get_type() != VK_SEMAPHORE_TYPE_TIMELINE) {
-			Log::warning("method ComputeTask::add_combined_semaphore() has failed: this overload expects a timeline semaphore (VK_SEMAPHORE_TYPE_TIMELINE).");
+			Log::warning("method ComputeTask::add_combined_semaphore() for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
 		}
+		Log::debug("ComputeTask::timeline_sync(): adding timeline wait and signal semaphore for task ", this, " (externally owned, memory location ", &semaphore, ") for calling function ", calling_function, " (wait value = ", wait_value, ", signal value = ", signal_value, ")");
 		this->add_timeline_wait_semaphore(semaphore, wait_value);
 		this->add_timeline_signal_semaphore(semaphore, signal_value);
 	}
 
 	// adds a single semaphore which functions as a wait semaphore at the beginning of the command buffer execution with its current counter value,
-	// then this counter gets incremented by one and is used for the signaled state at the end of execution
-	void timeline_sync(Semaphore& semaphore) {
+	// then this counter gets incremented (atomically) by one and is used for the signaled state at the end of execution;
+	// returns the new signal value
+	uint64_t timeline_sync(Semaphore& semaphore) {
 		if (semaphore.get_type() != VK_SEMAPHORE_TYPE_TIMELINE) {
-			Log::warning("method ComputeTask::add_combined_semaphore() has failed: this overload expects a timeline semaphore (VK_SEMAPHORE_TYPE_TIMELINE).");
+			Log::warning("method ComputeTask::add_combined_semaphore() for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
 		}
-		this->add_timeline_wait_semaphore(semaphore, semaphore.counter_var());
+		Log::debug("ComputeTask::timeline_sync(): adding timeline wait and signal semaphore:");
+		uint64_t old_counter_var = semaphore.get_counter_var();
+		this->add_timeline_wait_semaphore(semaphore, old_counter_var);
 		semaphore.increment_counter();
-		this->add_timeline_signal_semaphore(semaphore, semaphore.counter_var());
+		uint64_t new_counter_var = semaphore.get_counter_var();;
+		this->add_timeline_signal_semaphore(semaphore, new_counter_var);
+		return new_counter_var;
 	}
 
 	// adds a reference to a timeline wait semaphore (which will be used during the submit call);
 	// used to add externally owned semaphores (i.e. not owned by this task);
-	// returns the total number of wait semaphores which are currently observed by this task
+	// returns the total number of timeline wait semaphores which are currently observed by this task
 	uint32_t add_timeline_wait_semaphore(Semaphore& semaphore, uint64_t wait_value) {
 		if (semaphore.get_type() != VK_SEMAPHORE_TYPE_TIMELINE) {
-			Log::warning("method ComputeTask::add_wait_semaphore() has failed: this overload expects a timeline semaphore (VK_SEMAPHORE_TYPE_TIMELINE).");
+			Log::warning("method ComputeTask::add_wait_semaphore() for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
 			return static_cast<uint32_t>(timeline_wait_semaphores.size());
 		}
-		timeline_wait_semaphores_dst_stage_masks.push_back(semaphore.get_dst_stage_mask());
+		Log::debug("ComputeTask::add_timeline_wait_semaphore(): adding timeline wait semaphore for task ", this, " (externally owned, memory location ", &semaphore, ") for calling function ", calling_function, " (wait value = ", wait_value, ")");
+		timeline_wait_semaphores_dst_stage_masks.push_back(semaphore.get_wait_dst_stage_mask());
 		timeline_wait_semaphores.push_back(semaphore.get());
 		timeline_semaphore_wait_values.push_back(wait_value);
 		return static_cast<uint32_t>(timeline_wait_semaphores.size());
@@ -4743,36 +4851,40 @@ public:
 
 	// adds a reference to a timeline signal semaphore (which will be used during the submit call);
 	// used to add externally owned semaphores (i.e. not owned by this task);
-	// returns the total number of signal semaphores which are currently affected by this task
+	// returns the total number of timeline signal semaphores which are currently affected by this task
 	uint32_t add_timeline_signal_semaphore(Semaphore& semaphore, uint64_t signal_value) {
 		if (semaphore.get_type() != VK_SEMAPHORE_TYPE_TIMELINE) {
-			Log::warning("method ComputeTask::add_signal_semaphore() has failed: this overload expects a timeline semaphore (VK_SEMAPHORE_TYPE_TIMELINE).");
+			Log::warning("method ComputeTask::add_signal_semaphore() for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
 			return static_cast<uint32_t>(timeline_signal_semaphores.size());
 		}
+		Log::debug("ComputeTask::add_timeline_signal_semaphore(): adding timeline signal semaphore for task ", this, " (externally owned, memory location ", &semaphore, ") for calling function ", calling_function, " (signal value = ", signal_value, ")");
+		timeline_signal_semaphores_dst_stage_masks.push_back(semaphore.get_signal_dst_stage_mask());
 		timeline_signal_semaphores.push_back(semaphore.get());
 		timeline_semaphore_signal_values.push_back(signal_value);
+		timeline_signal_semaphores_ptrs.push_back(&semaphore);
 		return static_cast<uint32_t>(timeline_signal_semaphores.size());
 	}
 
 	// reset task (delete all previous resources);
 	// returns false if the task is protected or still busy
 	bool reset() {
-		if (!fence->signaled()) {
-			Log::warning("ComputeTask::reset() has failed: the task is still busy (its fence isn't yet in the signaled state)");
+		if (fence && !fence->signaled(calling_function)) {
+			Log::warning("ComputeTask::reset() has failed: the task (", this, ") for calling function ", calling_function, " is still busy(its fence isn't yet in the signaled state)");
 			return false;
 		}
-		else if (protection_flag == true) {
-			Log::warning("ComputeTask::reset() has failed: the task has been marked as protected.");
+		if (protection_flag) {
+			Log::warning("ComputeTask::reset() has failed: the task (", this, ") for calling function ", calling_function, " has not yet been submitted and therefore is protected!");
 			return false;
 		}
 		else {
+			Log::debug("ComputeTask::reset(): resetting compute task ", this);
 			// reset the command buffer to the initial state
 			// (this is not the same as command_buffer.reset() ! the smart pointer remains valid!)
 			if (command_buffer != nullptr) { command_buffer->reset(); }
 
 			// reset fence to unsignaled state
 			// (this is not the same as fence.reset() ! the smart pointer remains valid!)
-			fence->reset();
+			fence->reset(calling_function);
 
 			// release and delete descriptor set (if any)
 			if (set != nullptr) {
@@ -4810,109 +4922,202 @@ public:
 			timeline_semaphore_wait_values.clear();
 			timeline_semaphore_signal_values.clear();
 			binary_wait_semaphores_dst_stage_masks.clear();
-			binary_wait_semaphores_dst_stage_masks.clear();
+			binary_signal_semaphores_dst_stage_masks.clear();
+			timeline_wait_semaphores_dst_stage_masks.clear();
+			timeline_signal_semaphores_dst_stage_masks.clear();
 			temp_semaphores.clear();
+			timeline_signal_semaphores_ptrs.clear();
 
+			// reset calling function
+			calling_function = "NONE (=TASK IS AVAILABLE)";
+
+			// mark as protected (at least until submit)
+			protection_flag = true;
+
+			Log::debug("resetting task ", this, " is complete -> task is ready to be used");
 			return true;
 		}
 	}
 
 	// submit command buffer to compute queue on device;
-	VkResult submit(bool keep_task_protected_after_submit = false) {
+	VkResult submit(uint64_t wait_after_submit_nanosec = 0) {
 
-		// Collect all wait semaphores into one vector
-		std::vector<VkSemaphore> all_wait_semaphores;
-		all_wait_semaphores.reserve(binary_wait_semaphores.size() + timeline_wait_semaphores.size());
-		all_wait_semaphores.insert(all_wait_semaphores.end(), binary_wait_semaphores.begin(), binary_wait_semaphores.end());
-		all_wait_semaphores.insert(all_wait_semaphores.end(), timeline_wait_semaphores.begin(), timeline_wait_semaphores.end());
-
-		// Collect all wait stage masks into one vector
-		std::vector<VkPipelineStageFlags> all_wait_dst_stage_masks;
-		all_wait_dst_stage_masks.reserve(binary_wait_semaphores_dst_stage_masks.size() + timeline_wait_semaphores_dst_stage_masks.size());
-		all_wait_dst_stage_masks.insert(all_wait_dst_stage_masks.end(), binary_wait_semaphores_dst_stage_masks.begin(), binary_wait_semaphores_dst_stage_masks.end());
-		all_wait_dst_stage_masks.insert(all_wait_dst_stage_masks.end(), timeline_wait_semaphores_dst_stage_masks.begin(), timeline_wait_semaphores_dst_stage_masks.end());
-
-		// Collect all signal semaphores into one vector
-		std::vector<VkSemaphore> all_signal_semaphores;
-		all_signal_semaphores.reserve(binary_signal_semaphores.size() + timeline_signal_semaphores.size());
-		all_signal_semaphores.insert(all_signal_semaphores.end(), binary_signal_semaphores.begin(), binary_signal_semaphores.end());
-		all_signal_semaphores.insert(all_signal_semaphores.end(), timeline_signal_semaphores.begin(), timeline_signal_semaphores.end());
-
-		// setup info for timeline semaphores
-		VkTimelineSemaphoreSubmitInfo timeline_info = {};
-		if (!timeline_semaphore_wait_values.empty() || !timeline_semaphore_signal_values.empty()) {
-			timeline_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-			timeline_info.pNext = NULL;
-			timeline_info.waitSemaphoreValueCount = static_cast<uint32_t>(timeline_semaphore_wait_values.size());
-			timeline_info.pWaitSemaphoreValues = timeline_semaphore_wait_values.data();
-			timeline_info.signalSemaphoreValueCount = static_cast<uint32_t>(timeline_semaphore_signal_values.size());
-			timeline_info.pSignalSemaphoreValues = timeline_semaphore_signal_values.data();
+		if (!command_buffer) {
+			protection_flag = false;
+			return VK_SUCCESS;
 		}
+
+		Log::debug("ComputeTask::submit(): submitting compute task ", this, " for calling function ", calling_function, " (fence: ", fence->get(), ")");
+
+		uint32_t device_index = device->get_index();
+
+		// setup wait semaphores submit info
+		std::vector<VkSemaphoreSubmitInfo> wait_semaphore_submit_infos;
+		wait_semaphore_submit_infos.reserve(binary_wait_semaphores.size() + timeline_wait_semaphores.size());
+		for (uint32_t i = 0; i < binary_wait_semaphores.size(); i++) {
+			wait_semaphore_submit_infos.emplace_back(
+				VkSemaphoreSubmitInfo{
+					VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,	// VkStructureType			sType
+					NULL,										// void*					pNext
+					binary_wait_semaphores[i],					// VkSemaphore				semaphore
+					0,											// uint64_t					value (ignored in case of binary semaphores)
+					binary_wait_semaphores_dst_stage_masks[i],	// VkPipelineStageFlags2	stageMask
+					device_index								// uint32_t					deviceIndex
+				}
+			);
+		}
+		for (uint32_t i = 0; i < timeline_wait_semaphores.size(); i++) {
+			wait_semaphore_submit_infos.emplace_back(
+				VkSemaphoreSubmitInfo{
+					VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,	// VkStructureType			sType
+					NULL,										// void*					pNext
+					timeline_wait_semaphores[i],				// VkSemaphore				semaphore
+					timeline_semaphore_wait_values[i],			// uint64_t					value (ignored in case of binary semaphores)
+					timeline_wait_semaphores_dst_stage_masks[i],// VkPipelineStageFlags2	stageMask
+					device_index								// uint32_t					deviceIndex
+				}
+			);
+		}
+
+		// setup signal semaphores submit info
+		std::vector<VkSemaphoreSubmitInfo> signal_semaphore_submit_infos;
+		signal_semaphore_submit_infos.reserve(binary_signal_semaphores.size() + timeline_signal_semaphores.size());
+		for (uint32_t i = 0; i < binary_wait_semaphores.size(); i++) {
+			signal_semaphore_submit_infos.emplace_back(
+				VkSemaphoreSubmitInfo{
+					VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,	// VkStructureType			sType
+					NULL,										// void*					pNext
+					binary_signal_semaphores[i],				// VkSemaphore				semaphore
+					0,											// uint64_t					value (ignored in case of binary semaphores)
+					binary_signal_semaphores_dst_stage_masks[i],// VkPipelineStageFlags2	stageMask
+					device_index								// uint32_t					deviceIndex
+				}
+			);
+		}
+		for (uint32_t i = 0; i < timeline_signal_semaphores.size(); i++) {
+			signal_semaphore_submit_infos.emplace_back(
+				VkSemaphoreSubmitInfo{
+					VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,	// VkStructureType			sType
+					NULL,										// void*					pNext
+					timeline_signal_semaphores[i],				// VkSemaphore				semaphore
+					timeline_semaphore_signal_values[i],		// uint64_t					value (ignored in case of binary semaphores)
+					timeline_signal_semaphores_dst_stage_masks[i],// VkPipelineStageFlags2	stageMask
+					device_index								// uint32_t					deviceIndex
+				}
+			);
+		}
+
+		VkCommandBufferSubmitInfo command_buffer_submit_info = {
+			VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,		// VkStructureType			sType
+			NULL,												// void*					pNext
+			command_buffer ? command_buffer->get() : nullptr,	// VkCommandBuffer			commandBuffer
+			0													// uint32_t					deviceMask
+		};
 
 		// submit to queue (triggers command buffer pending state)
-		VkSubmitInfo submit_info = {};
-		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		VkSubmitInfo2 submit_info2 = {};
+		submit_info2.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
 
 		// Conditionally set pNext to the timeline info
-		if (!timeline_semaphore_wait_values.empty() || !timeline_semaphore_signal_values.empty()) {
-			submit_info.pNext = &timeline_info;
-		}
-		else {
-			submit_info.pNext = NULL;
-		}
+		submit_info2.pNext = NULL;
+		submit_info2.flags = 0;
+		submit_info2.waitSemaphoreInfoCount = static_cast<uint32_t>(wait_semaphore_submit_infos.size());
+		submit_info2.pWaitSemaphoreInfos = wait_semaphore_submit_infos.empty() ? nullptr : wait_semaphore_submit_infos.data();
+		submit_info2.commandBufferInfoCount = static_cast<uint32_t>(command_buffer != nullptr);
+		submit_info2.pCommandBufferInfos = command_buffer ? &command_buffer_submit_info : nullptr;
+		submit_info2.signalSemaphoreInfoCount = static_cast<uint32_t>(signal_semaphore_submit_infos.size());
+		submit_info2.pSignalSemaphoreInfos = signal_semaphore_submit_infos.empty() ? nullptr : signal_semaphore_submit_infos.data();
 
-		submit_info.waitSemaphoreCount = static_cast<uint32_t>(all_wait_semaphores.size());
-		submit_info.pWaitSemaphores = all_wait_semaphores.data();
-		submit_info.pWaitDstStageMask = all_wait_dst_stage_masks.data();
-		submit_info.commandBufferCount = static_cast<uint32_t>(command_buffer != nullptr);
-		submit_info.pCommandBuffers = command_buffer != nullptr ? &command_buffer->get() : nullptr;
-		submit_info.signalSemaphoreCount = static_cast<uint32_t>(all_signal_semaphores.size());
-		submit_info.pSignalSemaphores = all_signal_semaphores.data();
-
-		VkResult result = vkQueueSubmit(device->get_compute_queue(), 1, &submit_info, fence->get());
+		VkResult result = vkQueueSubmit2(
+			device->get_compute_queue(),	// VkQueue queue
+			1,								// uint32_t submitCount
+			&submit_info2,					// const VkSubmitInfo2* pSubmits
+			fence ? fence->get() : nullptr  // VKFence fence
+		);
 
 		if (result != VK_SUCCESS) {
-			Log::warning("in ComputeTask::submit() for caller function ", calling_function,
-				", with ", all_wait_semaphores.size(), " wait semaphores (", binary_wait_semaphores.size(), " binary, ", timeline_wait_semaphores.size(), " timeline) and ",
-				all_signal_semaphores.size(), " signal semaphores (", binary_signal_semaphores.size(), " binary, ", timeline_signal_semaphores.size(), " timeline): failed to submit compute task(VkResult = ", result, ", ", vkresult_to_string(result), ")");
+			Log::warning("ComputeTask::submit(): failed to submit compute task ", this, " for caller function ", calling_function,
+				", with ", binary_wait_semaphores.size(), " binary wait semaphores, ", timeline_wait_semaphores.size(), " timeline wait semaphores, ",
+				binary_signal_semaphores.size(), " binary signal semaphores, ", timeline_signal_semaphores.size(), " timeline signal semaphores): failed to submit compute task(VkResult = ", result, ", ", vkresult_to_string(result), ")");
 		}
 		else {
-			Log::debug("successfully submitted compute task for caller function ", calling_function,
-				", with ", all_wait_semaphores.size(), " wait semaphores (", binary_wait_semaphores.size(), " binary, ", timeline_wait_semaphores.size(), " timeline) and ",
-				all_signal_semaphores.size(), " signal semaphores (", binary_signal_semaphores.size(), " binary, ", timeline_signal_semaphores.size(), " timeline)");
+			Log::debug("ComputeTask::submit(): successfully submitted compute task ", this, " for caller function ", calling_function,
+				", with ", binary_wait_semaphores.size(), " binary wait semaphores, ", timeline_wait_semaphores.size(), " timeline wait semaphores, ",
+				binary_signal_semaphores.size(), " binary signal semaphores, ", timeline_signal_semaphores.size(), " timeline signal semaphores)");
 		}
-		protection_flag = keep_task_protected_after_submit;
+
+		if (wait_after_submit_nanosec != 0) {
+			if (fence) {
+				Log::debug("ComputeTask::submit(): waiting for compute task ", this, " to become idle(waiting for fence) for calling function ", calling_function, " after submission");
+				result = fence->wait(calling_function, wait_after_submit_nanosec);
+				if (result != VK_SUCCESS) {
+					Log::warning("in ComputeTask::submit() for caller function ", calling_function, ": waiting for compute task ", this, " to become idle(= fence has reached signaled state) after submission has failed(VkResult = ", result, ", ", vkresult_to_string(result), ")");
+				}
+				else {
+					Log::debug("ComputeTask::submit(): compute task ", this, "has become idle(= fence has reached signaled state) for calling function ", calling_function, " after submission");
+					protection_flag = false;
+				}
+			}
+			else {
+				Log::Timer::sleep(wait_after_submit_nanosec, LogLevel::LEVEL_DEBUG);
+			}
+		}
+		else {
+			protection_flag = false;
+		}
+
 		return result;
 	}
-
-	// query task status
-	bool is_idle() const { return fence->signaled(); }
-
-	// wait for fence to be signaled
-	VkResult wait_idle(uint64_t fence_timeout_nanosec = 1e09) const { return fence->wait(fence_timeout_nanosec); }
-
-	// an active task is protected from reset at least until submit, but not after the fence signal,
-	// unless submit was called as submit(true));
-	// if submit(true) is used, unprotect() can be called later when the task is no longer needed;
-	// this strategy can be helpful e.g. if temporary staging buffers must be accessed by
-	// the host even after the fence as signaled
-	void unprotect() { protection_flag = false; }
-
-	bool is_protected() const { return protection_flag; }
 
 	std::string get_calling_function() const { return calling_function; }
 
 	// getters
+	bool available() {
+		// 1. check protection flag
+		if (protection_flag) {
+			return false;
+		}
+		// 2. check fence signaled state;
+		// ignore fence if this task has no command buffer
+		// (which implies the fence can't reach the signaled state anyways);
+		else if (command_buffer) {
+			if (!fence || fence->signaled(calling_function)) {
+				// 3. verify timeline semaphore signals
+				for (uint32_t i = 0; i < timeline_signal_semaphores_ptrs.size(); i++) {
+					if (timeline_signal_semaphores_ptrs[i]->get_counter() < timeline_semaphore_signal_values[i]) {
+						return false;
+					}
+				}
+				return true;
+			}
+			else {
+				return false;
+			}
+		}
+		// 4. case: protection_flag==false, no command buffer used
+		else {
+			return true;
+		}
+	}
+
 	DescriptorSet& get_set() { return *set; }
 
 	CommandBuffer& get_command_buffer() {
 		if (!command_buffer) {
 			command_buffer = std::make_unique<CommandBuffer>(*device, *command_pool);
 		}
+		if (!fence) {
+			fence = std::make_unique<Fence>(*device, false);
+		}
 		return *command_buffer;
 	}
 
-	Fence& get_fence() { return *fence; }
+	Fence& get_fence() {
+		if (!fence) {
+			Log::error("invalid call of ComputeTask::get_fence() for task ", this, ": this compute task has no command buffer and therefore also no fence!");
+		}
+		return *fence;
+	}
 
 	PushConstants& get_constants() {
 		if (!constants) {
@@ -4941,14 +5146,17 @@ private:
 	std::vector<VkSemaphore> timeline_wait_semaphores;
 	std::vector<VkSemaphore> binary_signal_semaphores;
 	std::vector<VkSemaphore> timeline_signal_semaphores;
+	std::vector<Semaphore*> timeline_signal_semaphores_ptrs; // note: this class typically does not own the Semaphores that are being pointed to! Clearing this vector is okay, but this class shouldn't call 'delete' on these pointers!
 	std::vector<uint64_t> timeline_semaphore_wait_values;
 	std::vector<uint64_t> timeline_semaphore_signal_values;
-	std::vector<VkPipelineStageFlags> binary_wait_semaphores_dst_stage_masks;
-	std::vector<VkPipelineStageFlags> timeline_wait_semaphores_dst_stage_masks;
-	bool protection_flag = true; // this flag indicates that this task isn't available for reset
+	std::vector<VkPipelineStageFlags2> binary_wait_semaphores_dst_stage_masks;
+	std::vector<VkPipelineStageFlags2> binary_signal_semaphores_dst_stage_masks;
+	std::vector<VkPipelineStageFlags2> timeline_wait_semaphores_dst_stage_masks;
+	std::vector<VkPipelineStageFlags2> timeline_signal_semaphores_dst_stage_masks;
+	std::string calling_function = "NONE (=TASK IS AVAILABLE)";
+	bool protection_flag = true; // if true, the task cannot be reset or deleted at least until submit
 	static uint64_t num_created;
 	static uint64_t num_destroyed;
-	std::string calling_function = "UNKNOWN";
 };
 
 // initialization of ComputeTask static members from outside the class
@@ -4961,6 +5169,7 @@ public:
 	// create a singleton with default device features
 	static VulkanManager& make_singleton() {
 		if (singleton == nullptr) {
+			Log::debug("creating new VulkanManager singleton");
 			// First, initialize the static shared members
 			// (Note: This is the ONLY place this happens)
 			instance = std::make_unique<Instance>();
@@ -4999,14 +5208,18 @@ public:
 
 	// get an available (=idle) compute task which can be used for new resources
 	ComputeTask& get_compute_task(std::string calling_function = "") {
+		Log::debug("VulkanManager::get_compute_task(): calling function ", calling_function, " has requested a new or available compute task");
 		uint32_t task_count = static_cast<uint32_t>(compute_tasks.size());
 		for (uint32_t i = 0; i < task_count; i++) {
-			if (!compute_tasks[i]->is_protected() && compute_tasks[i]->is_idle()) {
+			if (compute_tasks[i]->available()) {
+				Log::debug("Task ", compute_tasks[i].get(), " is available to be reused (= currently doing no work, no unsignaled fences, protection_flag = false)");
 				compute_tasks[i]->reset();
+				compute_tasks[i]->calling_function = calling_function;
 				return *compute_tasks[i];
 			}
 		}
 		// create a new task if no free task has been found
+		Log::debug("no idle/available/unprotected task found -> creating a new one");
 		compute_tasks.push_back(std::make_unique<ComputeTask>(*device, *shared_command_pool_compute, *shared_descriptor_pool, calling_function));
 #ifdef _DEBUG
 		constexpr uint32_t MAX_TASKS = 0;
@@ -5014,47 +5227,37 @@ public:
 			log_tasks();
 		}
 #endif
+		compute_tasks[task_count]->protection_flag = true;
+		Log::debug("Compute task ", compute_tasks[task_count].get(), " is now available to be used for function ", calling_function);
 		return *compute_tasks[task_count];
-	}
-
-	// wait for all compute tasks to be idle (=waiting for fences)
-	void compute_wait_idle(uint64_t fence_timeout_nanosec = 1e09) {
-		uint32_t task_count = static_cast<uint32_t>(compute_tasks.size());
-		for (uint32_t i = 0; i < task_count; i++) {
-			compute_tasks[i]->wait_idle(fence_timeout_nanosec);
-		}
 	}
 
 	void log_tasks() {
 		uint32_t task_count = static_cast<uint32_t>(compute_tasks.size());
-		uint32_t num_idle = 0;
+		uint32_t num_available = 0;
 		uint32_t num_busy = 0;
-		uint32_t num_protected = 0;
-		uint32_t num_unprotected = 0;
-		uint32_t idle_and_protected = 0;
 		std::unordered_map<std::string, uint32_t> tasks_per_caller;
 		for (uint32_t i = 0; i < task_count; i++) {
-			if (compute_tasks[i]->is_idle()) { num_idle++; }
-			else { num_busy++; }
-			if (compute_tasks[i]->is_protected()) { num_protected++; }
-			else { num_unprotected++; }
-			if (compute_tasks[i]->is_idle() && compute_tasks[i]->is_protected()) idle_and_protected++;
+			bool is_available = compute_tasks[i]->available();
+			num_available += static_cast<uint32_t>(is_available);
+			num_busy += static_cast<uint32_t>(!is_available);
 			tasks_per_caller[compute_tasks[i]->get_calling_function()]++;
 		}
-		Log::force("Compute Tasks: ", task_count, " active tasks (", ComputeTask::num_created, " created, ", ComputeTask::num_destroyed, " destroyed), ACTIVE TASKS: busy=", num_busy, ", idle = ", num_idle, ", protected = ", num_protected, ", idle_AND_protected = ", idle_and_protected, ", unprotected = ", num_unprotected);
+		Log::debug("Compute Tasks: ", task_count, " active tasks (", ComputeTask::num_created, " created, ", ComputeTask::num_destroyed, " destroyed), ACTIVE TASKS: busy=", num_busy, ", available = ", num_available);
 		if (!tasks_per_caller.empty()) {
 			for (const auto& pair : tasks_per_caller) {
-				Log::force("--- Function \"", pair.first, "\": ", pair.second, " active tasks");
+				Log::debug("--- Function \"", pair.first, "\": ", pair.second, " active tasks");
 			}
 		}
-#ifdef _DEBUG
-		constexpr uint32_t MAX_TASKS = 50;
-		constexpr uint32_t WAIT_SEC = 5;
-		if (task_count > MAX_TASKS) {
-			Log::warning("The number of active compute tasks has exceeded ", MAX_TASKS, " tasks. This might indicate a resource leak, e.g. if tasks are created but never submitted or reset. Waiting up to ", WAIT_SEC, " seconds for tasks to reach idle state.");
-			compute_wait_idle(WAIT_SEC * 1e09);
-		}
-#endif
+	}
+
+	// provides a timeline semaphore owned by the VulkanManager singleton;
+	// this can be helpful to make sure the semaphore's lifetime exceeds local function scopes;
+	// returns a std::pair with the semaphore reference and its index within the VulkanManager's vector of semaphores
+	std::pair<Semaphore*, uint32_t> get_timeline_semaphore(uint64_t initial_value, VkPipelineStageFlagBits2 wait_dst_stage_mask, VkPipelineStageFlagBits2 signal_dst_stage_mask) {
+		uint32_t index = timeline_semaphores.size();
+		timeline_semaphores.emplace_back(std::make_unique<Semaphore>(*device, initial_value, wait_dst_stage_mask, signal_dst_stage_mask));
+		return std::make_pair(timeline_semaphores[index].get(), index);
 	}
 
 	// getters
@@ -5086,6 +5289,7 @@ private:
 	static std::unique_ptr<CommandPool> shared_command_pool_transfer;
 	static std::unique_ptr<DescriptorPool> shared_descriptor_pool;
 	static std::vector<std::unique_ptr<ComputeTask>> compute_tasks;
+	static std::vector<std::unique_ptr<Semaphore>> timeline_semaphores;
 
 	// private constructor: empty, because all the work is already done in make_singleton()
 	VulkanManager() {}
@@ -5100,6 +5304,7 @@ std::unique_ptr<CommandPool> VulkanManager::shared_command_pool_graphics = nullp
 std::unique_ptr<CommandPool> VulkanManager::shared_command_pool_transfer = nullptr;
 std::unique_ptr<DescriptorPool> VulkanManager::shared_descriptor_pool = nullptr;
 std::vector<std::unique_ptr<ComputeTask>> VulkanManager::compute_tasks = {};
+std::vector<std::unique_ptr<Semaphore>> VulkanManager::timeline_semaphores = {};
 
 // helper function to convert VkResult values to human-readable strings
 std::string vkresult_to_string(VkResult result) {

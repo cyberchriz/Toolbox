@@ -9,7 +9,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // setup buffers
 layout(set = 0, binding = 0) buffer data_reaL_buffer {float data_real[];};
-layout(set = 0, binding = 1) buffer data__imag_buffer {float data_imag[];};
+layout(set = 0, binding = 1) buffer data_imag_buffer {float data_imag[];};
 layout(set = 0, binding = 2) buffer result_reaL_buffer {float result_real[];};
 layout(set = 0, binding = 3) buffer result_imag_buffer {float result_imag[];};
 

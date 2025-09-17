@@ -14,15 +14,49 @@ layout(set = 0, binding = 1) buffer result_buffer {float result[];};
 // setup push constants layout
 layout(push_constant) uniform push_constants {
     uint N;
+    uint precision_digits;
 };
 
 // main function
 void main() {
     uint idx = gl_GlobalInvocationID.x;
     if (idx < N) {
-        float rounded = round(data[gl_GlobalInvocationID.x]);
-        if (rounded == -0.0f) {rounded = 0.0f;} // avoid -0
-        result[idx] = rounded;
+        if (precision_digits != 0) {
+            float val = data[idx];
+            
+            // `pow()` is replaced here with a loop for higher precision
+            float power_of_10 = 1.0f;
+            for (uint i = 0; i < precision_digits; i++) {
+                power_of_10 *= 10.0f;
+            }
+            
+            float sign = val < 0.0f ? -1.0f : 1.0f;
+            float abs_val = abs(val);
+            
+            // robust rounding algorithm
+            float scaled_val = abs_val * power_of_10;
+            float rounded_scaled = floor(scaled_val + 0.5);
+            float rounded = rounded_scaled / power_of_10;
+            
+            // Check if the rounded value is very close to an integer and if so, set it to the integer
+            const float epsilon = 0.00001f; // = a small tolerance
+            if (abs(rounded - round(rounded)) < epsilon) {
+                rounded = round(rounded);
+            }
+
+            rounded *= sign;
+
+            // Handle the case of negative zero
+            if (rounded == -0.0f) {
+                rounded = 0.0f;
+            }
+            result[idx] = rounded;
+        }
+        else {
+            float rounded = round(data[gl_GlobalInvocationID.x]);
+            if (rounded == -0.0f) {rounded = 0.0f;} // avoid -0
+            result[idx] = rounded;
+        }
     }
     memoryBarrierBuffer(); barrier();
 }

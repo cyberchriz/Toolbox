@@ -17,8 +17,7 @@ layout(set = 0, binding = 2) buffer p_buffer    { float P[]; };     // Permutati
                                                                     // note: the P matrix could be of type 'uint' instead of 'float',
                                                                     // but using floats is more convenient for the host application,
                                                                     // since data buffers of NGrid objects are always floats by design
-layout(set = 0, binding = 3) buffer swap_row_buffer {uint swap_row[];};  // stores the row to swap for the current row 'k'
-layout(set = 0, binding = 4) buffer swap_count_buffer {uint swap_count[];}; // single element
+layout(set = 0, binding = 3) buffer swap_data_buffer {float swap_data[];};  // element 0 stores the row to swap for the current row 'k', element 1 stores the number of swaps performed
                                                                     
 // --- Push Constants ---
 layout(push_constant) uniform push_constants {

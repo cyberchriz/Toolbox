@@ -67,7 +67,7 @@ public:
 	template<typename... Args> NGrid(Args... args); // parametric default constructor for multi-dimensional array, overload for variadic template
 	NGrid(const std::vector<uint32_t>& shape);      // parametric default constructor for multi-dimensional array, overload for std::vector
 	NGrid(std::initializer_list<uint32_t> shape);   // parametric default constructor for multi-dimensional array, overload for std::initializer_list
-	NGrid(std::vector<float_t> source_vector);      // construct 1d array and directly fill it with the contents of a std::vector<float_t>
+	NGrid(const std::vector<float_t>& source_vector);// construct 1d array and directly fill it with the contents of a std::vector<float_t>
 	NGrid(NGrid&& other) noexcept;		            // move constructor
 	NGrid(const NGrid& other);						// copy constructor
 	~NGrid();                                       // destructor
@@ -84,7 +84,7 @@ public:
 	// | getters & setters               |
 	// +=================================+
 	// these setter methods are 'destructive', i.e. they modify the NGrid itself, then return a reference to 'this'
-	NGrid& set(std::initializer_list<uint32_t> index, const float_t value);
+	NGrid& set(const std::initializer_list<uint32_t> index, const float_t value);
 	NGrid& set(const std::vector<uint32_t>& index, const float_t value);
 	NGrid& set(const std::vector<float_t>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
 	NGrid& set(const float_t* data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
@@ -96,8 +96,8 @@ public:
 	float_t get(const std::initializer_list<uint32_t> index) const;
 	std::vector<float_t> get() const;
 	std::vector<float_t> get(const uint32_t read_elements, const uint32_t source_offset_elements) const;
-	Buffer<float_t>* get_buffer() const;
-	Buffer<uint32_t>* get_shape_buffer() const;
+	Buffer<float_t>& get_buffer() const;
+	Buffer<uint32_t>& get_shape_buffer() const;
 	uint32_t get_dimensions() const;
 	uint32_t get_size(uint32_t dimension = 0) const;
 	uint32_t get_elements() const;
@@ -105,8 +105,8 @@ public:
 	uint32_t rows() const;
 	uint32_t cols() const;
 	std::string get_shapestring() const;
-	NGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape) const;
-	NGrid subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> subgrid_shape) const;
+	NGrid subgrid(const std::initializer_list<uint32_t> source_offset, const std::initializer_list<uint32_t> subgrid_shape) const;
+	NGrid subgrid(const std::vector<uint32_t>& source_offset, const std::vector<uint32_t>& subgrid_shape) const;
 
 	// +=================================+   
 	// | Fill                            |
@@ -120,10 +120,10 @@ public:
 	NGrid& fill_random_uniform_int(const int32_t min = 0, const int32_t max = 9);
 	NGrid& fill_random(const float_t min = 0.0f, const float_t max = 1.0f); // alias for fill_random_uniform()
 	NGrid& fill_random_int(const int32_t min = 0, const int32_t max = 9); // alias for fill_random_uniform_int()
-	NGrid& fill_random_binary(float_t ratio = 0.5f);
-	NGrid& fill_random_sign(float_t ratio = 0.5f);
+	NGrid& fill_random_binary(const float_t ratio = 0.5f);
+	NGrid& fill_random_sign(const float_t ratio = 0.5f);
 	NGrid& fill_range(const float_t start = 0.0f, const float_t step = 1.0f);
-	NGrid& fill_dropout(float_t ratio = 0.2f);
+	NGrid& fill_dropout(const float_t ratio = 0.2f);
 	NGrid& fill_index();
 
 	static NGrid identity(const uint32_t size);
@@ -132,11 +132,11 @@ public:
 	// | Neural Net Weight Initialization|
 	// +=================================+
 	// these initialization methods are 'destructive', i.e. they modify the NGrid itself, then return a reference to 'this'
-	NGrid& weightinit_tanh_normal(uint32_t fan_in, uint32_t fan_out);
-	NGrid& weightinit_tanh_uniform(uint32_t fan_in, uint32_t fan_out);
-	NGrid& weightinit_sigmoid(uint32_t fan_in, uint32_t fan_out);
-	NGrid& weightinit_relu(uint32_t fan_in);
-	NGrid& weightinit_elu(uint32_t fan_in);
+	NGrid& weightinit_tanh_normal(const uint32_t fan_in, const uint32_t fan_out);
+	NGrid& weightinit_tanh_uniform(const uint32_t fan_in, const uint32_t fan_out);
+	NGrid& weightinit_sigmoid(const uint32_t fan_in, const uint32_t fan_out);
+	NGrid& weightinit_relu(const uint32_t fan_in);
+	NGrid& weightinit_elu(const uint32_t fan_in);
 
 	// +=================================+   
 	// | Distribution Properties         |
@@ -163,7 +163,7 @@ public:
 	void operator+=(const NGrid& other);
 
 	// +=================================+   
-	// | Substraction                    |
+	// | Subtraction                     |
 	// +=================================+
 	NGrid operator-(const float_t value) const;
 	NGrid operator-(const NGrid& other) const;
@@ -178,8 +178,8 @@ public:
 	float_t product() const;
 	NGrid operator*(const float_t factor) const;
 	void operator*=(const float_t factor);
-	NGrid operator*(const NGrid& other) const;  // alias for matrix product
-	void operator*=(const NGrid& other);        // "equals matrix product"
+	NGrid operator*(const NGrid& other) const;		// alias for matrix product
+	void operator*=(const NGrid& other);      // "equals matrix product"
 	float_t scalar_product(const NGrid& other) const;
 	NGrid matrix_product(const NGrid& other) const;
 	NGrid Hadamard_product(const NGrid& other) const;
@@ -196,7 +196,7 @@ public:
 	// | Modulo                          |
 	// +=================================+
 	void operator%=(const float_t value);
-	NGrid operator%(const float_t num) const;
+	NGrid operator%(const float_t value) const;
 
 	// +=================================+   
 	// | Exponentiation & Logarithm      |
@@ -207,13 +207,13 @@ public:
 	NGrid pow(const NGrid& other) const;
 	NGrid operator^(const NGrid& other) const;
 	NGrid sqrt() const;
-	NGrid log(float_t base = 2.718282) const;
+	NGrid log(const float_t base = 2.718282) const;
 	NGrid exp() const;
 
 	// +=================================+   
 	// | Rounding                        |
 	// +=================================+
-	NGrid round() const;
+	NGrid round(uint32_t precision = 0) const;
 	NGrid floor() const;
 	NGrid ceil() const;
 	NGrid abs() const;
@@ -229,12 +229,12 @@ public:
 	// +=================================+   
 	// | Trigonometric Functions         |
 	// +=================================+
-	NGrid cos(AngularUnit source_angle_unit = RAD) const;
-	NGrid sin(AngularUnit source_angle_unit = RAD) const;
-	NGrid tan(AngularUnit source_angle_unit = RAD) const;
-	NGrid acos(AngularUnit result_angle_unit = RAD) const;
-	NGrid asin(AngularUnit result_angle_unit = RAD) const;
-	NGrid atan(AngularUnit result_angle_unit = RAD) const;
+	NGrid cos(const AngularUnit source_angle_unit = RAD) const;
+	NGrid sin(const AngularUnit source_angle_unit = RAD) const;
+	NGrid tan(const AngularUnit source_angle_unit = RAD) const;
+	NGrid acos(const AngularUnit result_angle_unit = RAD) const;
+	NGrid asin(const AngularUnit result_angle_unit = RAD) const;
+	NGrid atan(const AngularUnit result_angle_unit = RAD) const;
 	NGrid cosh() const;
 	NGrid sinh() const;
 	NGrid tanh() const;
@@ -290,7 +290,7 @@ public:
 	// +=================================+   
 	// | Scaling                         |
 	// +=================================+
-	NGrid scale_minmax(float_t range_from = 0.0f, float_t range_to = 1.0f) const;
+	NGrid scale_minmax(const float_t range_from = 0.0f, const float_t range_to = 1.0f) const;
 	NGrid scale_mean() const;
 	NGrid scale_zscore(const float_t z_score = 1.0f) const;
 	NGrid scale_undo() const;
@@ -300,21 +300,21 @@ public:
 	// | Activation Functions            |
 	// | (with Derivatives)              |
 	// +=================================+
-	NGrid activation(ActFunc activation_function) const;
-	NGrid derivative(ActFunc activation_function) const;
+	NGrid activation(const ActFunc activation_function) const;
+	NGrid derivative(const ActFunc activation_function) const;
 
 	NGrid ident() const;                                NGrid ident_drv() const;
 	NGrid sigmoid() const;                              NGrid sigmoid_drv() const;
-	NGrid elu(float_t alpha = 0.01) const;              NGrid elu_drv(float_t alpha = 0.01) const;
-	NGrid relu(float_t alpha = 0.01) const;             NGrid relu_drv(float_t alpha = 0.01) const;
+	NGrid elu(const float_t alpha = 0.01) const;        NGrid elu_drv(const float_t alpha = 0.01) const;
+	NGrid relu(const float_t alpha = 0.01) const;       NGrid relu_drv(const float_t alpha = 0.01) const;
 	NGrid tanh_drv() const;
 
 	// +=================================+   
 	// | Advanced Matrix Operations      |
 	// +=================================+
 	NGrid flatten() const;
-	NGrid reshape(const std::vector<uint32_t>& new_shape, float_t default_init_value = 0) const;
-	NGrid reshape(std::initializer_list<uint32_t> new_shape, float_t default_init_value = 0) const;
+	NGrid reshape(const std::vector<uint32_t>& new_shape, const float_t default_init_value = 0) const;
+	NGrid reshape(const std::initializer_list<uint32_t> new_shape, const float_t default_init_value = 0) const;
 	template<typename... Args> NGrid reshape(Args... args) const;
 	NGrid concatenate(const NGrid& other, const uint32_t axis = 0) const;
 	NGrid padding(const uint32_t amount, const float_t init_value = 0.0f) const;
@@ -329,8 +329,8 @@ public:
 	NGrid pool_min(const std::initializer_list<uint32_t>& window_shape, const std::initializer_list<uint32_t>& stride_shape = {}) const;
 	NGrid pool_mean(const std::vector<uint32_t>& window_shape, const std::vector<uint32_t>& stride_shape = {}) const;
 	NGrid pool_mean(const std::initializer_list<uint32_t>& window_shape, const std::initializer_list<uint32_t>& stride_shape = {}) const;
-	NGrid convolution(const NGrid& kernel, uint32_t padding_amount = 0, float_t padding_value = 0.0f) const;
-	NGrid transpose(const std::vector<uint32_t> target_axis_order = { 1,0 }) const;
+	NGrid convolution(const NGrid& kernel, const uint32_t padding_amount = 0, const float_t padding_value = 0.0f) const;
+	NGrid transpose(const std::vector<uint32_t>& target_axis_order = { 1,0 }) const;
 	QRresult qr(const bool hessenberg = false) const;
 	QRresult hess() const;
 	CGrid eigen(const uint32_t max_iterations_multiplier = 100, const float_t tolerance = 1e-06) const;
@@ -339,13 +339,13 @@ public:
 	NGrid u_inverse() const;
 	NGrid inverse() const;
 	static NGrid inverse(const LUresult& LUP);
-	const bool is_invertible() const;
-	static const bool is_invertible(const NGrid& U);
+	bool is_invertible() const;
+	static bool is_invertible(const NGrid& U);
 	RREF rref(const NGrid& augment) const;
 	float_t determinant() const;
 	const uint32_t rank() const;
 	static const uint32_t rank(const NGrid& U);
-	static const uint32_t rank(const LUresult LUP);
+	static const uint32_t rank(LUresult LUP);
 	NGrid diagonal() const;
 	NGrid mirror(const std::vector<bool>& mirror_axes) const;
 	NGrid mirror(const std::initializer_list<bool>& mirror_axes) const;
@@ -364,14 +364,14 @@ public:
 	// +=================================+   
 	// | Miscellaneous                   |
 	// +=================================+
-	NGrid flush() const;
-	void print(std::string comment = "", int32_t precision = 3, bool with_indices = false, bool rows_inline = true, std::string delimiter = "|") const;
-	static void set_workgroup_size_1d(uint32_t size);
-	static void set_workgroup_size_2d(uint32_t size);
+	void print(const std::string& comment = "", const int32_t precision = 3, const bool with_indices = false, const bool rows_inline = true, const std::string& delimiter = "|") const;
+	static void set_workgroup_size_1d(const uint32_t size);
+	static void set_workgroup_size_2d(const uint32_t size);
+	uint64_t get_tasks_finished_semaphore_counter() const;
+	void set_tasks_finished_semaphore_counter(const uint64_t counter_value) const;
 	operator CGrid() const;
-	uint32_t flat_index(std::initializer_list<uint32_t> multi_index) const;
+	uint32_t flat_index(const std::initializer_list<uint32_t> multi_index) const;
 	uint32_t flat_index(const std::vector<uint32_t>& multi_index) const;
-	Semaphore& get_timeline_semaphore() const;
 
 private:
 
@@ -386,7 +386,8 @@ private:
 	uint32_t elements = 0;                      // total number of elements
 	Buffer<float_t>* data_buffer = nullptr;
 	Buffer<uint32_t>* shape_buffer = nullptr;
-	Semaphore* timeline_semaphore = nullptr;
+	static Semaphore* timeline_semaphore;
+	mutable uint64_t tasks_finished_semaphore_counter = 0;// stores the latest semaphore counter value which gets signaled when all work for this NGrid instance is done
 
 	// store scaling information (e.g. useful for neural networks: label scaling based on input scaling)
 	ScalingMethod scaling_method = ScalingMethod::SCALING_METHOD_NONE;
@@ -398,9 +399,8 @@ private:
 
 	// helper methods
 	void create(const std::vector<uint32_t>& shape); // instance creation helper method, shared among constructors
-	void doubleshift_bulge_chase(const float_t alpha, const float_t beta, uint32_t start_row, uint32_t end_row);
+	void doubleshift_bulge_chase(const float_t alpha, const float_t beta, const uint32_t start_row, const uint32_t end_row);
 };
-
 
 
 
@@ -424,8 +424,8 @@ public:
 	CGrid();                                        // default constructor (initilizes an empty array)
 	template<typename... Args> CGrid(Args... args); // parametric default constructor for multi-dimensional array, overload for variadic template
 	CGrid(const std::vector<uint32_t>& shape);      // parametric default constructor for multi-dimensional array, overload for std::vector
-	CGrid(std::initializer_list<uint32_t> shape);   // parametric default constructor for multi-dimensional array, overload for std::initializer_list
-	CGrid(std::vector<float_t> source_vector);      // construct 1d array and directly fill it with the contents of a std::vector<float_t>
+	CGrid(const std::initializer_list<uint32_t> shape);   // parametric default constructor for multi-dimensional array, overload for std::initializer_list
+	CGrid(const std::vector<float_t>& source_vector);// construct 1d array and directly fill it with the contents of a std::vector<float_t>
 	CGrid(NGrid&& other) noexcept;                  // move constructor
 	CGrid(CGrid&& other) noexcept;                  // move constructor
 	CGrid(const NGrid& other);                      // copy constructor
@@ -447,15 +447,15 @@ public:
 	// +=================================+   
 	// | getters & setters               |
 	// +=================================+
-	CGrid& set(std::initializer_list<uint32_t> index, const float_t value);
-	CGrid& set(std::initializer_list<uint32_t> index, const std::complex<float_t> complex_value);
+	CGrid& set(const std::initializer_list<uint32_t> index, const float_t value);
+	CGrid& set(const std::initializer_list<uint32_t> index, const std::complex<float_t> complex_value);
 	CGrid& set(const std::vector<uint32_t>& index, const float_t value);
 	CGrid& set(const std::vector<uint32_t>& index, const std::complex<float_t> complex_value);
-	CGrid& set(const std::vector<float_t>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	CGrid& set(const std::vector<std::complex<float_t>>& data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	CGrid& set(const float_t* data, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	CGrid& set(const NGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
-	CGrid& set(const CGrid& other, uint32_t copied_elements = 0, uint32_t source_offset_elements = 0, uint32_t target_offset_elements = 0);
+	CGrid& set(const std::vector<float_t>& data, const uint32_t copied_elements = 0, const uint32_t source_offset_elements = 0, const uint32_t target_offset_elements = 0);
+	CGrid& set(const std::vector<std::complex<float_t>>& data, const uint32_t copied_elements = 0, const uint32_t source_offset_elements = 0, const uint32_t target_offset_elements = 0);
+	CGrid& set(const float_t* data, const uint32_t copied_elements = 0, const uint32_t source_offset_elements = 0, const uint32_t target_offset_elements = 0);
+	CGrid& set(const NGrid& other, const uint32_t copied_elements = 0, const uint32_t source_offset_elements = 0, const uint32_t target_offset_elements = 0);
+	CGrid& set(const CGrid& other, const uint32_t copied_elements = 0, const uint32_t source_offset_elements = 0, const uint32_t target_offset_elements = 0);
 	CGrid& set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset);
 	CGrid& set(const CGrid& other, const std::vector<uint32_t>& target_origin_offset);
 	CGrid& set(const NGrid& other, const std::initializer_list<uint32_t>& target_origin_offset);
@@ -465,14 +465,14 @@ public:
 	std::vector<std::complex<float_t>> get() const;
 	std::vector<std::complex<float_t>> get(const uint32_t read_elements, const uint32_t source_offset_elements) const;
 	uint32_t get_dimensions() const;
-	uint32_t get_size(uint32_t dimension = 0) const;
+	uint32_t get_size(const uint32_t dimension = 0) const;
 	uint32_t get_elements() const;
 	const std::vector<uint32_t>& get_shape() const;
 	uint32_t rows() const;
 	uint32_t cols() const;
 	std::string get_shapestring() const;
-	CGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape) const;
-	CGrid subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> subgrid_shape) const;
+	CGrid subgrid(const std::initializer_list<uint32_t> source_offset, const std::initializer_list<uint32_t> subgrid_shape) const;
+	CGrid subgrid(const std::vector<uint32_t>& source_offset, const std::vector<uint32_t>& subgrid_shape) const;
 
 	// +=================================+   
 	// | Fill                            |
@@ -518,10 +518,10 @@ public:
 	CGrid operator*(const std::complex<float_t> complex_factor) const;
 	void operator*=(const float_t factor);
 	void operator*=(const std::complex<float_t> complex_factor);
-	CGrid operator*(const NGrid& other) const;  // alias for matrix product (of a complex matrix with real matrix)
-	CGrid operator*(const CGrid& other) const;  // alias for matrix product (of two complex matrices)
-	void operator*=(const NGrid& other);        // "equals matrix product"
-	void operator*=(const CGrid& other);        // "equals matrix product"
+	CGrid operator*(const NGrid& other) const; // alias for matrix product (of a complex matrix with real matrix)
+	CGrid operator*(const CGrid& other) const; // alias for matrix product (of two complex matrices)
+	void operator*=(const NGrid& other);             // "equals matrix product"
+	void operator*=(const CGrid& other);             // "equals matrix product"
 	std::complex<float_t> scalar_product(const NGrid& other) const;
 	std::complex<float_t> scalar_product(const CGrid& other) const;
 	CGrid matrix_product(const NGrid& other) const;
@@ -565,23 +565,23 @@ public:
 	CGrid flatten() const;
 	CGrid reshape(const std::vector<uint32_t>& new_shape, float_t default_init_value = 0) const;
 	CGrid reshape(const std::vector<uint32_t>& new_shape, std::complex<float_t> default_complex_init_value) const;
-	CGrid reshape(std::initializer_list<uint32_t> new_shape, float_t default_init_value = 0) const;
-	CGrid reshape(std::initializer_list<uint32_t> new_shape, std::complex<float_t> default_complex_init_value) const;
+	CGrid reshape(const std::initializer_list<uint32_t> new_shape, float_t default_init_value = 0) const;
+	CGrid reshape(const std::initializer_list<uint32_t> new_shape, std::complex<float_t> default_complex_init_value) const;
 	template<typename... Args> CGrid reshape(Args... args) const;
 	CGrid concatenate(const NGrid& other, const uint32_t axis = 0) const;
 	CGrid concatenate(const CGrid& other, const uint32_t axis = 0) const;
 	CGrid padding(const uint32_t amount, const float_t init_value = 0.0f) const;
 	CGrid padding(const uint32_t amount, const std::complex<float_t> init_value) const;
-	CGrid convolution(const NGrid& kernel, uint32_t padding_amount = 0, float_t padding_value = 0.0f) const;
-	CGrid convolution(const NGrid& kernel, uint32_t padding_amount, std::complex<float_t> padding_value) const;
-	CGrid convolution(const CGrid& kernel, uint32_t padding_amount = 0, float_t padding_value = 0.0f) const;
-	CGrid convolution(const CGrid& kernel, uint32_t padding_amount, std::complex<float_t> padding_value) const;
-	CGrid transpose(const std::vector<uint32_t> target_axis_order = { 1,0 }) const;
+	CGrid convolution(const NGrid& kernel, const uint32_t padding_amount = 0, const float_t padding_value = 0.0f) const;
+	CGrid convolution(const NGrid& kernel, const uint32_t padding_amount, const std::complex<float_t> padding_value) const;
+	CGrid convolution(const CGrid& kernel, const uint32_t padding_amount = 0, const float_t padding_value = 0.0f) const;
+	CGrid convolution(const CGrid& kernel, const uint32_t padding_amount, const std::complex<float_t> padding_value) const;
+	CGrid transpose(const std::vector<uint32_t>& target_axis_order = { 1,0 }) const;
 	LUresultComplex lu() const;
 	CGrid l_inverse() const;
 	CGrid u_inverse() const;
-	const bool is_invertible() const;
-	static const bool is_invertible(const CGrid& U);
+	bool is_invertible() const;
+	static bool is_invertible(const CGrid& U);
 	static CGrid inverse(const LUresultComplex& LUP);
 	CGrid inverse() const;
 	CGrid mirror(const std::vector<bool>& mirror_axes) const;
@@ -597,8 +597,7 @@ public:
 	operator NGrid() const;
 	static void set_workgroup_size_1d(uint32_t size);
 	static void set_workgroup_size_2d(uint32_t size);
-	void print(std::string comment = "", int32_t precision = 3, bool with_indices = false, bool rows_inline = true, std::string delimiter = "|") const;
-	uint64_t get_timeline_counter() const;
+	void print(const std::string& comment = "", const int32_t precision = 3, const bool with_indices = false, const bool rows_inline = true, const std::string& delimiter = "|") const;
 
 private:
 	// private class members
@@ -618,6 +617,7 @@ private:
 // | Static Member Initializations   |
 // +=================================+
 VulkanManager* NGrid::manager = nullptr;
+Semaphore* NGrid::timeline_semaphore = nullptr;
 uint32_t NGrid::workgroup_size_1d = DEFAULT_WORKGROUP_SIZE_1D;
 uint32_t NGrid::workgroup_size_2d = DEFAULT_WORKGROUP_SIZE_2D;
 
@@ -651,68 +651,41 @@ struct RREF {
 struct LUresult {
 	friend class NGrid;
 private:
-	Buffer<uint32_t>* swap_count_staging_buffer = nullptr;
-	Buffer<uint32_t>* swap_count_buffer = nullptr;
-	Buffer<uint32_t>* swap_row_buffer = nullptr;
+	NGrid swap_data;
 public:
 	NGrid L; // lower triangular matrix
 	NGrid U; // upper triangular matrix
 	NGrid P; // permutation matrix (identity matrix if no row swaps were performed)
-	uint32_t swap_count() {
-		static uint32_t result = swap_count_buffer->read_element(0);
-		return result;
+	uint32_t swap_count() const {
+		return swap_data.get(0);
 	}
 
 	// destructor
-	~LUresult() {
-		if (swap_count_buffer != nullptr) {
-			delete swap_count_buffer;
-			swap_count_buffer = nullptr;
-		}
-		if (swap_count_staging_buffer != nullptr) {
-			delete swap_count_staging_buffer;
-			swap_count_staging_buffer = nullptr;
-		}
-		if (swap_row_buffer != nullptr) {
-			delete swap_row_buffer;
-			swap_row_buffer = nullptr;
-		}
-	}
+	~LUresult() {}
 };
 
 // structure for the result of LU decomposition for matrices with complex numbers
 struct LUresultComplex {
 	friend class CGrid;
 private:
-	Buffer<uint32_t>* swap_count_staging_buffer = nullptr;
-	Buffer<uint32_t>* swap_count_buffer = nullptr;
+	NGrid swap_data; // element 0 stores the row to swap for the current row 'k', element 1 stores the number of swaps performed
 public:
 	CGrid L; // lower triangular matrix
 	CGrid U; // upper triangular matrix
-	NGrid P; // permutatiion matrix (identity matrix if no row swaps were performed)
+	NGrid P; // permutation matrix (identity matrix if no row swaps were performed)
 
-	uint32_t swap_count() {
-		static uint32_t result = swap_count_buffer->read_element(0);
-		return result;
+	uint32_t swap_count() const {
+		return swap_data.get(0);
 	}
 
 	// destructor
-	~LUresultComplex() {
-		if (swap_count_buffer != nullptr) {
-			delete swap_count_buffer;
-			swap_count_buffer = nullptr;
-		}
-		if (swap_count_staging_buffer != nullptr) {
-			delete swap_count_staging_buffer;
-			swap_count_staging_buffer = nullptr;
-		}
-	}
+	~LUresultComplex() {}
 };
 
 // structure for the result of QR decomposition
 struct QRresult {
 	NGrid Q;	// orthogonal matrix Q, which is the product of all Householder transformations
-	NGrid R;	// matrix R, which is upper triangular (or Hessenberg) ofter the QR decomposition
+	NGrid R;	// matrix R, which is upper triangular (or Hessenberg) after the QR decomposition
 	NGrid V;	// holds the householder vectors v_k in its columns, with zeros above the diagonal
 	NGrid Tau;	// vector of scalars tau_k, which are used to construct the Householder transformations
 
@@ -761,14 +734,14 @@ NGrid::NGrid(const std::vector<uint32_t>& shape_vec) {
 }
 
 // NGrid parametric constructor for multi-dimensional array, overloaded for std::initializer_list
-NGrid::NGrid(std::initializer_list<uint32_t> shape) {
+NGrid::NGrid(const std::initializer_list<uint32_t> shape) {
 	std::vector<uint32_t> shape_vec(shape);
 	this->create(shape_vec);
 }
 
 // NGrid parametric constructor for 1d array:
 // construct and directly fill it with the contents of a given std::vector<float_t>
-NGrid::NGrid(std::vector<float_t> source_vector) {
+NGrid::NGrid(const std::vector<float_t>& source_vector) {
 	uint32_t copied_elements = static_cast<uint32_t>(source_vector.size());
 	std::vector<uint32_t> shape_vec = { copied_elements };
 	this->create(shape_vec);
@@ -799,9 +772,12 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 		manager = &VulkanManager::get_singleton();
 	}
 
-	// create a timeline semaphore (required for GPU/GPU synchronization)
-	if (timeline_semaphore == nullptr) {
-		timeline_semaphore = new Semaphore(manager->get_device(), 0);
+	// create a timeline semaphore (required for GPU/GPU synchronization);
+	// this semaphore is static and therefore shared across all instances of NGrid;
+	// because it's provided by the VulkanManager singleton, its lifetime is guaranteed
+	// until the end of the program
+	if (!timeline_semaphore) {
+		timeline_semaphore = manager->get_timeline_semaphore(0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT).first;
 	}
 
 	if (this->elements != 0) {
@@ -830,56 +806,74 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 		}
 
 		// write shape to a temporary staging buffer, then copy it to the shape buffer on the device
-		ComputeTask& task = manager->get_compute_task(std::string(__FUNCTION__) + " (copy shape buffer to device)");
+		ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 		Buffer<uint32_t>& staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		staging_buffer.write(this->shape, this->dimensions, 0, 0);
 		CommandBuffer& cb = task.get_command_buffer();
 		cb.begin_recording();
-		cb.copy_buffer(staging_buffer, *shape_buffer);
+		cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+		cb.record_barriers();
+		cb.copy_buffer(staging_buffer, this->get_shape_buffer());
+		cb.record_barriers();
 		cb.end_recording();
-		task.timeline_sync(*this->timeline_semaphore);
+		this->set_tasks_finished_semaphore_counter(task.timeline_sync(*timeline_semaphore));
 		task.submit();
 	}
 }
 
 // NGrid move constructor
-NGrid::NGrid(NGrid&& other) noexcept {
+NGrid::NGrid(NGrid&& other) noexcept
+	: elements(other.elements),
+	dimensions(other.dimensions),
+	shape(std::move(other.shape)),
+	data_buffer(std::move(other.data_buffer)),
+	shape_buffer(std::move(other.shape_buffer)),
+	tasks_finished_semaphore_counter(other.get_tasks_finished_semaphore_counter()) {
+
 	Log::debug("NGrid move constructor invoked");
-	this->elements = other.elements;                            other.elements = 0;
-	this->dimensions = other.dimensions;                        other.dimensions = 0;
-	this->shape = std::move(other.shape);                       other.shape.clear();
-	if (this->data_buffer != nullptr) {
-		delete this->data_buffer;
-	}
-	this->data_buffer = std::move(other.data_buffer);           other.data_buffer = nullptr;
-	if (this->shape_buffer != nullptr) {
-		delete this->shape_buffer;
-	}
-	this->shape_buffer = std::move(other.shape_buffer);         other.shape_buffer = nullptr;
-	this->timeline_semaphore = std::move(other.timeline_semaphore); other.timeline_semaphore = nullptr;
+	other.elements = 0;
+	other.dimensions = 0;
+	other.shape.clear();
+	other.data_buffer = nullptr;
+	other.shape_buffer = nullptr;
 }
+
 
 // NGrid copy constructor
 NGrid::NGrid(const NGrid& other) {
 	Log::debug("NGrid copy constructor invoked");
 	this->create(other.get_shape());
-	this->set(other);
+
+	// Ensure other’s GPU work is finished before copying its data
+	if (timeline_semaphore && other.get_tasks_finished_semaphore_counter() > timeline_semaphore->get_counter()) {
+		if (timeline_semaphore->wait(other.get_tasks_finished_semaphore_counter(), 5e09) != VK_SUCCESS) {
+			Log::warning("NGrid copy constructor has failed: not safe to copy because 'other' hasn't yet finished its work on the GPU");
+		}
+	}
+	else {
+		// Now safely copy the data
+		this->set(other);
+		this->tasks_finished_semaphore_counter = other.get_tasks_finished_semaphore_counter();
+	}
 }
+
 
 // destructor
 NGrid::~NGrid() {
 	Log::debug("NGrid destructor invoked");
-	if (this->shape_buffer != nullptr) {
+	if (timeline_semaphore && tasks_finished_semaphore_counter > timeline_semaphore->get_counter()) {
+		if (timeline_semaphore->wait(tasks_finished_semaphore_counter, 5e09) != VK_SUCCESS) {
+			Log::warning("NGrid destructor: failed waiting for GPU, timeline semaphore has not signaled, not safe to free!");
+			abort();
+		}
+	}
+	if (this->shape_buffer) {
 		delete this->shape_buffer;
 		this->shape_buffer = nullptr;
 	}
-	if (this->data_buffer != nullptr) {
+	if (this->data_buffer) {
 		delete this->data_buffer;
 		this->data_buffer = nullptr;
-	}
-	if (this->timeline_semaphore != nullptr) {
-		delete this->timeline_semaphore;
-		this->timeline_semaphore = nullptr;
 	}
 }
 
@@ -889,28 +883,72 @@ NGrid::~NGrid() {
 
 // NGrid copy assignment operator
 NGrid& NGrid::operator=(const NGrid& other) {
-	Log::debug("NGrid copy assignment invoked, copying from other (handle: ", other.data_buffer, ") to this (handle: ", this->data_buffer, ")");
+	Log::debug("NGrid copy assignment invoked...");
 	if (this != &other) {
+		// Wait for any in-flight work on 'this' before destroying its buffers
+		if (timeline_semaphore && tasks_finished_semaphore_counter > timeline_semaphore->get_counter()) {
+			if (timeline_semaphore->wait(tasks_finished_semaphore_counter, 5e09) != VK_SUCCESS) {
+				Log::warning("NGrid copy assignment: failed waiting for GPU, timeline semaphore has not signaled, not safe to overwrite 'this'!");
+				abort();
+			}
+		}
+
 		this->create(other.get_shape());
-		this->set(other);
+
+		// Wait for other’s GPU work before copying
+		if (other.get_tasks_finished_semaphore_counter() > timeline_semaphore->get_counter()) {
+			Log::warning("NGrid copy constructor has failed: not safe to copy because 'other' hasn't yet finished its work on the GPU");
+		}
+		else {
+			// Now it's safe to copy from 'other'
+			this->set(other);
+			this->tasks_finished_semaphore_counter = other.get_tasks_finished_semaphore_counter();
+		}
 	}
 	return *this;
 }
+
 
 // NGrid move assignment operator
 NGrid& NGrid::operator=(NGrid&& other) noexcept {
 	Log::debug("NGrid move assignment invoked, moving from other (handle: ", other.data_buffer, ") to this (handle: ", this->data_buffer, ")");
 	if (this != &other) {
-		this->elements = other.elements;                            other.elements = 0;
-		this->dimensions = other.dimensions;                        other.dimensions = 0;
-		this->shape = std::move(other.shape);                       other.shape.clear();
-		delete this->data_buffer;
-		delete this->shape_buffer;
-		this->data_buffer = std::move(other.data_buffer);           other.data_buffer = nullptr;
-		this->shape_buffer = std::move(other.shape_buffer);         other.shape_buffer = nullptr;
-		this->timeline_semaphore = std::move(other.timeline_semaphore); other.timeline_semaphore = nullptr;
+		// Make sure any in-flight work is done before nuking old buffers
+		if (timeline_semaphore && tasks_finished_semaphore_counter > timeline_semaphore->get_counter()) {
+			if (timeline_semaphore->wait(tasks_finished_semaphore_counter, 5e09) != VK_SUCCESS) {
+				Log::warning("NGrid move assignment: failed waiting for GPU, timeline semaphore has not signaled, not safe to nuke 'this'!");
+				abort();
+			}
+		}
+		if (this->shape_buffer) {
+			delete this->shape_buffer;
+			this->shape_buffer = nullptr;
+		}
+		if (this->data_buffer) {
+			delete this->data_buffer;
+			this->data_buffer = nullptr;
+		}
+
+		elements = other.elements;        other.elements = 0;
+		dimensions = other.dimensions;    other.dimensions = 0;
+		shape = std::move(other.shape);   other.shape.clear();
+
+		data_buffer = std::move(other.data_buffer);   other.data_buffer = nullptr;
+		shape_buffer = std::move(other.shape_buffer); other.shape_buffer = nullptr;
+		this->tasks_finished_semaphore_counter = other.get_tasks_finished_semaphore_counter();
 	}
 	return *this;
+}
+
+// alias for NGrid::set(const std::vector<float_t>& data)
+void NGrid::operator=(const std::vector<float_t>& data) {
+	*this = this->reshape({ static_cast<uint32_t>(data.size()) });
+	this->set(data);
+}
+
+// alias for NGrid::set(const float_t* data)
+void NGrid::operator=(const float_t* data) {
+	this->set(data, this->elements);
 }
 
 // +=================================+   
@@ -919,7 +957,7 @@ NGrid& NGrid::operator=(NGrid&& other) noexcept {
 
 // assigns a value to an NGrid data element via multi-dimensional index;
 // overload with index as std::initializer_list<uint32_t>
-NGrid& NGrid::set(std::initializer_list<uint32_t> index, const float_t value) {
+NGrid& NGrid::set(const std::initializer_list<uint32_t> index, const float_t value) {
 
 	// acquire an idle compute task
 	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
@@ -931,9 +969,13 @@ NGrid& NGrid::set(std::initializer_list<uint32_t> index, const float_t value) {
 	// copy from staging buffer to data buffer
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
-	cb.copy_buffer(staging_buffer, *this->data_buffer, sizeof(float_t), 0, flat_index(index) * sizeof(float_t));
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
+	cb.copy_buffer(staging_buffer, this->get_buffer(), sizeof(float_t), 0, flat_index(index) * sizeof(float_t));
 	cb.end_recording();
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 	return *this;
 }
@@ -951,22 +993,15 @@ NGrid& NGrid::set(const std::vector<uint32_t>& index, const float_t value) {
 	// copy from staging buffer to data buffer
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
-	cb.copy_buffer(staging_buffer, *this->data_buffer, sizeof(float_t), 0, flat_index(index) * sizeof(float_t));
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
+	cb.copy_buffer(staging_buffer, this->get_buffer(), sizeof(float_t), 0, flat_index(index) * sizeof(float_t));
 	cb.end_recording();
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 	return *this;
-}
-
-// alias for NGrid::set(const std::vector<float_t>& data)
-void NGrid::operator=(const std::vector<float_t>& data) {
-	*this = this->reshape({ static_cast<uint32_t>(data.size()) });
-	this->set(data);
-}
-
-// alias for NGrid::set(const float_t* data)
-void NGrid::operator=(const float_t* data) {
-	this->set(data, this->elements);
 }
 
 // copies raw data from a std::vector<float_t> to the data buffer
@@ -1014,9 +1049,13 @@ NGrid& NGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, ui
 	// copy from staging buffer to data buffer
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
-	cb.copy_buffer(staging_buffer, *this->data_buffer, copied_elements * sizeof(float_t), 0, target_offset_elements * sizeof(float_t));
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
+	cb.copy_buffer(staging_buffer, this->get_buffer(), copied_elements * sizeof(float_t), 0, target_offset_elements * sizeof(float_t));
 	cb.end_recording();
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 	return *this;
 }
@@ -1050,9 +1089,13 @@ NGrid& NGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source
 	// copy from staging buffer to data buffer
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
-	cb.copy_buffer(staging_buffer, *this->data_buffer, copied_elements * sizeof(float_t), 0, target_offset_elements * sizeof(float_t));
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
+	cb.copy_buffer(staging_buffer, this->get_buffer(), copied_elements * sizeof(float_t), 0, target_offset_elements * sizeof(float_t));
 	cb.end_recording();
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 	return *this;
 }
@@ -1122,11 +1165,15 @@ NGrid& NGrid::set(const NGrid& other, uint32_t elements, uint32_t source_offset_
 	// record and submit
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
-	cb.copy_buffer(*other.get_buffer(), *this->data_buffer, copied_elements * sizeof(float_t), source_offset_elements * sizeof(float_t), target_offset_elements * sizeof(float_t));
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
+	cb.copy_buffer(other.get_buffer(), this->get_buffer(), copied_elements * sizeof(float_t), source_offset_elements * sizeof(float_t), target_offset_elements * sizeof(float_t));
 	cb.end_recording();
 
-	task.timeline_sync(*this->timeline_semaphore);
-	task.timeline_sync(other.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -1139,7 +1186,7 @@ NGrid& NGrid::set(const NGrid& other, uint32_t elements, uint32_t source_offset_
 NGrid& NGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin_offset) {
 	uint32_t offset_dim = target_origin_offset.size();
 	if (this->dimensions != other.get_dimensions() || this->dimensions != offset_dim) {
-		Log::warning("In method NGrid::set(const NGrid& other, ...): dimensions of 'this', 'other' and target_origin_offset must match! ",
+		Log::warning("In method NGrid::set(NGrid& other, ...): dimensions of 'this', 'other' and target_origin_offset must match! ",
 			"'this' has ", this->dimensions, " dimensions, 'other' has ", other.get_dimensions(), " dimensions, offset argument has ",
 			offset_dim, " dimensions");
 		return *this;
@@ -1173,10 +1220,10 @@ NGrid& NGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
 	ds.bind_buffer(4, offset);
 	ds.write();
 
@@ -1186,15 +1233,22 @@ NGrid& NGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(offset_staging, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
 	cb.copy_buffer(offset_staging, offset);
-	cb.add_buffer_memory_barrier(offset, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(offset, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	cb.record_barriers();
 	cb.dispatch(pipeline, other.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
-	task.timeline_sync(other.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -1218,16 +1272,16 @@ float_t NGrid::get(const uint32_t flat_index) const {
 	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(1, BufferUsage::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
-	cb.copy_buffer(*this->data_buffer, staging_buffer, sizeof(float_t), flat_index * sizeof(float_t), 0);
-	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
+	cb.copy_buffer(this->get_buffer(), staging_buffer, sizeof(float_t), flat_index * sizeof(float_t), 0);
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_HOST_BIT);
 	cb.record_barriers();
 	cb.end_recording();
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit(true); // 'true' = keep task protected (=unavailable for reset) after submit
-	task.wait_idle(); // wait for fence
-	float_t result = staging_buffer.read_element(0);
-	task.unprotect(); // mark available for reset
-	return result;
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	task.submit(1e09); // wait up to one second for the task to complete (with fence signal)
+	return staging_buffer.read_element(0);
 }
 
 // return the value of an array element via its multidimensional index
@@ -1249,26 +1303,26 @@ std::vector<float> NGrid::get(const uint32_t read_elements, const uint32_t sourc
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
 	static uint64_t float_size = sizeof(float);
-	cb.copy_buffer(*this->data_buffer, staging_buffer, read_elements * float_size, source_offset_elements * float_size, 0);
-	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
+	cb.copy_buffer(this->get_buffer(), staging_buffer, read_elements * float_size, source_offset_elements * float_size, 0);
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_HOST_BIT);
 	cb.record_barriers();
 	cb.end_recording();
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit(true); // 'true' = keep task protected (=unavailable for reset) after submit
-	task.wait_idle();
-	std::vector<float_t> result = staging_buffer.read(read_elements, 0);
-	task.unprotect(); // mark available for reset
-	return result;
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	task.submit(5e09); // wait up to 5 seconds for the task to complete (with fence signal)
+	return staging_buffer.read(read_elements, 0);
 }
 
 // returns the buffer containing the raw array data
-Buffer<float_t>* NGrid::get_buffer() const {
-	return this->data_buffer;
+Buffer<float_t>& NGrid::get_buffer() const {
+	return *this->data_buffer;
 }
 
 // returns the buffer containing the shape of the array
-Buffer<uint32_t>* NGrid::get_shape_buffer() const {
-	return this->shape_buffer;
+Buffer<uint32_t>& NGrid::get_shape_buffer() const {
+	return *this->shape_buffer;
 }
 
 // returns the number of dimensions of the underlying array
@@ -1329,19 +1383,26 @@ std::string NGrid::get_shapestring() const {
 	return result;
 }
 
+NGrid NGrid::subgrid(const std::initializer_list<uint32_t> source_offset, const std::initializer_list<uint32_t> subgrid_shape) const {
+	// convert the initializer_lists to vectors
+	std::vector<uint32_t> source_offset_vector = source_offset;
+	std::vector<uint32_t> subgrid_shape_vector = subgrid_shape;
+	return this->subgrid(source_offset_vector, subgrid_shape_vector);
+
+}
 // slice a subarray out of the parent array
-NGrid NGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> subgrid_shape) const {
+NGrid NGrid::subgrid(const std::vector<uint32_t>& source_offset, const std::vector<uint32_t>& subgrid_shape) const {
 
 	// check if the source and result dimensions are equal
 	uint32_t subgrid_dimensions = static_cast<uint32_t>(subgrid_shape.size());
 	if (subgrid_dimensions != this->dimensions) {
-		Log::error("invalid usage of method 'NGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape)' ",
+		Log::error("invalid usage of method 'NGrid subgrid(const std::initializer_list<uint32_t> source_offset, const std::initializer_list<uint32_t> subgrid_shape)' ",
 			"with invalid subgrid_shape, which has ", subgrid_dimensions, " dimension(s), but the source array has ", this->dimensions, " dimension(s)");
 	}
 
 	for (uint32_t i = 0; i < subgrid_dimensions; i++) {
 		if (subgrid_shape[i] > this->shape[i] - source_offset[i]) {
-			Log::error("invalid usage of method 'NGrid subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> result_size)' with invalid result size; ",
+			Log::error("invalid usage of method 'NGrid subgrid(const std::initializer_list<uint32_t> source_offset, const std::initializer_list<uint32_t> result_size)' with invalid result size; ",
 				"result size is ", subgrid_shape[i], ", but the underlying array has ", this->shape[i], " element(s) in dimension ", i, ", therefore with a source offset of ",
 				source_offset[i], " the result size in this dimensions can't exceed ", shape[i] - subgrid_shape[i]);
 		}
@@ -1378,10 +1439,10 @@ NGrid NGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> 
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *subgrid.get_buffer());
-	ds.bind_buffer(3, *subgrid.get_shape_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, subgrid.get_buffer());
+	ds.bind_buffer(3, subgrid.get_shape_buffer());
 	ds.bind_buffer(4, source_offset_buffer);
 	ds.write();
 
@@ -1391,24 +1452,24 @@ NGrid NGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> 
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(offset_staging, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
 	cb.copy_buffer(offset_staging, source_offset_buffer);
-	cb.add_buffer_memory_barrier(source_offset_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(subgrid.get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(source_offset_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	cb.record_barriers();
 	cb.dispatch(pipeline, subgrid.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	subgrid.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return subgrid;
-}
-
-NGrid NGrid::subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape) const {
-	// convert the initializer_lists to vectors
-	std::vector<uint32_t> source_offset_vector = source_offset;
-	std::vector<uint32_t> subgrid_shape_vector = subgrid_shape;
-	return this->subgrid(source_offset_vector, subgrid_shape_vector);
 }
 
 // +=================================+   
@@ -1444,7 +1505,7 @@ NGrid& NGrid::fill(const float_t value) {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1453,11 +1514,14 @@ NGrid& NGrid::fill(const float_t value) {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -1491,7 +1555,7 @@ NGrid& NGrid::fill_zero() {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1500,11 +1564,14 @@ NGrid& NGrid::fill_zero() {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -1539,8 +1606,8 @@ NGrid& NGrid::fill_identity() {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *this->shape_buffer);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1549,20 +1616,18 @@ NGrid& NGrid::fill_identity() {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
-}
-
-NGrid NGrid::identity(const uint32_t size) {
-	NGrid result(size, size);
-	result.fill_identity();
-	return result;
 }
 
 // fill with values from a random normal (=gaussian) distribution
@@ -1596,7 +1661,7 @@ NGrid& NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1605,11 +1670,14 @@ NGrid& NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -1646,7 +1714,7 @@ NGrid& NGrid::fill_random_uniform(const float_t min, const float_t max) {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1655,11 +1723,14 @@ NGrid& NGrid::fill_random_uniform(const float_t min, const float_t max) {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -1701,7 +1772,7 @@ NGrid& NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1710,11 +1781,14 @@ NGrid& NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -1761,7 +1835,7 @@ NGrid& NGrid::fill_random_binary(float_t ratio) {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1770,18 +1844,21 @@ NGrid& NGrid::fill_random_binary(float_t ratio) {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
 }
 
 // randomly sets the specified fraction of the values to -1 and the rest to +1 (default: 0.5, i.e. 50%)
-NGrid& NGrid::fill_random_sign(float_t ratio) {
+NGrid& NGrid::fill_random_sign(const float_t ratio) {
 	if (this->elements == 0) {
 		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
 		return *this;
@@ -1816,7 +1893,7 @@ NGrid& NGrid::fill_random_sign(float_t ratio) {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1825,11 +1902,14 @@ NGrid& NGrid::fill_random_sign(float_t ratio) {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -1869,8 +1949,8 @@ NGrid& NGrid::fill_range(const float_t start, const float_t step) {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *this->shape_buffer);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1879,19 +1959,21 @@ NGrid& NGrid::fill_range(const float_t start, const float_t step) {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
-	cb.add_buffer_memory_barrier(*this->shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
 }
 
-NGrid& NGrid::fill_dropout(float_t ratio) {
+NGrid& NGrid::fill_dropout(const float_t ratio) {
 	if (this->elements == 0) {
 		Log::warning("NGrid::fill() failed: 'this' is empty, i.e. it has no shapes and no buffer elements");
 		return *this;
@@ -1926,7 +2008,7 @@ NGrid& NGrid::fill_dropout(float_t ratio) {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -1935,243 +2017,14 @@ NGrid& NGrid::fill_dropout(float_t ratio) {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit();
-
-	return *this;
-}
-
-// fill with normal "Xavier" weight initialization
-// (by Xavier Glorot & Bengio) for tanh activation
-NGrid& NGrid::weightinit_tanh_normal(uint32_t fan_in, uint32_t fan_out) {
-
-	// acquire an idle compute task
-	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
-
-	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
-		this->elements,
-		fan_in,
-		fan_out,
-		rnd::seed32()
-	);
-
-	// static resources: only create once
-	static ShaderModule shader(manager->get_device(), WEIGHTINIT_TANH_NORMAL_SPIRV_BIN, WEIGHTINIT_TANH_NORMAL_SPIRV_BYTES);
-	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
-	static bool layout_initialized = false;
-	if (!layout_initialized) {
-		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set_layout.finalize();
-		layout_initialized = true;
-	}
-	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
-
-	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.write();
-
-	// record command buffer
-	CommandBuffer& cb = task.get_command_buffer();
-	cb.begin_recording();
-	cb.bind_pipeline(pipeline);
-	cb.bind_descriptor_set(ds, pipeline);
-	cb.bind_push_constants(constants, pipeline);
-	cb.dispatch(pipeline, this->elements, 1, 1);
-	cb.end_recording();
-
-	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit();
-
-	return *this;
-}
-
-// fill with uniform "Xavier" weight initializiation
-// (by Xavier Glorot & Bengio), e.g. for tanh activation
-NGrid& NGrid::weightinit_tanh_uniform(uint32_t fan_in, uint32_t fan_out) {
-
-	// acquire an idle compute task
-	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
-
-	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
-		this->elements,
-		fan_in,
-		fan_out,
-		rnd::seed32()
-	);
-
-	// static resources: only create once
-	static ShaderModule shader(manager->get_device(), WEIGHTINIT_TANH_UNIFORM_SPIRV_BIN, WEIGHTINIT_TANH_UNIFORM_SPIRV_BYTES);
-	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
-	static bool layout_initialized = false;
-	if (!layout_initialized) {
-		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set_layout.finalize();
-		layout_initialized = true;
-	}
-	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
-
-	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.write();
-
-	// record command buffer
-	CommandBuffer& cb = task.get_command_buffer();
-	cb.begin_recording();
-	cb.bind_pipeline(pipeline);
-	cb.bind_descriptor_set(ds, pipeline);
-	cb.bind_push_constants(constants, pipeline);
-	cb.dispatch(pipeline, this->elements, 1, 1);
-	cb.end_recording();
-
-	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit();
-
-	return *this;
-}
-
-// fill with uniform "Xavier" weight initialization
-// for sigmoid activation
-NGrid& NGrid::weightinit_sigmoid(uint32_t fan_in, uint32_t fan_out) {
-	// acquire an idle compute task
-	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
-
-	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
-		this->elements,
-		fan_in,
-		fan_out,
-		rnd::seed32()
-	);
-
-	// static resources: only create once
-	static ShaderModule shader(manager->get_device(), WEIGHTINIT_SIGMOID_SPIRV_BIN, WEIGHTINIT_SIGMOID_SPIRV_BYTES);
-	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
-	static bool layout_initialized = false;
-	if (!layout_initialized) {
-		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set_layout.finalize();
-		layout_initialized = true;
-	}
-	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
-
-	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.write();
-
-	// record command buffer
-	CommandBuffer& cb = task.get_command_buffer();
-	cb.begin_recording();
-	cb.bind_pipeline(pipeline);
-	cb.bind_descriptor_set(ds, pipeline);
-	cb.bind_push_constants(constants, pipeline);
-	cb.dispatch(pipeline, this->elements, 1, 1);
-	cb.end_recording();
-
-	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit();
-
-	return *this;
-}
-
-// fill with "Kaiming He" normal weight initialization,
-// used for ReLU activation
-NGrid& NGrid::weightinit_relu(uint32_t fan_in) {
-
-	// acquire an idle compute task
-	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
-
-	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
-		this->elements,
-		fan_in,
-		rnd::seed32()
-	);
-
-	// static resources: only create once
-	static ShaderModule shader(manager->get_device(), WEIGHTINIT_RELU_SPIRV_BIN, WEIGHTINIT_RELU_SPIRV_BYTES);
-	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
-	static bool layout_initialized = false;
-	if (!layout_initialized) {
-		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set_layout.finalize();
-		layout_initialized = true;
-	}
-	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
-
-	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.write();
-
-	// record command buffer
-	CommandBuffer& cb = task.get_command_buffer();
-	cb.begin_recording();
-	cb.bind_pipeline(pipeline);
-	cb.bind_descriptor_set(ds, pipeline);
-	cb.bind_push_constants(constants, pipeline);
-	cb.dispatch(pipeline, this->elements, 1, 1);
-	cb.end_recording();
-
-	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit();
-
-	return *this;
-}
-
-// fill with modified "Kaiming He" nornal weight initialization,
-// used for ELU activation
-NGrid& NGrid::weightinit_elu(uint32_t fan_in) {
-
-	// acquire an idle compute task
-	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
-
-	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
-		this->elements,
-		fan_in,
-		rnd::seed32()
-	);
-
-	// static resources: only create once
-	static ShaderModule shader(manager->get_device(), WEIGHTINIT_ELU_SPIRV_BIN, WEIGHTINIT_ELU_SPIRV_BYTES);
-	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
-	static bool layout_initialized = false;
-	if (!layout_initialized) {
-		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set_layout.finalize();
-		layout_initialized = true;
-	}
-	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
-
-	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.write();
-
-	// record command buffer
-	CommandBuffer& cb = task.get_command_buffer();
-	cb.begin_recording();
-	cb.bind_pipeline(pipeline);
-	cb.bind_descriptor_set(ds, pipeline);
-	cb.bind_push_constants(constants, pipeline);
-	cb.dispatch(pipeline, this->elements, 1, 1);
-	cb.end_recording();
-
-	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -2201,7 +2054,7 @@ NGrid& NGrid::fill_index() {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
+	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -2210,11 +2063,267 @@ NGrid& NGrid::fill_index() {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	task.submit();
+
+	return *this;
+}
+
+// returns a square identity matrix of the specified size (height / width)
+NGrid NGrid::identity(const uint32_t size) {
+	NGrid result(size, size);
+	result.fill_identity();
+	return result;
+}
+
+// fill with normal "Xavier" weight initialization
+// (by Xavier Glorot & Bengio) for tanh activation
+NGrid& NGrid::weightinit_tanh_normal(const uint32_t fan_in, const uint32_t fan_out) {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		fan_out,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), WEIGHTINIT_TANH_NORMAL_SPIRV_BIN, WEIGHTINIT_TANH_NORMAL_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	this->set_tasks_finished_semaphore_counter(task.timeline_sync(*timeline_semaphore));
+	task.submit();
+
+	return *this;
+}
+
+// fill with uniform "Xavier" weight initializiation
+// (by Xavier Glorot & Bengio), e.g. for tanh activation
+NGrid& NGrid::weightinit_tanh_uniform(const uint32_t fan_in, const uint32_t fan_out) {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		fan_out,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), WEIGHTINIT_TANH_UNIFORM_SPIRV_BIN, WEIGHTINIT_TANH_UNIFORM_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	task.submit();
+
+	return *this;
+}
+
+// fill with uniform "Xavier" weight initialization
+// for sigmoid activation
+NGrid& NGrid::weightinit_sigmoid(const uint32_t fan_in, const uint32_t fan_out) {
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		fan_out,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), WEIGHTINIT_SIGMOID_SPIRV_BIN, WEIGHTINIT_SIGMOID_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	task.submit();
+
+	return *this;
+}
+
+// fill with "Kaiming He" normal weight initialization,
+// used for ReLU activation
+NGrid& NGrid::weightinit_relu(const uint32_t fan_in) {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), WEIGHTINIT_RELU_SPIRV_BIN, WEIGHTINIT_RELU_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	task.submit();
+
+	return *this;
+}
+
+// fill with modified "Kaiming He" nornal weight initialization,
+// used for ELU activation
+NGrid& NGrid::weightinit_elu(const uint32_t fan_in) {
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements,
+		fan_in,
+		rnd::seed32()
+	);
+
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), WEIGHTINIT_ELU_SPIRV_BIN, WEIGHTINIT_ELU_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_binding(DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return *this;
@@ -2243,7 +2352,7 @@ float_t NGrid::min() const {
 	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
 	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	// create temporary buffers
+	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
 	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -2277,8 +2386,10 @@ float_t NGrid::min() const {
 
 		// first iteration: copy source data to input buffer
 		if (iteration == 0) {
-			cb.copy_buffer(*this->data_buffer, *input_buffer);
-			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(this->get_buffer(), *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 			cb.record_barriers();
 		}
 
@@ -2288,9 +2399,11 @@ float_t NGrid::min() const {
 		// final iteration
 		if (num_workgroups == 1) {
 			// copy final result to staging buffer to allow host visibility
-			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 			cb.record_barriers();
 			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+			cb.add_buffer_memory_barrier(final_result_staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_HOST_BIT);
+			cb.record_barriers();
 		}
 
 		// all other iterations
@@ -2300,11 +2413,14 @@ float_t NGrid::min() const {
 		}
 
 		cb.end_recording();
-		task.timeline_sync(*this->timeline_semaphore);
+		task.timeline_sync(*timeline_semaphore);
 
 		// ensure that the final result copy has finished before reading back from the staging buffer
 		if (num_workgroups == 1) {
-			task.wait_idle(); // = wait for fence
+			task.submit(1e09); // = wait for fence
+		}
+		else {
+			task.submit();
 		}
 
 		elements_A = num_workgroups;
@@ -2313,8 +2429,11 @@ float_t NGrid::min() const {
 
 	} while (num_workgroups > 1);
 
+	main_task.get_command_buffer(); // empty command buffer, just to trigger a fence signaling completion
+	uint64_t finished_counter = main_task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	main_task.submit(5e09);
 	float_t result = final_result_staging_buffer.read_element(0);
-	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
 	return result;
 }
 
@@ -2337,7 +2456,7 @@ float_t NGrid::max() const {
 	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
 	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	// create temporary buffers
+	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
 	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -2371,8 +2490,10 @@ float_t NGrid::max() const {
 
 		// first iteration: copy source data to input buffer
 		if (iteration == 0) {
-			cb.copy_buffer(*this->data_buffer, *input_buffer);
-			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(this->get_buffer(), *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 			cb.record_barriers();
 		}
 
@@ -2382,9 +2503,11 @@ float_t NGrid::max() const {
 		// final iteration
 		if (num_workgroups == 1) {
 			// copy final result to staging buffer to allow host visibility
-			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 			cb.record_barriers();
 			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+			cb.add_buffer_memory_barrier(final_result_staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_HOST_BIT);
+			cb.record_barriers();
 		}
 
 		// all other iterations
@@ -2394,11 +2517,14 @@ float_t NGrid::max() const {
 		}
 
 		cb.end_recording();
-		task.timeline_sync(*this->timeline_semaphore);
+		task.timeline_sync(*timeline_semaphore);
 
 		// ensure that the final result copy has finished before reading back from the staging buffer
 		if (num_workgroups == 1) {
-			task.wait_idle(); // = wait for fence
+			task.submit(1e09); // = wait for fence
+		}
+		else {
+			task.submit();
 		}
 
 		elements_A = num_workgroups;
@@ -2407,8 +2533,11 @@ float_t NGrid::max() const {
 
 	} while (num_workgroups > 1);
 
+	main_task.get_command_buffer(); // empty command buffer, just to trigger a fence signaling completion
+	uint64_t finished_counter = main_task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	main_task.submit(5e09);
 	float_t result = final_result_staging_buffer.read_element(0);
-	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
 	return result;
 }
 
@@ -2431,7 +2560,7 @@ float_t NGrid::maxabs() const {
 	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
 	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	// create temporary buffers
+	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
 	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -2465,8 +2594,10 @@ float_t NGrid::maxabs() const {
 
 		// first iteration: copy source data to input buffer
 		if (iteration == 0) {
-			cb.copy_buffer(*this->data_buffer, *input_buffer);
-			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(this->get_buffer(), *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 			cb.record_barriers();
 		}
 
@@ -2476,9 +2607,11 @@ float_t NGrid::maxabs() const {
 		// final iteration
 		if (num_workgroups == 1) {
 			// copy final result to staging buffer to allow host visibility
-			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 			cb.record_barriers();
 			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+			cb.add_buffer_memory_barrier(final_result_staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_HOST_BIT);
+			cb.record_barriers();
 		}
 
 		// all other iterations
@@ -2488,11 +2621,14 @@ float_t NGrid::maxabs() const {
 		}
 
 		cb.end_recording();
-		task.timeline_sync(*this->timeline_semaphore);
+		task.timeline_sync(*timeline_semaphore);
 
 		// ensure that the final result copy has finished before reading back from the staging buffer
 		if (num_workgroups == 1) {
-			task.wait_idle(); // = wait for fence
+			task.submit(1e09); // = wait for fence
+		}
+		else {
+			task.submit();
 		}
 
 		elements_A = num_workgroups;
@@ -2501,8 +2637,11 @@ float_t NGrid::maxabs() const {
 
 	} while (num_workgroups > 1);
 
+	main_task.get_command_buffer(); // empty command buffer, just to trigger a fence signaling completion
+	uint64_t finished_counter = main_task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	main_task.submit(5e09);
 	float_t result = final_result_staging_buffer.read_element(0);
-	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
 	return result;
 }
 
@@ -2672,7 +2811,7 @@ float_t NGrid::sum() const {
 	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
 	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	// create temporary buffers
+	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
 	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -2706,8 +2845,10 @@ float_t NGrid::sum() const {
 
 		// first iteration: copy source data to input buffer
 		if (iteration == 0) {
-			cb.copy_buffer(*this->data_buffer, *input_buffer);
-			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(this->get_buffer(), *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 			cb.record_barriers();
 		}
 
@@ -2717,9 +2858,11 @@ float_t NGrid::sum() const {
 		// final iteration
 		if (num_workgroups == 1) {
 			// copy final result to staging buffer to allow host visibility
-			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 			cb.record_barriers();
 			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+			cb.add_buffer_memory_barrier(final_result_staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_HOST_BIT);
+			cb.record_barriers();
 		}
 
 		// all other iterations
@@ -2729,11 +2872,14 @@ float_t NGrid::sum() const {
 		}
 
 		cb.end_recording();
-		task.timeline_sync(*this->timeline_semaphore);
+		task.timeline_sync(*timeline_semaphore);
 
 		// ensure that the final result copy has finished before reading back from the staging buffer
 		if (num_workgroups == 1) {
-			task.wait_idle(); // = wait for fence
+			task.submit(1e09); // = wait for fence
+		}
+		else {
+			task.submit();
 		}
 
 		elements_A = num_workgroups;
@@ -2742,8 +2888,11 @@ float_t NGrid::sum() const {
 
 	} while (num_workgroups > 1);
 
+	main_task.get_command_buffer(); // empty command buffer, just to trigger a fence signaling completion
+	uint64_t finished_counter = main_task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	main_task.submit(5e09);
 	float_t result = final_result_staging_buffer.read_element(0);
-	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
 	return result;
 }
 
@@ -2774,8 +2923,8 @@ NGrid NGrid::operator+(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -2784,12 +2933,15 @@ NGrid NGrid::operator+(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
-	task.timeline_sync(*result.timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -2824,11 +2976,11 @@ NGrid NGrid::operator+(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -2837,13 +2989,19 @@ NGrid NGrid::operator+(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(result.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -2882,16 +3040,16 @@ void NGrid::operator+=(const NGrid& other) {
 }
 
 // +=================================+   
-// | Substraction                    |
+// | Subtraction                     |
 // +=================================+
 
-// elementwise substraction of the specified value from all values of the array
+// elementwise subtraction of the specified value from all values of the array
 NGrid NGrid::operator-(const float_t value) const {
 	// using the member method "NGrid operator+(const float_t value) const"
 	return *this + (value * -1.0f);
 }
 
-// returns the resulting array of the elementwise substraction of
+// returns the resulting array of the elementwise subtraction of
 // two array of equal dimensions
 NGrid NGrid::operator-(const NGrid& other) const {
 
@@ -2921,11 +3079,11 @@ NGrid NGrid::operator-(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -2934,13 +3092,19 @@ NGrid NGrid::operator-(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -2965,13 +3129,13 @@ NGrid NGrid::operator--(int) {
 	return result;
 }
 
-// elementwise substraction of the specified
+// elementwise subtraction of the specified
 // value from the elements of the array
 void NGrid::operator-=(const float_t value) {
 	*this = *this + (value * -1);
 }
 
-// elementwise substraction of the values of 'other'
+// elementwise subtraction of the values of 'other'
 // from the values of the corresponding elements of 'this'
 void NGrid::operator-=(const NGrid& other) {
 	*this = this->operator-(other);
@@ -3000,7 +3164,7 @@ float_t NGrid::product() const {
 	uint32_t elements_A = this->elements; // elements in the input buffer (will be 'buffer_A')
 	uint32_t num_workgroups = (elements_A + workgroup_size_1d - 1) / workgroup_size_1d;
 
-	// create temporary buffers
+	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
 	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -3034,8 +3198,10 @@ float_t NGrid::product() const {
 
 		// first iteration: copy source data to input buffer
 		if (iteration == 0) {
-			cb.copy_buffer(*this->data_buffer, *input_buffer);
-			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+			cb.record_barriers();
+			cb.copy_buffer(this->get_buffer(), *input_buffer);
+			cb.add_buffer_memory_barrier(*input_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 			cb.record_barriers();
 		}
 
@@ -3045,9 +3211,11 @@ float_t NGrid::product() const {
 		// final iteration
 		if (num_workgroups == 1) {
 			// copy final result to staging buffer to allow host visibility
-			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+			cb.add_buffer_memory_barrier<float_t>(*local_results_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 			cb.record_barriers();
 			cb.copy_buffer(*local_results_buffer, final_result_staging_buffer, sizeof(float_t), 0, 0);
+			cb.add_buffer_memory_barrier(final_result_staging_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_HOST_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_HOST_BIT);
+			cb.record_barriers();
 		}
 
 		// all other iterations
@@ -3057,11 +3225,14 @@ float_t NGrid::product() const {
 		}
 
 		cb.end_recording();
-		task.timeline_sync(*this->timeline_semaphore);
+		task.timeline_sync(*timeline_semaphore);
 
 		// ensure that the final result copy has finished before reading back from the staging buffer
 		if (num_workgroups == 1) {
-			task.wait_idle(); // = wait for fence
+			task.submit(1e09); // = wait for fence
+		}
+		else {
+			task.submit();
 		}
 
 		elements_A = num_workgroups;
@@ -3070,8 +3241,11 @@ float_t NGrid::product() const {
 
 	} while (num_workgroups > 1);
 
+	main_task.get_command_buffer(); // empty command buffer, just to trigger a fence signaling completion
+	uint64_t finished_counter = main_task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	main_task.submit(5e09);
 	float_t result = final_result_staging_buffer.read_element(0);
-	main_task.unprotect(); // the main task (holding the temporary buffers) can now be made available for reset, because the final result has been extracted
 	return result;
 }
 
@@ -3102,8 +3276,8 @@ NGrid NGrid::operator*(const float_t factor) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3112,12 +3286,15 @@ NGrid NGrid::operator*(const float_t factor) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3196,9 +3373,9 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *other.get_buffer());
-	ds.bind_buffer(2, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, other.get_buffer());
+	ds.bind_buffer(2, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3207,13 +3384,17 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3269,11 +3450,11 @@ NGrid NGrid::Hadamard_product(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3282,13 +3463,19 @@ NGrid NGrid::Hadamard_product(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3361,11 +3548,11 @@ NGrid NGrid::Hadamard_division(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3374,13 +3561,19 @@ NGrid NGrid::Hadamard_division(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3389,7 +3582,8 @@ NGrid NGrid::Hadamard_division(const NGrid& other) const {
 // matrix division of the NGrids;
 // this is an alias for the matrix product of 'this' with the inverse of 'other'
 NGrid NGrid::operator/(const NGrid& other) const {
-	return *this * other.inverse();
+	NGrid temp_inverse = other.inverse(); // this step is necessary because NGrid::operator*(NGrid& other) expects a modifiable lvalue (non-const), whereas NGrid::inverse() returns a temporary rvalue
+	return *this * temp_inverse;
 }
 
 // +=================================+   
@@ -3431,8 +3625,8 @@ NGrid NGrid::operator%(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3441,12 +3635,15 @@ NGrid NGrid::operator%(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3484,8 +3681,8 @@ NGrid NGrid::pow(const float_t exponent) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3494,12 +3691,15 @@ NGrid NGrid::pow(const float_t exponent) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3582,11 +3782,11 @@ NGrid NGrid::pow(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3595,13 +3795,19 @@ NGrid NGrid::pow(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3613,7 +3819,7 @@ NGrid NGrid::sqrt() const {
 	return this->pow(0.5f);
 }
 
-NGrid NGrid::log(float_t base) const {
+NGrid NGrid::log(const float_t base) const {
 	if (base <= 0) {
 		Log::error("invalid call of NGrid::log with base ", base, ", argument can't be <= 0, result is undefined)");
 	}
@@ -3642,8 +3848,8 @@ NGrid NGrid::log(float_t base) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3652,12 +3858,15 @@ NGrid NGrid::log(float_t base) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3688,8 +3897,8 @@ NGrid NGrid::exp() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3698,12 +3907,15 @@ NGrid NGrid::exp() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3715,7 +3927,7 @@ NGrid NGrid::exp() const {
 
 // rounds the values of the array elementwise
 // to their nearest integers
-NGrid NGrid::round() const {
+NGrid NGrid::round(uint32_t precision) const {
 
 	NGrid result(this->shape);
 
@@ -3724,7 +3936,8 @@ NGrid NGrid::round() const {
 
 	// define push constants (transient resource, owned by the task)
 	PushConstants& constants = task.add_constants(
-		this->elements
+		this->elements,
+		precision
 	);
 
 	// static resources: only create once
@@ -3740,8 +3953,8 @@ NGrid NGrid::round() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3750,12 +3963,15 @@ NGrid NGrid::round() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3788,8 +4004,8 @@ NGrid NGrid::floor() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3798,12 +4014,15 @@ NGrid NGrid::floor() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3836,8 +4055,8 @@ NGrid NGrid::ceil() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3846,12 +4065,15 @@ NGrid NGrid::ceil() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3884,8 +4106,8 @@ NGrid NGrid::abs() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3894,12 +4116,15 @@ NGrid NGrid::abs() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3937,8 +4162,8 @@ NGrid NGrid::min(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3947,12 +4172,15 @@ NGrid NGrid::min(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -3986,8 +4214,8 @@ NGrid NGrid::max(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -3996,12 +4224,15 @@ NGrid NGrid::max(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4038,11 +4269,11 @@ NGrid NGrid::min(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4051,13 +4282,18 @@ NGrid NGrid::min(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4094,11 +4330,11 @@ NGrid NGrid::max(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4107,13 +4343,19 @@ NGrid NGrid::max(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4125,7 +4367,7 @@ NGrid NGrid::max(const NGrid& other) const {
 
 // elementwise application of the cos() function;
 // the result is a dimensionless ratio (adjacent / hypotenuse)
-NGrid NGrid::cos(AngularUnit source_angle_unit) const {
+NGrid NGrid::cos(const AngularUnit source_angle_unit) const {
 
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, source_angle_unit, RAD));
 
@@ -4153,8 +4395,8 @@ NGrid NGrid::cos(AngularUnit source_angle_unit) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4163,12 +4405,15 @@ NGrid NGrid::cos(AngularUnit source_angle_unit) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4176,7 +4421,7 @@ NGrid NGrid::cos(AngularUnit source_angle_unit) const {
 
 // elementwise application of the sin() function;
 // the result is a dimensionless ratio (opposite / hypotenuse)
-NGrid NGrid::sin(AngularUnit source_angle_unit) const {
+NGrid NGrid::sin(const AngularUnit source_angle_unit) const {
 
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, source_angle_unit, RAD));
 
@@ -4204,8 +4449,8 @@ NGrid NGrid::sin(AngularUnit source_angle_unit) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4214,12 +4459,15 @@ NGrid NGrid::sin(AngularUnit source_angle_unit) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4227,7 +4475,7 @@ NGrid NGrid::sin(AngularUnit source_angle_unit) const {
 
 // elementwise application of the tan function;
 // the result is a dimensionless ratio (opposite / adjacent)
-NGrid NGrid::tan(AngularUnit source_angle_unit) const {
+NGrid NGrid::tan(const AngularUnit source_angle_unit) const {
 
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, source_angle_unit, RAD));
 
@@ -4255,8 +4503,8 @@ NGrid NGrid::tan(AngularUnit source_angle_unit) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4265,12 +4513,15 @@ NGrid NGrid::tan(AngularUnit source_angle_unit) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4279,7 +4530,7 @@ NGrid NGrid::tan(AngularUnit source_angle_unit) const {
 // elementwise application of the acos() function;
 // inverse function of cos(), i.e. returns the angle
 // whose cosine equals a given value
-NGrid NGrid::acos(AngularUnit result_angle_unit) const {
+NGrid NGrid::acos(const AngularUnit result_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, RAD, result_angle_unit));
 
 	NGrid result(this->shape);
@@ -4306,8 +4557,8 @@ NGrid NGrid::acos(AngularUnit result_angle_unit) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4316,12 +4567,15 @@ NGrid NGrid::acos(AngularUnit result_angle_unit) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4330,7 +4584,7 @@ NGrid NGrid::acos(AngularUnit result_angle_unit) const {
 // elementwise application of the asin() function;
 // inverse function of sin(), i.e. returns the angle
 // whose sine equals a given value
-NGrid NGrid::asin(AngularUnit result_angle_unit) const {
+NGrid NGrid::asin(const AngularUnit result_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, RAD, result_angle_unit));
 
 	NGrid result(this->shape);
@@ -4357,8 +4611,8 @@ NGrid NGrid::asin(AngularUnit result_angle_unit) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4367,12 +4621,15 @@ NGrid NGrid::asin(AngularUnit result_angle_unit) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4381,7 +4638,7 @@ NGrid NGrid::asin(AngularUnit result_angle_unit) const {
 // elementwise application of the atan function;
 // inverse function of tan(), i.e. returns the angle
 // whose tangens equals a given value
-NGrid NGrid::atan(AngularUnit result_angle_unit) const {
+NGrid NGrid::atan(const AngularUnit result_angle_unit) const {
 	float_t factor = static_cast<float_t>(convert_angle(1.0f, RAD, result_angle_unit));
 
 	NGrid result(this->shape);
@@ -4408,8 +4665,8 @@ NGrid NGrid::atan(AngularUnit result_angle_unit) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4418,12 +4675,15 @@ NGrid NGrid::atan(AngularUnit result_angle_unit) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4455,8 +4715,8 @@ NGrid NGrid::cosh() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4465,12 +4725,15 @@ NGrid NGrid::cosh() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4502,8 +4765,8 @@ NGrid NGrid::sinh() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4512,12 +4775,15 @@ NGrid NGrid::sinh() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4549,8 +4815,8 @@ NGrid NGrid::tanh() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4559,12 +4825,15 @@ NGrid NGrid::tanh() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4596,8 +4865,8 @@ NGrid NGrid::acosh() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4606,12 +4875,15 @@ NGrid NGrid::acosh() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4643,8 +4915,8 @@ NGrid NGrid::asinh() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4653,12 +4925,15 @@ NGrid NGrid::asinh() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4690,8 +4965,8 @@ NGrid NGrid::atanh() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4700,12 +4975,15 @@ NGrid NGrid::atanh() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4716,7 +4994,9 @@ NGrid NGrid::atanh() const {
 // +=================================+
 
 // searches the array buffer for the specified 'old_value' and
-// replaces all occurrences by the 'new_value'
+// replaces all occurrences by the 'new_value';
+// non-destructive method; the result is returned without modifying the source;
+// use assignment to modify the source itself: *this = this->replace(...)
 NGrid NGrid::replace(const float_t old_value, const float_t new_value) const {
 
 	NGrid result(this->shape);
@@ -4744,8 +5024,8 @@ NGrid NGrid::replace(const float_t old_value, const float_t new_value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4754,19 +5034,24 @@ NGrid NGrid::replace(const float_t old_value, const float_t new_value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
 }
 
 // replaces all elements of 'this' with the corresponding element of the
-// 'replacing_map' if the corresponding element of the condition map is !=0
+// 'replacing_map' if the corresponding element of the condition map is !=0;
+// non-destructive method; the result is returned without modifying the source;
+// use assignment to modify the source itself: *this = this->replace(...)
 NGrid NGrid::replace_if(const NGrid& condition_map, const NGrid& replacing_map) const {
 
 	// check for equal dimensions
@@ -4810,10 +5095,10 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const NGrid& replacing_map) 
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
-	ds.bind_buffer(2, *condition_map.get_buffer());
-	ds.bind_buffer(3, *replacing_map.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
+	ds.bind_buffer(2, condition_map.get_buffer());
+	ds.bind_buffer(3, replacing_map.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4822,19 +5107,28 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const NGrid& replacing_map) 
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(condition_map.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(replacing_map.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	condition_map.set_tasks_finished_semaphore_counter(finished_counter);
+	replacing_map.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
 }
 
 // replaces all elements of 'this' with the corresponding element of the
-// 'replacing_map' if the corresponding element of the condition map is !=0
+// 'replacing_map' if the corresponding element of the condition map is !=0;
+// non-destructive method; the result is returned without modifying the source;
+// use assignment to modify the source itself: *this = this->replace(...)
 NGrid NGrid::replace_if(const NGrid& condition_map, const float_t replacing_value) const {
 
 	// check for equal dimensions
@@ -4877,9 +5171,9 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const float_t replacing_valu
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
-	ds.bind_buffer(2, *condition_map.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
+	ds.bind_buffer(2, condition_map.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4888,12 +5182,16 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const float_t replacing_valu
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(condition_map.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4931,8 +5229,8 @@ NGrid NGrid::sign() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -4941,12 +5239,114 @@ NGrid NGrid::sign() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	task.submit();
+
+	return result;
+}
+
+NGrid NGrid::isinf() const {
+
+	// declare result array
+	NGrid result(this->shape);
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), ISINF_SPIRV_BIN, ISINF_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	task.submit();
+
+	return result;
+}
+
+NGrid NGrid::isnan() const {
+	// declare result array
+	NGrid result(this->shape);
+
+	// acquire an idle compute task
+	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
+
+	// define push constants (transient resource, owned by the task)
+	PushConstants& constants = task.add_constants(
+		this->elements
+	);
+
+	// static resources: only create once
+	static ShaderModule shader(manager->get_device(), ISNAN_SPIRV_BIN, ISNAN_SPIRV_BYTES);
+	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
+	static bool layout_initialized = false;
+	if (!layout_initialized) {
+		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.finalize();
+		layout_initialized = true;
+	}
+	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
+
+	// add a descriptor set to the task (transient resource, owned by the task)
+	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
+	ds.write();
+
+	// record command buffer
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.bind_pipeline(pipeline);
+	cb.bind_descriptor_set(ds, pipeline);
+	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
+	cb.dispatch(pipeline, this->elements, 1, 1);
+	cb.end_recording();
+
+	// submit command buffer to compute queue on device
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -4957,7 +5357,7 @@ NGrid NGrid::sign() const {
 // +=================================+
 
 // scale to specified range
-NGrid NGrid::scale_minmax(float_t range_from, float_t range_to) const {
+NGrid NGrid::scale_minmax(const float_t range_from, const float_t range_to) const {
 
 	NGrid result(this->shape);
 
@@ -4991,8 +5391,8 @@ NGrid NGrid::scale_minmax(float_t range_from, float_t range_to) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5001,12 +5401,15 @@ NGrid NGrid::scale_minmax(float_t range_from, float_t range_to) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5047,8 +5450,8 @@ NGrid NGrid::scale_mean() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5057,12 +5460,15 @@ NGrid NGrid::scale_mean() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5105,8 +5511,8 @@ NGrid NGrid::scale_zscore(const float_t z_score) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5115,12 +5521,15 @@ NGrid NGrid::scale_zscore(const float_t z_score) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5153,7 +5562,7 @@ NGrid NGrid::scale_undo(const NGrid& scaling_reference) const {
 // | Activation Functions            |
 // +=================================+
 
-NGrid NGrid::activation(ActFunc activation_function) const {
+NGrid NGrid::activation(const ActFunc activation_function) const {
 	switch (activation_function) {
 	case ActFunc::RELU:
 		return this->relu(0.0f);
@@ -5182,7 +5591,7 @@ NGrid NGrid::activation(ActFunc activation_function) const {
 	}
 }
 
-NGrid NGrid::derivative(ActFunc activation_function) const {
+NGrid NGrid::derivative(const ActFunc activation_function) const {
 	switch (activation_function) {
 	case ActFunc::RELU:
 		return this->relu_drv(0.0f);
@@ -5252,8 +5661,8 @@ NGrid NGrid::sigmoid() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5262,12 +5671,15 @@ NGrid NGrid::sigmoid() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5299,8 +5711,8 @@ NGrid NGrid::sigmoid_drv() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5309,12 +5721,15 @@ NGrid NGrid::sigmoid_drv() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5322,7 +5737,7 @@ NGrid NGrid::sigmoid_drv() const {
 
 // ELU activation function;
 // x>0 ? x : alpha*(exp(x)-1)
-NGrid NGrid::elu(float_t alpha) const {
+NGrid NGrid::elu(const float_t alpha) const {
 	NGrid result(this->shape);
 
 	// acquire an idle compute task
@@ -5347,8 +5762,8 @@ NGrid NGrid::elu(float_t alpha) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5357,12 +5772,15 @@ NGrid NGrid::elu(float_t alpha) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5372,7 +5790,7 @@ NGrid NGrid::elu(float_t alpha) const {
 // chose alpha=0 for true ELU function;
 // small alpha value like e.g. 0.01 for 'leaky' ELU
 // x>0 ? 1 : alpha*exp(x);
-NGrid NGrid::elu_drv(float_t alpha) const {
+NGrid NGrid::elu_drv(const float_t alpha) const {
 	NGrid result(this->shape);
 
 	// acquire an idle compute task
@@ -5397,8 +5815,8 @@ NGrid NGrid::elu_drv(float_t alpha) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5407,12 +5825,15 @@ NGrid NGrid::elu_drv(float_t alpha) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5422,7 +5843,7 @@ NGrid NGrid::elu_drv(float_t alpha) const {
 // ReLU activation function;
 // chose alpha=0 for true ReLU function;
 // small alpha value like e.g. 0.01 for 'leaky' ReLU
-NGrid NGrid::relu(float_t alpha) const {
+NGrid NGrid::relu(const float_t alpha) const {
 	NGrid result(this->shape);
 
 	// acquire an idle compute task
@@ -5447,8 +5868,8 @@ NGrid NGrid::relu(float_t alpha) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5457,12 +5878,15 @@ NGrid NGrid::relu(float_t alpha) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5471,7 +5895,7 @@ NGrid NGrid::relu(float_t alpha) const {
 // ReLU activation derivative;
 // chose alpha=0 for true ReLU function;
 // small alpha value like e.g. 0.01 for 'leaky' ReLU
-NGrid NGrid::relu_drv(float_t alpha) const {
+NGrid NGrid::relu_drv(const float_t alpha) const {
 	NGrid result(this->shape);
 
 	// acquire an idle compute task
@@ -5496,8 +5920,8 @@ NGrid NGrid::relu_drv(float_t alpha) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5506,12 +5930,15 @@ NGrid NGrid::relu_drv(float_t alpha) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5542,8 +5969,8 @@ NGrid NGrid::tanh_drv() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5552,12 +5979,15 @@ NGrid NGrid::tanh_drv() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5596,8 +6026,8 @@ NGrid NGrid::outliers_clamp_minmax(const float_t min_value, const float_t max_va
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5606,12 +6036,15 @@ NGrid NGrid::outliers_clamp_minmax(const float_t min_value, const float_t max_va
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5650,8 +6083,8 @@ NGrid NGrid::outliers_clamp_zscore(const float_t z_score) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5660,12 +6093,15 @@ NGrid NGrid::outliers_clamp_zscore(const float_t z_score) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5705,8 +6141,8 @@ NGrid NGrid::outliers_mean_imputation(const float_t z_score) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5715,12 +6151,15 @@ NGrid NGrid::outliers_mean_imputation(const float_t z_score) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5760,8 +6199,8 @@ NGrid NGrid::outliers_value_imputation(const float_t z_score, const float_t valu
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5770,12 +6209,15 @@ NGrid NGrid::outliers_value_imputation(const float_t z_score, const float_t valu
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5808,8 +6250,8 @@ NGrid NGrid::recover() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5818,12 +6260,15 @@ NGrid NGrid::recover() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5859,8 +6304,8 @@ NGrid NGrid::operator>(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5869,12 +6314,15 @@ NGrid NGrid::operator>(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5907,8 +6355,8 @@ NGrid NGrid::operator>=(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5917,12 +6365,15 @@ NGrid NGrid::operator>=(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -5954,8 +6405,8 @@ NGrid NGrid::operator==(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -5964,12 +6415,15 @@ NGrid NGrid::operator==(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6001,8 +6455,8 @@ NGrid NGrid::operator!=(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6011,12 +6465,15 @@ NGrid NGrid::operator!=(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6048,8 +6505,8 @@ NGrid NGrid::operator<(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6058,12 +6515,15 @@ NGrid NGrid::operator<(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6095,8 +6555,8 @@ NGrid NGrid::operator<=(const float_t value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6105,12 +6565,15 @@ NGrid NGrid::operator<=(const float_t value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6146,11 +6609,11 @@ NGrid NGrid::operator>(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6159,13 +6622,19 @@ NGrid NGrid::operator>(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6200,11 +6669,11 @@ NGrid NGrid::operator>=(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6213,13 +6682,19 @@ NGrid NGrid::operator>=(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6254,11 +6729,11 @@ NGrid NGrid::operator==(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6267,13 +6742,19 @@ NGrid NGrid::operator==(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6308,11 +6789,11 @@ NGrid NGrid::operator!=(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6321,13 +6802,19 @@ NGrid NGrid::operator!=(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6362,11 +6849,11 @@ NGrid NGrid::operator<(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6375,13 +6862,19 @@ NGrid NGrid::operator<(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6416,11 +6909,11 @@ NGrid NGrid::operator<=(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6429,113 +6922,26 @@ NGrid NGrid::operator<=(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit();
-
-	return result;
-}
-
-NGrid NGrid::isinf() const {
-
-	// declare result array
-	NGrid result(this->shape);
-
-	// acquire an idle compute task
-	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
-
-	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
-		this->elements
-	);
-
-	// static resources: only create once
-	static ShaderModule shader(manager->get_device(), ISINF_SPIRV_BIN, ISINF_SPIRV_BYTES);
-	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
-	static bool layout_initialized = false;
-	if (!layout_initialized) {
-		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set_layout.finalize();
-		layout_initialized = true;
-	}
-	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
-
-	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
-	ds.write();
-
-	// record command buffer
-	CommandBuffer& cb = task.get_command_buffer();
-	cb.begin_recording();
-	cb.bind_pipeline(pipeline);
-	cb.bind_descriptor_set(ds, pipeline);
-	cb.bind_push_constants(constants, pipeline);
-	cb.dispatch(pipeline, this->elements, 1, 1);
-	cb.end_recording();
-
-	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit();
-
-	return result;
-}
-
-NGrid NGrid::isnan() const {
-	// declare result array
-	NGrid result(this->shape);
-
-	// acquire an idle compute task
-	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
-
-	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
-		this->elements
-	);
-
-	// static resources: only create once
-	static ShaderModule shader(manager->get_device(), ISNAN_SPIRV_BIN, ISNAN_SPIRV_BYTES);
-	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
-	static bool layout_initialized = false;
-	if (!layout_initialized) {
-		set_layout.add_bindings(2, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
-		set_layout.finalize();
-		layout_initialized = true;
-	}
-	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
-
-	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
-	ds.write();
-
-	// record command buffer
-	CommandBuffer& cb = task.get_command_buffer();
-	cb.begin_recording();
-	cb.bind_pipeline(pipeline);
-	cb.bind_descriptor_set(ds, pipeline);
-	cb.bind_push_constants(constants, pipeline);
-	cb.dispatch(pipeline, this->elements, 1, 1);
-	cb.end_recording();
-
-	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
 }
 
 // +=================================+   
-// | Elementwise Logial Operations   |
+// | Elementwise Logical Operations   |
 // +=================================+
 
 // elementwise logical 'and'
@@ -6588,8 +6994,8 @@ NGrid NGrid::operator!() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6598,12 +7004,15 @@ NGrid NGrid::operator!() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6638,11 +7047,11 @@ NGrid NGrid::operator&&(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6651,13 +7060,19 @@ NGrid NGrid::operator&&(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6692,11 +7107,11 @@ NGrid NGrid::operator||(const NGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6705,13 +7120,19 @@ NGrid NGrid::operator||(const NGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6727,17 +7148,20 @@ NGrid NGrid::flatten() const {
 	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
-	cb.copy_buffer(*this->data_buffer, *result.get_buffer());
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
+	cb.copy_buffer(this->get_buffer(), result.get_buffer());
 	cb.end_recording();
-	task.timeline_sync(*this->timeline_semaphore);
-	task.timeline_sync(result.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 	return result;
 }
 
 // reshapes (resizes) the underlying array buffer to the specified dimensions;
 // any new elements get initialized to the given value (default: 0)
-NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, float_t default_init_value) const {
+NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, const float_t default_init_value) const {
 	NGrid result(new_shape);
 
 	// check for empty source grid
@@ -6771,10 +7195,10 @@ NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, float_t default_ini
 
 		// add a descriptor set to the task (transient resource, owned by the task)
 		DescriptorSet& ds = task.add_descriptor_set(set_layout);
-		ds.bind_buffer(0, *data_buffer);
-		ds.bind_buffer(1, *shape_buffer);
-		ds.bind_buffer(2, *result.get_buffer());
-		ds.bind_buffer(3, *result.get_shape_buffer());
+		ds.bind_buffer(0, this->get_buffer());
+		ds.bind_buffer(1, this->get_shape_buffer());
+		ds.bind_buffer(2, result.get_buffer());
+		ds.bind_buffer(3, result.get_shape_buffer());
 		ds.write();
 
 		// record command buffer
@@ -6783,18 +7207,24 @@ NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, float_t default_ini
 		cb.bind_pipeline(pipeline);
 		cb.bind_descriptor_set(ds, pipeline);
 		cb.bind_push_constants(constants, pipeline);
+		cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(pipeline, result.get_elements(), 1, 1);
 		cb.end_recording();
 
 		// submit command buffer to compute queue on device
-		task.timeline_sync(result.get_timeline_semaphore());
-		task.timeline_sync(*this->timeline_semaphore);
+		uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+		this->set_tasks_finished_semaphore_counter(finished_counter);
+		result.set_tasks_finished_semaphore_counter(finished_counter);
 		task.submit();
 	}
 	return result;
 }
 
-NGrid NGrid::reshape(std::initializer_list<uint32_t> new_shape, float_t default_init_value) const {
+NGrid NGrid::reshape(const std::initializer_list<uint32_t> new_shape, const float_t default_init_value) const {
 	std::vector<uint32_t> new_shape_vec(new_shape);
 	return this->reshape(new_shape_vec, default_init_value);
 }
@@ -6828,7 +7258,7 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 			if (this->shape[i] != other.get_shape()[i]) {
 				Log::warning("invalid call of NGrid::concatenate(): 'this' has size ", this->shape[i],
 					" in dimension ", i, " but 'other' has size ", other.get_shape()[i], " in dimension ", i,
-					", therefore these two arrays can't be stiched together properly; returning 'this' as unmodified");
+					", therefore these two arrays can't be stitched together properly; returning 'this' as unmodified");
 				return *this;
 			}
 		}
@@ -6874,12 +7304,12 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *other.get_buffer());
-	ds.bind_buffer(3, *other.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
-	ds.bind_buffer(5, *result.get_shape_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, other.get_buffer());
+	ds.bind_buffer(3, other.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
+	ds.bind_buffer(5, result.get_shape_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6888,13 +7318,20 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(result.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(other.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	other.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -6936,10 +7373,10 @@ NGrid NGrid::padding(const uint32_t amount, const float_t init_value) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *result.get_buffer());
-	ds.bind_buffer(3, *result.get_shape_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, result.get_buffer());
+	ds.bind_buffer(3, result.get_shape_buffer());
 	ds.write();
 
 	// record command buffer
@@ -6948,12 +7385,17 @@ NGrid NGrid::padding(const uint32_t amount, const float_t init_value) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(result.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -7027,11 +7469,11 @@ NGrid NGrid::pool_max(const std::vector<uint32_t>& window_shape, const std::vect
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, window_shape_buffer);
-	ds.bind_buffer(3, *result.get_buffer());
-	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.bind_buffer(3, result.get_buffer());
+	ds.bind_buffer(4, result.get_shape_buffer());
 	ds.bind_buffer(5, stride_shape_buffer);
 	ds.write();
 
@@ -7041,17 +7483,24 @@ NGrid NGrid::pool_max(const std::vector<uint32_t>& window_shape, const std::vect
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(window_shape_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
 	cb.copy_buffer(window_shape_staging_buffer, window_shape_buffer);
 	cb.copy_buffer(stride_shape_staging_buffer, stride_shape_buffer);
-	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(result.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -7132,11 +7581,11 @@ NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::v
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, window_shape_buffer);
-	ds.bind_buffer(3, *result.get_buffer());
-	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.bind_buffer(3, result.get_buffer());
+	ds.bind_buffer(4, result.get_shape_buffer());
 	ds.bind_buffer(5, stride_shape_buffer);
 	ds.write();
 
@@ -7146,17 +7595,24 @@ NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::v
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(window_shape_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
 	cb.copy_buffer(window_shape_staging_buffer, window_shape_buffer);
 	cb.copy_buffer(stride_shape_staging_buffer, stride_shape_buffer);
-	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(result.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -7237,11 +7693,11 @@ NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vect
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, window_shape_buffer);
-	ds.bind_buffer(3, *result.get_buffer());
-	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.bind_buffer(3, result.get_buffer());
+	ds.bind_buffer(4, result.get_shape_buffer());
 	ds.bind_buffer(5, stride_shape_buffer);
 	ds.write();
 
@@ -7251,17 +7707,24 @@ NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vect
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(window_shape_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
 	cb.copy_buffer(window_shape_staging_buffer, window_shape_buffer);
 	cb.copy_buffer(stride_shape_staging_buffer, stride_shape_buffer);
-	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(result.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -7342,11 +7805,11 @@ NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vec
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, window_shape_buffer);
-	ds.bind_buffer(3, *result.get_buffer());
-	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.bind_buffer(3, result.get_buffer());
+	ds.bind_buffer(4, result.get_shape_buffer());
 	ds.bind_buffer(5, stride_shape_buffer);
 	ds.write();
 
@@ -7356,17 +7819,24 @@ NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vec
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(window_shape_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
 	cb.copy_buffer(window_shape_staging_buffer, window_shape_buffer);
 	cb.copy_buffer(stride_shape_staging_buffer, stride_shape_buffer);
-	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(window_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(stride_shape_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(result.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -7378,7 +7848,7 @@ NGrid NGrid::pool_mean(const std::initializer_list<uint32_t>& window_shape, cons
 	return this->pool_mean(window_shape_vec, stride_shape_vec);
 }
 
-NGrid NGrid::convolution(const NGrid& kernel, uint32_t padding_amount, float_t padding_value) const {
+NGrid NGrid::convolution(const NGrid& kernel, const uint32_t padding_amount, const float_t padding_value) const {
 	// check if kernel has valid dimensions
 	if (kernel.get_dimensions() != this->dimensions) {
 		Log::warning("invalid usage of NGrid::convolution: dimensions of 'kernel' (", kernel.get_dimensions(),
@@ -7421,12 +7891,12 @@ NGrid NGrid::convolution(const NGrid& kernel, uint32_t padding_amount, float_t p
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
-	ds.bind_buffer(2, *kernel.get_buffer());
-	ds.bind_buffer(3, *kernel.get_shape_buffer());
-	ds.bind_buffer(4, *result.get_buffer());
-	ds.bind_buffer(5, *result.get_shape_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, kernel.get_buffer());
+	ds.bind_buffer(3, kernel.get_shape_buffer());
+	ds.bind_buffer(4, result.get_buffer());
+	ds.bind_buffer(5, result.get_shape_buffer());
 	ds.write();
 
 	// record command buffer
@@ -7435,19 +7905,26 @@ NGrid NGrid::convolution(const NGrid& kernel, uint32_t padding_amount, float_t p
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(kernel.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(kernel.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(result.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(kernel.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	kernel.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
 }
 
-NGrid NGrid::transpose(const std::vector<uint32_t> target_axis_order) const {
+NGrid NGrid::transpose(const std::vector<uint32_t>& target_axis_order) const {
 
 	// check if target axis order is valid
 	if (target_axis_order.size() < 2 || (target_axis_order.size() >= 2 && target_axis_order.size() != this->dimensions)) {
@@ -7498,11 +7975,11 @@ NGrid NGrid::transpose(const std::vector<uint32_t> target_axis_order) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, target_axis_order_buffer);
-	ds.bind_buffer(3, *result.get_buffer());
-	ds.bind_buffer(4, *result.get_shape_buffer());
+	ds.bind_buffer(3, result.get_buffer());
+	ds.bind_buffer(4, result.get_shape_buffer());
 	ds.write();
 
 	// record command buffer
@@ -7511,15 +7988,21 @@ NGrid NGrid::transpose(const std::vector<uint32_t> target_axis_order) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(target_axis_order_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.record_barriers();
 	cb.copy_buffer(target_axis_order_staging_buffer, target_axis_order_buffer);
-	cb.add_buffer_memory_barrier(target_axis_order_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(target_axis_order_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(result.get_shape_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -7540,9 +8023,7 @@ LUresult NGrid::lu() const {
 	result.L = result.L.reshape({ this->shape[0], this->shape[0] });	result.L.fill_identity();
 	result.U = *this; // U is initialized with the source matrix
 	result.P = result.P.reshape({ this->shape[0], this->shape[0] });	result.P.fill_identity();
-	result.swap_count_staging_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::TRANSFER_BUFFER, 1, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	result.swap_count_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	result.swap_row_buffer = new Buffer<uint32_t>(manager->get_device(), BufferUsage::STORAGE_BUFFER, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	result.swap_data = result.swap_data.reshape(2);
 
 	// static resources: only create once
 	static ShaderModule check_swap_shader(manager->get_device(), LU_DECOMP_CHECK_ROWSWAP_SPIRV_BIN, LU_DECOMP_CHECK_ROWSWAP_SPIRV_BYTES);
@@ -7552,7 +8033,7 @@ LUresult NGrid::lu() const {
 	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
 	static bool layout_initialized = false;
 	if (!layout_initialized) {
-		set_layout.add_bindings(5, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.add_bindings(4, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 		set_layout.finalize();
 		layout_initialized = true;
 	}
@@ -7568,8 +8049,6 @@ LUresult NGrid::lu() const {
 		// acquire an idle compute task
 		ComputeTask& task_k = manager->get_compute_task(__FUNCTION__);
 
-
-
 		// define push constants (transient resource, owned by the task)
 		PushConstants& constants = task_k.add_constants(
 			this->shape[0],		// source matrix rows
@@ -7579,11 +8058,10 @@ LUresult NGrid::lu() const {
 
 		// define descriptor set (transient resource, owned by the task)
 		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
-		ds.bind_buffer(0, *result.L.get_buffer());
-		ds.bind_buffer(1, *result.U.get_buffer());
-		ds.bind_buffer(2, *result.P.get_buffer());
-		ds.bind_buffer(3, *result.swap_row_buffer);
-		ds.bind_buffer(4, *result.swap_count_buffer);
+		ds.bind_buffer(0, result.L.get_buffer());
+		ds.bind_buffer(1, result.U.get_buffer());
+		ds.bind_buffer(2, result.P.get_buffer());
+		ds.bind_buffer(3, result.swap_data.get_buffer());
 		ds.write();
 
 		// record command buffer
@@ -7594,46 +8072,51 @@ LUresult NGrid::lu() const {
 		// (1d dispatch with one thread for each row)	
 		cb.bind_descriptor_set(ds, check_swap_pipeline);
 		cb.bind_push_constants(constants, check_swap_pipeline);
-		cb.dispatch(check_swap_pipeline, this->shape[0], 1, 1);
-		cb.add_buffer_memory_barrier(*result.swap_row_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.bind_pipeline(check_swap_pipeline);
+		cb.add_buffer_memory_barrier(result.U.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.swap_data.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(check_swap_pipeline, this->shape[0], 1, 1);
 
 		// perform row swap (=if needed)
 		// (1d dispatch with one thread for each column)
 		cb.bind_descriptor_set(ds, perform_swap_pipeline);
 		cb.bind_push_constants(constants, perform_swap_pipeline);
-		cb.dispatch(perform_swap_pipeline, this->shape[1], 1, 1);
-		cb.add_buffer_memory_barrier(*result.P.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(*result.U.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(*result.L.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.bind_pipeline(perform_swap_pipeline);
+		cb.add_buffer_memory_barrier(result.swap_data.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.U.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.L.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.P.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(perform_swap_pipeline, this->shape[1], 1, 1);
 
 		// update L matrix in column k
 		// (1d dispatch with one thread for each row)
 		cb.bind_descriptor_set(ds, l_update_pipeline);
 		cb.bind_push_constants(constants, l_update_pipeline);
+		cb.bind_pipeline(l_update_pipeline);
 		cb.dispatch(l_update_pipeline, this->shape[0], 1, 1);
-		cb.add_buffer_memory_barrier(*result.L.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.L.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.U.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
 
 		// update U matrix in rows [k+1] to [rows-1]
 		cb.bind_descriptor_set(ds, u_update_pipeline);
 		cb.bind_push_constants(constants, u_update_pipeline);
+		cb.bind_pipeline(u_update_pipeline);
+		cb.add_buffer_memory_barrier(result.L.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.U.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(u_update_pipeline, result.U.get_elements(), 1, 1);
-
-		// final iteration: copy swap count back to staging buffer
-		if (k == this->shape[0] - 1) {
-			cb.add_buffer_memory_barrier(*result.swap_count_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT);
-			cb.record_barriers();
-			cb.copy_buffer(*result.swap_count_buffer, *result.swap_count_staging_buffer);
-		}
 
 		// submit command buffer to compute queue on device
 		cb.end_recording();
-		task_k.timeline_sync(result.L.get_timeline_semaphore());
-		task_k.timeline_sync(result.U.get_timeline_semaphore());
-		task_k.timeline_sync(result.P.get_timeline_semaphore());
-		task_k.timeline_sync(*this->timeline_semaphore);
+		uint64_t finished_counter = task_k.timeline_sync(*timeline_semaphore);
+		this->set_tasks_finished_semaphore_counter(finished_counter);
+		result.L.set_tasks_finished_semaphore_counter(finished_counter);
+		result.U.set_tasks_finished_semaphore_counter(finished_counter);
+		result.P.set_tasks_finished_semaphore_counter(finished_counter);
+		result.swap_data.set_tasks_finished_semaphore_counter(finished_counter);
 		task_k.submit();
 	}
 
@@ -7672,8 +8155,8 @@ NGrid NGrid::l_inverse() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);// 'this' must be in the form of a lower triangular matrix
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());// 'this' must be in the form of a lower triangular matrix
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -7682,12 +8165,15 @@ NGrid NGrid::l_inverse() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->shape[1], 1, 1); // (1d dispatch with one thread for each column)
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -7726,8 +8212,8 @@ NGrid NGrid::u_inverse() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer); // 'this' must be in the form of an upper triangular matrix
-	ds.bind_buffer(1, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer()); // 'this' must be in the form of an upper triangular matrix
+	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -7736,12 +8222,15 @@ NGrid NGrid::u_inverse() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->shape[1], 1, 1); // (1d dispatch with one thread for each column)
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -7777,12 +8266,7 @@ QRresult NGrid::qr(const bool hessenberg) const {
 	Buffer<float_t>& Gamma = main_task.add_temp_buffer<float_t>(k_max, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>& LocalResults = main_task.add_temp_buffer<float_t>(row_workgroups, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // to store local results from parallel reductions
 
-	// submit main task (with empty command buffer) to mark it as available for reset as soon as all other tasks are done
-	Semaphore& mt_semaphore = main_task.add_temp_timeline_semaphore(UINT64_MAX);
-	main_task.timeline_sync(mt_semaphore, k_max - 1, 0); // =triggered by the final iteration of the main loop
-	main_task.submit();
-
-	// initizialize result members
+	// initialize result members
 	uint32_t cols_V = k_max;
 	result.V = result.V.reshape(rows, cols_V);
 	result.V.fill_zero();
@@ -7841,10 +8325,10 @@ QRresult NGrid::qr(const bool hessenberg) const {
 
 		// define descriptor set (transient resource, managed by the main task)
 		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
-		ds.bind_buffer(0, *result.Q.get_buffer());
-		ds.bind_buffer(1, *result.R.get_buffer());
-		ds.bind_buffer(2, *result.V.get_buffer());
-		ds.bind_buffer(3, *result.Tau.get_buffer());
+		ds.bind_buffer(0, result.Q.get_buffer());
+		ds.bind_buffer(1, result.R.get_buffer());
+		ds.bind_buffer(2, result.V.get_buffer());
+		ds.bind_buffer(3, result.Tau.get_buffer());
 		ds.bind_buffer(4, Temp_w);
 		ds.bind_buffer(5, Temp_u);
 		ds.bind_buffer(6, Temp_y);
@@ -7872,93 +8356,131 @@ QRresult NGrid::qr(const bool hessenberg) const {
 		cb.bind_pipeline(get_sum_of_squares_rk_pipeline);
 		cb.bind_descriptor_set(ds, get_sum_of_squares_rk_pipeline);
 		cb.bind_push_constants(constants, get_sum_of_squares_rk_pipeline);
-		cb.dispatch(get_sum_of_squares_rk_pipeline, rows, 1, 1);
-		cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.R.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(get_sum_of_squares_rk_pipeline, rows, 1, 1);
 
 		// Get total sum of squares, norm_x and alpha_k
 		cb.bind_pipeline(get_alpha_pipeline);
 		cb.bind_descriptor_set(ds, get_alpha_pipeline);
 		cb.bind_push_constants(constants, get_alpha_pipeline);
-		cb.dispatch(get_alpha_pipeline, 1, 1, 1);
-		cb.add_buffer_memory_barrier(Alpha, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.R.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Alpha, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
+		cb.dispatch(get_alpha_pipeline, 1, 1, 1);
 
 		// Compute Householder Vector v_k (V[k:m-1][k])
 		cb.bind_pipeline(compute_householder_vector_pipeline);
 		cb.bind_descriptor_set(ds, compute_householder_vector_pipeline);
 		cb.bind_push_constants(constants, compute_householder_vector_pipeline);
-		cb.dispatch(compute_householder_vector_pipeline, rows, 1, 1);
-		cb.add_buffer_memory_barrier(*result.V.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.R.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Alpha, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.V.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.add_buffer_memory_barrier(Alpha, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
+		cb.dispatch(compute_householder_vector_pipeline, rows, 1, 1);
 
 		// Get local sums of squares of elements V[k:m-1][k] (store in local_results buffer)
 		cb.bind_pipeline(get_sum_of_squares_vk_pipeline);
 		cb.bind_descriptor_set(ds, get_sum_of_squares_vk_pipeline);
 		cb.bind_push_constants(constants, get_sum_of_squares_vk_pipeline);
-		cb.dispatch(get_sum_of_squares_vk_pipeline, rows, 1, 1);
-		cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.V.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(get_sum_of_squares_vk_pipeline, rows, 1, 1);
 
 		// Get total sum of squares of elements V[k:m-1][k], then calculate tau[k] (single thread)
 		cb.bind_pipeline(get_tau_pipeline);
 		cb.bind_descriptor_set(ds, get_tau_pipeline);
 		cb.bind_push_constants(constants, get_tau_pipeline);
-		cb.dispatch(get_tau_pipeline, 1, 1, 1);
-		cb.add_buffer_memory_barrier(*result.Tau.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.Tau.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(get_tau_pipeline, 1, 1, 1);
 
 		// Get temp_w
 		cb.bind_pipeline(get_temp_w_pipeline);
 		cb.bind_descriptor_set(ds, get_temp_w_pipeline);
 		cb.bind_push_constants(constants, get_temp_w_pipeline);
-		cb.dispatch(get_temp_w_pipeline, 1, cols, 1);
-		cb.add_buffer_memory_barrier(Temp_w, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.V.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.R.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_w, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(get_temp_w_pipeline, 1, cols, 1);
 
 		// Get temp_u
 		cb.bind_pipeline(get_temp_u_pipeline);
 		cb.bind_descriptor_set(ds, get_temp_u_pipeline);
 		cb.bind_push_constants(constants, get_temp_u_pipeline);
-		cb.dispatch(get_temp_u_pipeline, rows, 1, 1);
-		cb.add_buffer_memory_barrier(Temp_u, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(Temp_y, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.V.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.R.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.Q.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_u, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_y, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(get_temp_u_pipeline, rows, 1, 1);
 
 		if (hessenberg) {
 			// local reduction for gamma (for Hessenberg)
 			cb.bind_pipeline(get_gamma_pipeline);
 			cb.bind_descriptor_set(ds, get_gamma_pipeline);
 			cb.bind_push_constants(constants, get_gamma_pipeline);
-			cb.dispatch(get_gamma_pipeline, rows, 1, 1);
-			cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.add_buffer_memory_barrier(result.V.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+			cb.add_buffer_memory_barrier(Temp_y, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+			cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 			cb.record_barriers();
+			cb.dispatch(get_gamma_pipeline, rows, 1, 1);
 
 			// global reduction for gamma (for Hessenberg)
 			cb.bind_pipeline(gamma_global_reduction_pipeline);
 			cb.bind_descriptor_set(ds, gamma_global_reduction_pipeline);
 			cb.bind_push_constants(constants, gamma_global_reduction_pipeline);
-			cb.dispatch(gamma_global_reduction_pipeline, 1, 1, 1);
-
-			cb.add_buffer_memory_barrier(Gamma, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+			cb.add_buffer_memory_barrier(result.Tau.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+			cb.add_buffer_memory_barrier(LocalResults, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+			cb.add_buffer_memory_barrier(Gamma, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 			cb.record_barriers();
+			cb.dispatch(gamma_global_reduction_pipeline, 1, 1, 1);
 		}
 
 		// Update R, Q (2d dispatch)
 		cb.bind_pipeline(householder_transformation_pipeline);
 		cb.bind_descriptor_set(ds, householder_transformation_pipeline);
 		cb.bind_push_constants(constants, householder_transformation_pipeline);
+		cb.add_buffer_memory_barrier(result.Tau.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.V.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Alpha, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Gamma, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_w, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_u, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_y, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(householder_transformation_pipeline, rows, std::max(cols, cols_Q), 1);
 
 		cb.end_recording();
 
-		task_k.timeline_sync(result.Q.get_timeline_semaphore());
-		task_k.timeline_sync(result.R.get_timeline_semaphore());
-		task_k.timeline_sync(result.V.get_timeline_semaphore());
-		task_k.timeline_sync(result.Tau.get_timeline_semaphore());
-		task_k.add_timeline_signal_semaphore(mt_semaphore, k);
+		uint64_t finished_counter = task_k.timeline_sync(*timeline_semaphore);
+		this->set_tasks_finished_semaphore_counter(finished_counter);
+		result.Q.set_tasks_finished_semaphore_counter(finished_counter);
+		result.R.set_tasks_finished_semaphore_counter(finished_counter);
+		result.V.set_tasks_finished_semaphore_counter(finished_counter);
+		result.Tau.set_tasks_finished_semaphore_counter(finished_counter);
 		task_k.submit();
 	}
+
+	// submit main task (with empty command buffer) to mark it as available for reset as soon as all other tasks are done
+	main_task.get_command_buffer();
+	uint64_t finished_counter = main_task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.Q.set_tasks_finished_semaphore_counter(finished_counter);
+	result.R.set_tasks_finished_semaphore_counter(finished_counter);
+	result.V.set_tasks_finished_semaphore_counter(finished_counter);
+	result.Tau.set_tasks_finished_semaphore_counter(finished_counter);
+	main_task.submit();
 
 	return result;
 }
@@ -8078,7 +8600,7 @@ CGrid NGrid::eigen(const uint32_t max_iterations_multiplier, const float_t toler
 }
 
 // protected helper method for eigen values
-void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta_poly, uint32_t start_row, uint32_t end_row) {
+void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta_poly, const uint32_t start_row, const uint32_t end_row) {
 
 	// acquire an idle compute task (this main task manages descriptor set, push constants and temporary buffer to be shared by the other tasks)
 	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
@@ -8089,11 +8611,6 @@ void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta
 	Buffer<float_t>& tau_k = main_task.add_temp_buffer<float_t>(1, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>& Temp_y = main_task.add_temp_buffer<float_t>(current_size, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>& Temp_w = main_task.add_temp_buffer<float_t>(current_size, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	// submit main task (with empty command buffer) to mark it as available for reset as soon as all other tasks are done
-	Semaphore& mt_semaphore = main_task.add_temp_timeline_semaphore(UINT64_MAX);
-	main_task.timeline_sync(mt_semaphore, current_size - 2, 0); // =triggered by the final iteration of the main loop
-	main_task.submit();
 
 	// define descriptor set layout
 	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
@@ -8132,7 +8649,7 @@ void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta
 
 		// define descriptor set
 		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
-		ds.bind_buffer(0, *this->data_buffer);
+		ds.bind_buffer(0, this->get_buffer());
 		ds.bind_buffer(1, v_k);
 		ds.bind_buffer(2, Temp_y);
 		ds.bind_buffer(3, Temp_w);
@@ -8155,43 +8672,62 @@ void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta
 		cb.bind_pipeline(compute_householder_pipeline);
 		cb.bind_descriptor_set(ds, compute_householder_pipeline);
 		cb.bind_push_constants(constants, compute_householder_pipeline);
+		cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(v_k, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(tau_k, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(compute_householder_pipeline, 1, 1, 1);
-		cb.add_buffer_memory_barrier(v_k, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(tau_k, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
 		cb.record_barriers();
 
 		cb.bind_pipeline(get_temp_y_pipeline);
 		cb.bind_descriptor_set(ds, get_temp_y_pipeline);
 		cb.bind_push_constants(constants, get_temp_y_pipeline);
-		cb.dispatch(get_temp_y_pipeline, 1, current_size, 1);
-		cb.add_buffer_memory_barrier(Temp_y, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(v_k, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_y, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(get_temp_y_pipeline, 1, current_size, 1);
 
 		cb.bind_pipeline(left_transformation_pipeline);
 		cb.bind_descriptor_set(ds, left_transformation_pipeline);
 		cb.bind_push_constants(constants, left_transformation_pipeline);
-		cb.dispatch(left_transformation_pipeline, current_size, current_size, 1); // 2d dispatch
-		cb.add_buffer_memory_barrier(*this->data_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(tau_k, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(v_k, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_y, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(left_transformation_pipeline, current_size, current_size, 1); // 2d dispatch
 
 		cb.bind_pipeline(get_temp_w_pipeline);
 		cb.bind_descriptor_set(ds, get_temp_w_pipeline);
 		cb.bind_push_constants(constants, get_temp_w_pipeline);
-		cb.dispatch(get_temp_w_pipeline, current_size, 1, 1);
-		cb.add_buffer_memory_barrier(Temp_w, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(v_k, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_w, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(get_temp_w_pipeline, current_size, 1, 1);
 
 		cb.bind_pipeline(right_transformation_pipeline);
 		cb.bind_descriptor_set(ds, right_transformation_pipeline);
 		cb.bind_push_constants(constants, right_transformation_pipeline);
+		cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(tau_k, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(v_k, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(Temp_w, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(right_transformation_pipeline, current_size, current_size, 1); // 2d dispatch
 
 		cb.end_recording();
 
-		task_k.timeline_sync(*this->timeline_semaphore);
-		task_k.add_timeline_signal_semaphore(mt_semaphore, chase_k);
+		uint64_t finished_counter = task_k.timeline_sync(*timeline_semaphore);
+		this->set_tasks_finished_semaphore_counter(finished_counter);
 		task_k.submit();
 	}
+
+	main_task.get_command_buffer(); // empty command buffer, just to trigger a fence signaling completion
+	uint64_t finished_counter = main_task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	main_task.submit();
 }
 
 // 2d matrix inversion
@@ -8240,7 +8776,7 @@ NGrid NGrid::inverse(const LUresult& LUP) {
 
 // checks if the inverse of a square matrix exists;
 // if it doesn't the Moore_Penrose pseudo-inverse (for non-square matrices) may still exist!
-const bool NGrid::is_invertible() const {
+bool NGrid::is_invertible() const {
 	// check if matrix is 2d
 	if (this->dimensions != 2) {
 		return false;
@@ -8266,7 +8802,7 @@ const bool NGrid::is_invertible() const {
 }
 
 // check if a matrix is invertible based on its corresponding upper triangular matrix
-const bool NGrid::is_invertible(const NGrid& U) {
+bool NGrid::is_invertible(const NGrid& U) {
 
 	// for a square matrix to be invertible the determinant of the U matrix must not be zero;
 	// the determinant of a triangular matrix is the product of all diagonal elements;
@@ -8317,11 +8853,6 @@ RREF NGrid::rref(const NGrid& augment) const {
 	Buffer<uint32_t>& swap_row = main_task.add_temp_buffer<uint32_t>(1, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // row to be swapped for current row 'k'
 	Buffer<float_t>& multipliers = main_task.add_temp_buffer<float_t>(this->shape[0], BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // multipliers in column 'k'
 
-	// submit main task (with empty command buffer) to mark it as available for reset as soon as all other tasks are done
-	Semaphore& mt_semaphore = main_task.add_temp_timeline_semaphore(UINT64_MAX);
-	main_task.timeline_sync(mt_semaphore, 0, 0); // =triggered by the final iteration of the backsubstitution loop
-	main_task.submit();
-
 	// define descriptor set layout
 	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
 	static bool layout_initialized = false;
@@ -8355,7 +8886,7 @@ RREF NGrid::rref(const NGrid& augment) const {
 	static ShaderModule update_rows_shader(manager->get_device(), RREF_UPDATE_ROWS_SPIRV_BIN, RREF_UPDATE_ROWS_SPIRV_BYTES);
 	static ComputePipeline update_rows_pipeline(manager->get_device(), update_rows_shader, constants_size, set_layout, workgroup_size_2d, workgroup_size_2d, 1);
 
-	// perform backsubstitution
+	// perform back-substitution
 	static ShaderModule backsubstitution_shader(manager->get_device(), RREF_BACKSUBSTITUTION_SPIRV_BIN, RREF_BACKSUBSTITUTION_SPIRV_BYTES);
 	static ComputePipeline backsubstitution_pipeline(manager->get_device(), backsubstitution_shader, constants_size, set_layout, workgroup_size_2d, workgroup_size_2d, 1);
 
@@ -8367,8 +8898,8 @@ RREF NGrid::rref(const NGrid& augment) const {
 
 		// define descriptor set
 		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
-		ds.bind_buffer(0, *result.coeffs.get_buffer());
-		ds.bind_buffer(1, *result.solution.get_buffer());
+		ds.bind_buffer(0, result.coeffs.get_buffer());
+		ds.bind_buffer(1, result.solution.get_buffer());
 		ds.bind_buffer(2, swap_row);
 		ds.bind_buffer(3, multipliers);
 		ds.write();
@@ -8389,46 +8920,55 @@ RREF NGrid::rref(const NGrid& augment) const {
 		cb.bind_pipeline(check_swap_pipeline);
 		cb.bind_descriptor_set(ds, check_swap_pipeline);
 		cb.bind_push_constants(constants, check_swap_pipeline);
-		cb.dispatch(check_swap_pipeline, this->shape[0], 1, 1);
-		cb.add_buffer_memory_barrier(swap_row, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(swap_row, VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(check_swap_pipeline, this->shape[0], 1, 1);
 
 		// perform row swap (1d dispatch with one thread for each column)
 		cb.bind_pipeline(perform_swap_pipeline);
 		cb.bind_descriptor_set(ds, perform_swap_pipeline);
 		cb.bind_push_constants(constants, perform_swap_pipeline);
-		cb.dispatch(perform_swap_pipeline, 1, this->shape[0] + aug_cols, 1);
-		cb.add_buffer_memory_barrier(*result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(*result.solution.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.solution.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(swap_row, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(perform_swap_pipeline, 1, this->shape[0] + aug_cols, 1);
 
 		// track multipliers column (elements {row,k}) (1d dispatch with one thread for each row)
 		cb.bind_pipeline(track_multipliers_pipeline);
 		cb.bind_descriptor_set(ds, track_multipliers_pipeline);
 		cb.bind_push_constants(constants, track_multipliers_pipeline);
-		cb.dispatch(track_multipliers_pipeline, this->shape[0], 1, 1);
-		cb.add_buffer_memory_barrier(multipliers, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(multipliers, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(track_multipliers_pipeline, this->shape[0], 1, 1);
 
 		// normalize row k (thus turning element {k,k} to 1 (1d dispatch with one thread for each column)
 		cb.bind_pipeline(normalize_row_k_pipeline);
 		cb.bind_descriptor_set(ds, normalize_row_k_pipeline);
 		cb.bind_push_constants(constants, normalize_row_k_pipeline);
-		cb.dispatch(normalize_row_k_pipeline, 1, this->shape[1] + aug_cols, 1);
-		cb.add_buffer_memory_barrier(*result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(*result.solution.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.solution.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(multipliers, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(normalize_row_k_pipeline, 1, this->shape[1] + aug_cols, 1);
 
 		// update rows below k (2d dispatch)
 		cb.bind_pipeline(update_rows_pipeline);
 		cb.bind_descriptor_set(ds, update_rows_pipeline);
 		cb.bind_push_constants(constants, update_rows_pipeline);
+		cb.add_buffer_memory_barrier(result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.solution.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(multipliers, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(update_rows_pipeline, this->shape[0], this->shape[1] + aug_cols, 1);
 
 		cb.end_recording();
-		task_k.timeline_sync(*this->timeline_semaphore);
-		task_k.timeline_sync(result.coeffs.get_timeline_semaphore());
-		task_k.timeline_sync(result.solution.get_timeline_semaphore());
+		uint64_t finished_counter = task_k.timeline_sync(*timeline_semaphore);
+		this->set_tasks_finished_semaphore_counter(finished_counter);
+		result.coeffs.set_tasks_finished_semaphore_counter(finished_counter);
+		result.solution.set_tasks_finished_semaphore_counter(finished_counter);
 		task_k.submit();
 	}
 
@@ -8441,8 +8981,8 @@ RREF NGrid::rref(const NGrid& augment) const {
 
 		// define descriptor set
 		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
-		ds.bind_buffer(0, *result.coeffs.get_buffer());
-		ds.bind_buffer(1, *result.solution.get_buffer());
+		ds.bind_buffer(0, result.coeffs.get_buffer());
+		ds.bind_buffer(1, result.solution.get_buffer());
 		ds.bind_buffer(2, swap_row);
 		ds.bind_buffer(3, multipliers);
 		ds.write();
@@ -8464,23 +9004,35 @@ RREF NGrid::rref(const NGrid& augment) const {
 		cb.bind_descriptor_set(ds, track_multipliers_pipeline);
 		cb.bind_push_constants(constants, track_multipliers_pipeline);
 		cb.dispatch(track_multipliers_pipeline, this->shape[0], 1, 1);
-		cb.add_buffer_memory_barrier(multipliers, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(multipliers, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
 
-		// backsubstitute (2d dispatch)
+		// back-substitute (2d dispatch)
 		cb.bind_pipeline(backsubstitution_pipeline);
 		cb.bind_descriptor_set(ds, backsubstitution_pipeline);
 		cb.bind_push_constants(constants, backsubstitution_pipeline);
+		cb.add_buffer_memory_barrier(result.coeffs.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.solution.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(multipliers, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(backsubstitution_pipeline, this->shape[0], this->shape[1] + aug_cols, 1);
 
 		cb.end_recording();
 
-		task_k.timeline_sync(*this->timeline_semaphore);
-		task_k.timeline_sync(result.coeffs.get_timeline_semaphore());
-		task_k.timeline_sync(result.solution.get_timeline_semaphore());
-		task_k.add_timeline_signal_semaphore(mt_semaphore, k);
+		uint64_t finished_counter = task_k.timeline_sync(*timeline_semaphore);
+		this->set_tasks_finished_semaphore_counter(finished_counter);
+		result.coeffs.set_tasks_finished_semaphore_counter(finished_counter);
+		result.solution.set_tasks_finished_semaphore_counter(finished_counter);
 		task_k.submit();
 	}
+
+	main_task.get_command_buffer(); // empty command buffer, just to trigger a fence signaling completion
+	uint64_t finished_counter = main_task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.coeffs.set_tasks_finished_semaphore_counter(finished_counter);
+	result.solution.set_tasks_finished_semaphore_counter(finished_counter);
+	main_task.submit();
 
 	return result;
 }
@@ -8535,27 +9087,32 @@ NGrid NGrid::mirror(const std::vector<bool>& mirror_axes) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *shape_buffer);
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, mirror_axes_buffer);
-	ds.bind_buffer(3, *result.get_buffer());
+	ds.bind_buffer(3, result.get_buffer());
 	ds.write();
 
 	// record command buffer
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
-	cb.copy_buffer(mirror_axes_staging_buffer, mirror_axes_buffer);
-	cb.add_buffer_memory_barrier(mirror_axes_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+	cb.add_buffer_memory_barrier(mirror_axes_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 	cb.record_barriers();
+	cb.copy_buffer(mirror_axes_staging_buffer, mirror_axes_buffer);
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(mirror_axes_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -8611,9 +9168,9 @@ NGrid NGrid::remap(const NGrid& target_index_map) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *target_index_map.get_buffer());
-	ds.bind_buffer(2, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, target_index_map.get_buffer());
+	ds.bind_buffer(2, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -8622,12 +9179,17 @@ NGrid NGrid::remap(const NGrid& target_index_map) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(target_index_map.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
+	target_index_map.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -8647,7 +9209,7 @@ public:
 
 	// constructor
 	RegressionResult(uint32_t n, uint32_t k) {
-		coefficients = new NGrid; // size k+1 (has to be initialized later, when k is known)
+		coefficients = new NGrid(k + 1);
 		y_predict = new NGrid(n, 1); // predicted y values (Y_hat)
 	}
 
@@ -8814,6 +9376,7 @@ private:
 };
 
 NGrid::RegressionResult NGrid::regression(const NGrid& other, const bool sample, const uint32_t degree) const {
+
 	RegressionResult result(this->shape[0], this->dimensions == 1 ? 1 : this->shape[1]);
 
 	// check if the dimensions of 'this' are valid
@@ -8998,7 +9561,7 @@ NGrid::RegressionResult NGrid::regression(const NGrid& other, const bool sample,
 	NGrid XtY = X_T * Y_2d;
 
 	*result.coefficients = XtX_inv * XtY; // This will be a (k+1) x 1 NGrid
-	result.coefficients_vec = result.coefficients->get_buffer()->read();
+	result.coefficients_vec = result.coefficients->get();
 
 	// --- Calculate Predicted Y Values ---
 	// Y_hat = X * beta_hat
@@ -9076,7 +9639,7 @@ float_t NGrid::Dickey_Fuller() const {
 // If the returned p-value is less than a chosen significance level (typically 0.05),
 // it suggests that the two time series are cointegrated and have a long-term relationship.
 // Make sure that both NGrid are 1d and have the same number of elements!
-float_t NGrid::Engle_Granger(const NGrid& other) const {
+float_t NGrid::Engle_Granger(const NGrid& other)const {
 	if (this->dimensions != 1 || (this->dimensions == 2 && this->shape[1] != 1)) {
 		Log::warning("NGrid::Engle_Granger() is only valid for 1d vectors, returning NAN");
 		return float_t(NAN);
@@ -9131,8 +9694,8 @@ NGrid NGrid::stationary(const uint32_t degree) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *differenced_result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, differenced_result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -9141,12 +9704,15 @@ NGrid NGrid::stationary(const uint32_t degree) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, differenced_result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(differenced_result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	differenced_result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	// Recursive Call for Higher Degrees
@@ -9159,7 +9725,7 @@ NGrid NGrid::stationary(const uint32_t degree) const {
 }
 
 // returns a stationary transformation of the vector data,
-// using first degree logreturn differencing
+// using first degree log return differencing
 // e.g. for time series data;
 NGrid NGrid::stationary_log(const uint32_t degree, const float_t log_base) const {
 
@@ -9188,7 +9754,8 @@ NGrid NGrid::stationary_log(const uint32_t degree, const float_t log_base) const
 
 	// define push constants (transient resource, owned by the task)
 	PushConstants& constants = task.add_constants(
-		differenced_result.get_elements()
+		differenced_result.get_elements(),
+		log_base
 	);
 
 	// static resources: only create once
@@ -9204,8 +9771,8 @@ NGrid NGrid::stationary_log(const uint32_t degree, const float_t log_base) const
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *differenced_result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, differenced_result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -9214,12 +9781,15 @@ NGrid NGrid::stationary_log(const uint32_t degree, const float_t log_base) const
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, differenced_result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(differenced_result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	differenced_result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	// Recursive Call for Higher Degrees
@@ -9267,8 +9837,8 @@ NGrid NGrid::sort(const bool ascending) const {
 
 		// add a descriptor set to the task (transient resource, owned by the task)
 		DescriptorSet& ds = task.add_descriptor_set(set_layout);
-		ds.bind_buffer(0, *data_buffer);
-		ds.bind_buffer(1, *result.get_buffer());
+		ds.bind_buffer(0, this->get_buffer());
+		ds.bind_buffer(1, result.get_buffer());
 		ds.write();
 
 		// begin command buffer recording
@@ -9277,12 +9847,15 @@ NGrid NGrid::sort(const bool ascending) const {
 		cb.bind_pipeline(pipeline);
 		cb.bind_descriptor_set(ds, pipeline);
 		cb.bind_push_constants(constants, pipeline);
+		cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(pipeline, this->elements, 1, 1);
 
 		cb.end_recording();
 
-		task.timeline_sync(result.get_timeline_semaphore());
-		task.timeline_sync(*this->timeline_semaphore);
+		uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+		this->set_tasks_finished_semaphore_counter(finished_counter);
+		result.set_tasks_finished_semaphore_counter(finished_counter);
 		task.submit();
 	}
 
@@ -9400,9 +9973,9 @@ NGrid NGrid::diagonal() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *this->shape_buffer);
-	ds.bind_buffer(2, *result.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, this->get_shape_buffer());
+	ds.bind_buffer(2, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -9411,12 +9984,16 @@ NGrid NGrid::diagonal() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, size, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(result.get_timeline_semaphore());
-	task.timeline_sync(*this->timeline_semaphore);
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -9426,32 +10003,9 @@ NGrid NGrid::diagonal() const {
 // | Miscellaneous                   |
 // +=================================+
 
-// force GPU->CPU synchronization of the currently active GPU operation
-// (=wait for the ready semaphore to signal (not host-visible), followed by a fence (host-visible))
-NGrid NGrid::flush() const {
-	ComputeTask& task = manager->get_compute_task(__FUNCTION__);
-	task.timeline_sync(*this->timeline_semaphore);
-	task.submit();
-	if (task.is_idle()) {
-		Log::debug("in method NGrid::flush(): already (or still?) in idle state at time of function call");
-	}
-	else {
-#ifdef _DEBUG
-		Log::debug("in method NGrid::flush(): busy state encountered at time of function call.");
-		Log::Timer timer(LogLevel::LEVEL_DEBUG);
-		task.wait_idle();
-		timer.stop();
-		Log::debug("in method NGrid::flush(): idle state reached.");
-#else
-		task.wait_idle();
-#endif
-	}
-	return *this;
-}
-
 // print the vector or array to the console
 // use precision argument for decimal places (use negative number for unformatted full available precision)
-void NGrid::print(std::string comment, int32_t precision, bool with_indices, bool rows_inline, std::string delimiter) const {
+void NGrid::print(const std::string& comment, const int32_t precision, const bool with_indices, const bool rows_inline, const std::string& delimiter) const {
 
 	if (this->elements == 0) {
 		return; // empty NGrid, nothing to print
@@ -9489,10 +10043,10 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *data_buffer);
-	ds.bind_buffer(1, *required_digits_ngrid.get_buffer());
-	ds.bind_buffer(2, *make_scientific_ngrid.get_buffer());
-	ds.bind_buffer(3, *has_fractional_ngrid.get_buffer());
+	ds.bind_buffer(0, this->get_buffer());
+	ds.bind_buffer(1, required_digits_ngrid.get_buffer());
+	ds.bind_buffer(2, make_scientific_ngrid.get_buffer());
+	ds.bind_buffer(3, has_fractional_ngrid.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -9501,14 +10055,17 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->elements, 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(*this->timeline_semaphore);
-	task.timeline_sync(required_digits_ngrid.get_timeline_semaphore());
-	task.timeline_sync(make_scientific_ngrid.get_timeline_semaphore());
-	task.timeline_sync(has_fractional_ngrid.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*timeline_semaphore);
+	this->set_tasks_finished_semaphore_counter(finished_counter);
+	required_digits_ngrid.set_tasks_finished_semaphore_counter(finished_counter);
+	make_scientific_ngrid.set_tasks_finished_semaphore_counter(finished_counter);
+	has_fractional_ngrid.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	// copy helper helper arrays to vectors
@@ -9669,7 +10226,7 @@ void NGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 	}
 }
 
-void NGrid::set_workgroup_size_1d(uint32_t size) {
+void NGrid::set_workgroup_size_1d(const uint32_t size) {
 	workgroup_size_1d = size;
 
 	// make sure the workgroup size is not zero
@@ -9695,7 +10252,7 @@ void NGrid::set_workgroup_size_1d(uint32_t size) {
 	}
 }
 
-void NGrid::set_workgroup_size_2d(uint32_t size) {
+void NGrid::set_workgroup_size_2d(const uint32_t size) {
 	workgroup_size_2d = size;
 
 	// make sure the workgroup size is not zero
@@ -9736,6 +10293,20 @@ void NGrid::set_workgroup_size_2d(uint32_t size) {
 	}
 }
 
+// retrieves the timeline semaphore counter value which will signal (or has signaled)
+// that all GPU work for this NGrid instance is done
+uint64_t NGrid::get_tasks_finished_semaphore_counter() const {
+	return tasks_finished_semaphore_counter;
+}
+
+// assigns a timeline semaphore counter value which will signal
+// that all GPU work for this NGrid instance will be complete;
+// please note that that tasks_finished_semaphore_counter member variable
+// has type 'mutable uint64_t', which is why this method is no exception to 'const'
+void NGrid::set_tasks_finished_semaphore_counter(const uint64_t counter_value) const {
+	tasks_finished_semaphore_counter = counter_value;
+}
+
 // type conversion operator from NGrid to CGrid
 // (the imaginary part is initialized with zeros)
 NGrid::operator CGrid() const {
@@ -9744,10 +10315,6 @@ NGrid::operator CGrid() const {
 	result.imag.fill_zero(); // initialize the imaginary part with zeros
 	return result;
 }
-
-// +=================================+   
-// | Private Class Members           |
-// +=================================+
 
 // returns a 'flat' equivalent to a multidimensional index
 uint32_t NGrid::flat_index(std::initializer_list<uint32_t> multi_index_list) const {
@@ -9760,7 +10327,7 @@ uint32_t NGrid::flat_index(const std::vector<uint32_t>& multi_index) const {
 	// Check if the number of indices provided matches the array's dimensions
 	if (multi_index.size() != this->dimensions) {
 		Log::warning("Error in NGrid::flat_index(...): Number of indices (", multi_index.size(), ") does not match array dimensions (",
-			this->dimensions, "). Returning 0 (potential trunctation).");
+			this->dimensions, "). Returning 0 (potential truncation).");
 		return UINT32_MAX;
 	}
 
@@ -9776,10 +10343,6 @@ uint32_t NGrid::flat_index(const std::vector<uint32_t>& multi_index) const {
 		return UINT32_MAX;
 	}
 	return static_cast<uint32_t>(flat_index_calc);
-}
-
-Semaphore& NGrid::get_timeline_semaphore() const {
-	return *timeline_semaphore;
 }
 
 // ==================================================================================================================================================================================
@@ -9812,7 +10375,7 @@ CGrid::CGrid(const std::vector<uint32_t>& shape_vec) {
 }
 
 // CGrid parametric constructor for multi-dimensional complex-number array, overloaded for std::initializer_list
-CGrid::CGrid(std::initializer_list<uint32_t> shape) {
+CGrid::CGrid(const std::initializer_list<uint32_t> shape) {
 	std::vector<uint32_t> shape_vec(shape);
 	this->real.create(shape_vec);
 	this->imag.create(shape_vec);
@@ -9822,7 +10385,7 @@ CGrid::CGrid(std::initializer_list<uint32_t> shape) {
 // CGrid parametric constructor for 1d array:
 // construct and directly fill the real part with the contents of a given std::vector<float_t>;
 // the imaginary part is initialized with zeros
-CGrid::CGrid(std::vector<float_t> source_vector) {
+CGrid::CGrid(const std::vector<float_t>& source_vector) {
 	uint32_t copied_elements = static_cast<uint32_t>(source_vector.size());
 	std::vector<uint32_t> shape_vec = { copied_elements };
 	this->real.create(shape_vec);
@@ -9875,7 +10438,7 @@ void CGrid::init_static_members() {
 	static bool initialized = false;
 	// copy static members from NGrid
 	if (!initialized) {
-		if (manager == nullptr) {
+		if (!manager) {
 			manager = NGrid::manager;
 		}
 		initialized = true;
@@ -9932,44 +10495,20 @@ CGrid& CGrid::operator=(CGrid&& other) noexcept {
 // | getters & setters               |
 // +=================================+
 
-// return the complex value of an array element via its multidimensional index
-std::complex<float_t> CGrid::get(const std::initializer_list<uint32_t> index) const {
-	std::complex<float_t> value;
-	uint32_t flat_index = this->real.flat_index(index);
-	value.real(this->real.data_buffer->read_element(flat_index));
-	value.imag(this->imag.data_buffer->read_element(flat_index));
-	return value;
-}
-
-// returns a flat (= 1-dimensional) copy of ALL raw data of the underlying buffer as type std::vector<std::complex<float_t>>
-std::vector<std::complex<float_t>> CGrid::get(const uint32_t read_elements, const uint32_t source_offset_elements) const {
-	std::vector<float_t> real_data = this->real.data_buffer->read();
-	std::vector<float_t> imag_data = this->imag.data_buffer->read();
-	std::vector<std::complex<float_t>> result;
-	uint32_t elements = static_cast<uint32_t>(read_elements - source_offset_elements);
-	result.reserve(elements);
-	for (uint32_t i = 0; i < elements; i++) {
-		result.push_back(std::complex<float_t>(real_data[i + source_offset_elements], imag_data[i + source_offset_elements]));
-	}
-	return result;
-}
-
 // assigns a value to a CGrid data element via multi-dimensional index;
 // overload with index as std::initializer_list<uint32_t>;
 // note: because no imaginary part is passed, the imaginary part gets initialized with zero
-CGrid& CGrid::set(std::initializer_list<uint32_t> index, const float_t value) {
-	uint32_t flat_index = this->real.flat_index(index);
-	this->real.data_buffer->write_element(flat_index, value);
-	this->imag.data_buffer->write_element(flat_index, 0.0f);
+CGrid& CGrid::set(const std::initializer_list<uint32_t> index, const float_t value) {
+	this->real.set(index, value);
+	this->imag.set(index, 0.0f);
 	return *this;
 }
 
 // assigns a complex value to a CGrid data element via multi-dimensional index;
 // overload with index as std::initializer_list<uint32_t>;
-CGrid& CGrid::set(std::initializer_list<uint32_t> index, const std::complex<float_t> value) {
-	uint32_t flat_index = this->real.flat_index(index);
-	this->real.data_buffer->write_element(flat_index, value.real());
-	this->imag.data_buffer->write_element(flat_index, value.imag());
+CGrid& CGrid::set(const std::initializer_list<uint32_t> index, const std::complex<float_t> value) {
+	this->real.set(index, value.real());
+	this->imag.set(index, value.imag());
 	return *this;
 }
 
@@ -9977,18 +10516,16 @@ CGrid& CGrid::set(std::initializer_list<uint32_t> index, const std::complex<floa
 // overload with index as std::vector<uint32_t>;
 // because no imaginary part is passed, the imaginary part gets initialized with zero
 CGrid& CGrid::set(const std::vector<uint32_t>& index, const float_t value) {
-	uint32_t flat_index = this->real.flat_index(index);
-	this->real.data_buffer->write_element(flat_index, value);
-	this->imag.data_buffer->write_element(flat_index, 0.0f);
+	this->real.set(index, value);
+	this->imag.set(index, 0.0f);
 	return *this;
 }
 
 // assigns a complex value to a CGrid data element via multi-dimensional index;
 // overload with index as std::vector<uint32_t>;
 CGrid& CGrid::set(const std::vector<uint32_t>& index, const std::complex<float_t> value) {
-	uint32_t flat_index = this->real.flat_index(index);
-	this->real.data_buffer->write_element(flat_index, value.real());
-	this->imag.data_buffer->write_element(flat_index, value.imag());
+	this->real.set(index, value.real());
+	this->imag.set(index, value.imag());
 	return *this;
 }
 
@@ -10025,7 +10562,7 @@ void CGrid::operator=(const std::vector<std::complex<float_t>>& data) {
 // copied_elements=0 means: copy ALL elements from the source buffer;
 // this method will typically not write beyond the boundaries of the CGrid, i.e. not automatic resizing occurs,
 // however, if the size is zero (=uninitialized CGrid), it will automatically be set to the size of the source vector (+target_offset);
-CGrid& CGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+CGrid& CGrid::set(const std::vector<float_t>& data, const uint32_t copied_elements, const uint32_t source_offset_elements, const uint32_t target_offset_elements) {
 	if (data.size() == 0) {
 		return *this; // nothing to copy
 	}
@@ -10033,14 +10570,14 @@ CGrid& CGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, ui
 		this->real = this->real.reshape({ target_offset_elements + uint32_t(data.size()) });
 		this->imag = this->imag.reshape({ target_offset_elements + uint32_t(data.size()) });
 	}
-	this->real.data_buffer->write(data, copied_elements, source_offset_elements, target_offset_elements);
+	this->real.set(data, copied_elements, source_offset_elements, target_offset_elements);
 	if (this->imag.elements == copied_elements && target_offset_elements == 0) {
 		this->imag.fill_zero(); // initialize the entire imaginary part with zeros if the size matches the range of the copied elements
 	}
 	else {
 		NGrid condition_map(this->imag.elements);
 		condition_map.fill_index();
-		condition_map = (condition_map >= target_offset_elements) && (condition_map < target_offset_elements + copied_elements);
+		condition_map = (condition_map >= target_offset_elements) && (condition_map < (target_offset_elements + copied_elements));
 		this->imag.replace_if(condition_map, 0.0f); // initialize the imaginary part for the copied elements with zeros
 	}
 	return *this;
@@ -10051,7 +10588,7 @@ CGrid& CGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, ui
 // copied_elements=0 means: copy ALL elements from the source buffer;
 // this method will typically not write beyond the boundaries of the CGrid, i.e. not automatic resizing occurs,
 // however, if the size is zero (=uninitialized CGrid), it will automatically be set to the size of the source vector (+target_offset);
-CGrid& CGrid::set(const std::vector<std::complex<float_t>>& data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+CGrid& CGrid::set(const std::vector<std::complex<float_t>>& data, const uint32_t copied_elements, const uint32_t source_offset_elements, const uint32_t target_offset_elements) {
 	if (data.size() == 0) {
 		return *this; // nothing to copy
 	}
@@ -10071,8 +10608,8 @@ CGrid& CGrid::set(const std::vector<std::complex<float_t>>& data, uint32_t copie
 	}
 
 	// write vector data to the real and imaginary buffers of the CGrid
-	this->real.data_buffer->write(real_data, copied_elements, source_offset_elements, target_offset_elements);
-	this->imag.data_buffer->write(imag_data, copied_elements, source_offset_elements, target_offset_elements);
+	this->real.set(real_data, copied_elements, source_offset_elements, target_offset_elements);
+	this->imag.set(imag_data, copied_elements, source_offset_elements, target_offset_elements);
 
 	return *this;
 }
@@ -10080,7 +10617,7 @@ CGrid& CGrid::set(const std::vector<std::complex<float_t>>& data, uint32_t copie
 // copies raw data from a float_t array to the data buffer
 // of the real compontent of the underlying CGrid array;
 // the corresponding imaginary compontents are initialized with zeros
-CGrid& CGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+CGrid& CGrid::set(const float_t* data, const uint32_t copied_elements, const uint32_t source_offset_elements, const uint32_t target_offset_elements) {
 	uint32_t source_elements = copied_elements == 0 ? this->real.elements - source_offset_elements : copied_elements;
 	this->real.data_buffer->write(data, source_elements, source_offset_elements, target_offset_elements);
 
@@ -10096,18 +10633,36 @@ CGrid& CGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source
 	return *this;
 }
 
-// copies raw data from an NGrid array to the data buffer
-// of the real components of the underlying CGrid array;
-// flat indexing is used for the offset, i.e. making use of
-// offset parameters mostly makes sense for 1d arrays;
-// if arguments for copied_elements and offsets aren't used this method will also
-// work to copy multi-dimensional arrays (copy assignment may be used alternatively)
-CGrid& CGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+// copies raw data from an NGrid array to the real components of the underlying CGrid array;
+// offset arguments (other than 0) are only for 1d arrays!
+CGrid& CGrid::set(const NGrid& other, const uint32_t copied_elements, const uint32_t source_offset_elements, const uint32_t target_offset_elements) {
+
+	// check if offset arguments are used correctly
+	if (this->get_dimensions() > 1 || other.get_dimensions() != 1) {
+		if (source_offset_elements != 0 || target_offset_elements != 0) {
+			Log::warning("invalid use of method CGrid::set(NGrid& other, ...): offset arguments (other than 0) for source and/or target are only supported for 1d arrays!");
+			return *this;
+		}
+	}
+
 	// make sure 'other' is not empty
 	if (other.get_elements() == 0) {
-		Log::warning("attempt to use method NGrid::set(const NGrid& other, ...) with empty 'other' array");
+		Log::warning("attempt to use method CGrid::set(NGrid& other, ...) with empty 'other' array");
 		return *this;
 	}
+
+	// check boundaries of other
+	if (source_offset_elements + copied_elements > other.get_elements()) {
+		Log::warning("buffer boundary violation in method CGrid::set(NGrid& other, ...): 'other' has ", other.get_elements(), " elements, but source_offset=", source_offset_elements, " plus copied elements=", copied_elements, " equals ", source_offset_elements + copied_elements);
+		return *this;
+	}
+
+	// check boundaries of 'this'
+	if (target_offset_elements + copied_elements > this->get_elements() && this->get_elements() != 0 && copied_elements != 0) {
+		Log::warning("buffer boundary violation in method CGrid::set(NGrid& other, ...): 'this' has ", this->get_elements(), " elements, but target_offset=", target_offset_elements, " plus copied elements=", copied_elements, " equals ", target_offset_elements + copied_elements);
+		return *this;
+	}
+
 	// make sure 'this' has a buffer with size >0
 	if (this->real.elements == 0) {
 		if (copied_elements == 0) {
@@ -10133,11 +10688,11 @@ CGrid& CGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_
 			}
 		}
 	}
-	this->real.data_buffer->write(*other.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
+	this->real.data_buffer->write(other.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
 
 	NGrid condition_map(this->imag.elements);
 	condition_map.fill_index();
-	condition_map = (condition_map >= target_offset_elements) && (condition_map < target_offset_elements + (copied_elements == 0 ? other.get_elements() - source_offset_elements : copied_elements));
+	condition_map = (condition_map >= target_offset_elements) && (condition_map < (target_offset_elements + (copied_elements == 0 ? other.get_elements() - source_offset_elements : copied_elements)));
 	this->imag.replace_if(condition_map, 0.0f); // initialize the imaginary part for the copied elements with zeros
 
 	return *this;
@@ -10145,16 +10700,35 @@ CGrid& CGrid::set(const NGrid& other, uint32_t copied_elements, uint32_t source_
 
 // copies raw data from a second CGrid array to the data buffers
 // of the real and imaginary components of the underlying CGrid array;
-// flat indexing is used for the offset, i.e. making use of
-// offset parameters mostly makes sense for 1d arrays;
-// if arguments for copied_elements and offsets aren't used this method will also
-// work to copy multi-dimensional arrays (copy assignment may be used alternatively)
-CGrid& CGrid::set(const CGrid& other, uint32_t copied_elements, uint32_t source_offset_elements, uint32_t target_offset_elements) {
+// offset arguments (other than 0) are for 1d arrays only!
+CGrid& CGrid::set(const CGrid& other, const uint32_t copied_elements, const uint32_t source_offset_elements, const uint32_t target_offset_elements) {
+
+	// check if offset arguments are used correctly
+	if (this->get_dimensions() > 1 || other.get_dimensions() != 1) {
+		if (source_offset_elements != 0 || target_offset_elements != 0) {
+			Log::warning("invalid use of method CGrid::set(CGrid& other, ...): offset arguments (other than 0) for source and/or target are only supported for 1d arrays!");
+			return *this;
+		}
+	}
+
 	// make sure 'other' is not empty
 	if (other.get_elements() == 0) {
-		Log::warning("attempt to use method NGrid::set(const NGrid& other, ...) with empty 'other' array");
+		Log::warning("attempt to use method CGrid::set(CGrid& other, ...) with empty 'other' array");
 		return *this;
 	}
+
+	// check boundaries of other
+	if (source_offset_elements + copied_elements > other.get_elements()) {
+		Log::warning("buffer boundary violation in method CGrid::set(CGrid& other, ...): 'other' has ", other.get_elements(), " elements, but source_offset=", source_offset_elements, " plus copied elements=", copied_elements, " equals ", source_offset_elements + copied_elements);
+		return *this;
+	}
+
+	// check boundaries of 'this'
+	if (target_offset_elements + copied_elements > this->get_elements() && this->get_elements() != 0 && copied_elements != 0) {
+		Log::warning("buffer boundary violation in method CGrid::set(CGrid& other, ...): 'this' has ", this->get_elements(), " elements, but target_offset=", target_offset_elements, " plus copied elements=", copied_elements, " equals ", target_offset_elements + copied_elements);
+		return *this;
+	}
+
 	// make sure 'this' has a buffer with size >0
 	if (this->real.elements == 0) {
 		if (copied_elements == 0) {
@@ -10180,8 +10754,8 @@ CGrid& CGrid::set(const CGrid& other, uint32_t copied_elements, uint32_t source_
 			}
 		}
 	}
-	this->real.data_buffer->write(*other.real.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
-	this->imag.data_buffer->write(*other.imag.get_buffer(), copied_elements, source_offset_elements, target_offset_elements);
+	this->real.set(other.real, copied_elements, source_offset_elements, target_offset_elements);
+	this->imag.set(other.imag, copied_elements, source_offset_elements, target_offset_elements);
 
 	return *this;
 }
@@ -10234,6 +10808,28 @@ CGrid& CGrid::set(const CGrid& other, const std::initializer_list<uint32_t>& tar
 	return *this;
 }
 
+// return the complex value of an array element via its multidimensional index
+std::complex<float_t> CGrid::get(const std::initializer_list<uint32_t> index) const {
+	std::complex<float_t> value;
+	uint32_t flat_index = this->real.flat_index(index);
+	value.real(this->real.get(flat_index));
+	value.imag(this->imag.get(flat_index));
+	return value;
+}
+
+// returns a flat (= 1-dimensional) copy of ALL raw data of the underlying buffer as type std::vector<std::complex<float_t>>
+std::vector<std::complex<float_t>> CGrid::get(const uint32_t read_elements, const uint32_t source_offset_elements) const {
+	std::vector<float_t> real_data = this->real.data_buffer->read();
+	std::vector<float_t> imag_data = this->imag.data_buffer->read();
+	std::vector<std::complex<float_t>> result;
+	uint32_t elements = static_cast<uint32_t>(read_elements - source_offset_elements);
+	result.reserve(elements);
+	for (uint32_t i = 0; i < elements; i++) {
+		result.push_back(std::complex<float_t>(real_data[i + source_offset_elements], imag_data[i + source_offset_elements]));
+	}
+	return result;
+
+}
 // return the complex value of an array element via its flattend index
 std::complex<float_t> CGrid::get(const uint32_t flat_index) const {
 	std::complex<float_t> value;
@@ -10290,14 +10886,14 @@ std::string CGrid::get_shapestring() const {
 	return this->real.get_shapestring();
 }
 
-CGrid CGrid::subgrid(std::vector<uint32_t> source_offset, std::vector<uint32_t> subgrid_shape) const {
+CGrid CGrid::subgrid(const std::vector<uint32_t>& source_offset, const std::vector<uint32_t>& subgrid_shape) const {
 	CGrid result(subgrid_shape);
 	result.real = this->real.subgrid(source_offset, subgrid_shape);
 	result.imag = this->imag.subgrid(source_offset, subgrid_shape);
 	return result;
 }
 
-CGrid CGrid::subgrid(std::initializer_list<uint32_t> source_offset, std::initializer_list<uint32_t> subgrid_shape) const {
+CGrid CGrid::subgrid(const std::initializer_list<uint32_t> source_offset, const std::initializer_list<uint32_t> subgrid_shape) const {
 	CGrid result(subgrid_shape);
 	result.real = this->real.subgrid(source_offset, subgrid_shape);
 	result.imag = this->imag.subgrid(source_offset, subgrid_shape);
@@ -10418,20 +11014,20 @@ void CGrid::operator+=(const CGrid& other) {
 }
 
 // +=================================+   
-// | Substraction                    |
+// | Subtraction                     |
 // +=================================+
 
-// elementwise substraction of the specified value from the real parts of the CGrid
+// elementwise subtraction of the specified value from the real parts of the CGrid
 CGrid CGrid::operator-(const float_t value) const {
 	return *this + (value * -1.0f);
 }
 
-// elementwise substaction of the specified complex value from all elements of the CGrid
+// elementwise subtraction of the specified complex value from all elements of the CGrid
 CGrid CGrid::operator-(const std::complex<float_t> complex_value) const {
 	return *this + (complex_value * -1.0f);
 }
 
-// elementwise substraction of the values of the 'other' NGrid from the real parts of the CGrid
+// elementwise subtraction of the values of the 'other' NGrid from the real parts of the CGrid
 CGrid CGrid::operator-(const NGrid& other) const {
 	CGrid result(this->get_shape());
 	result.real = this->real - other;
@@ -10439,7 +11035,7 @@ CGrid CGrid::operator-(const NGrid& other) const {
 	return result;
 }
 
-// returns the result of elementwise substraction of the complex values of the 'other' CGrid from 'this'
+// returns the result of elementwise subtraction of the complex values of the 'other' CGrid from 'this'
 CGrid CGrid::operator-(const CGrid& other) const {
 	CGrid result(this->get_shape());
 	result.real = this->real - other.real;
@@ -10460,13 +11056,13 @@ CGrid CGrid::operator--(int) {
 	return result;
 }
 
-// elementwise substraction of the specified value
+// elementwise subtraction of the specified value
 // form the real parts of the CGrid
 void CGrid::operator-=(const float_t value) {
 	this->real -= value;
 }
 
-// elementwise substraction of the specified complex value from 'this'
+// elementwise subtraction of the specified complex value from 'this'
 void CGrid::operator-=(const std::complex<float_t> complex_value) {
 	this->real -= complex_value.real();
 	if (complex_value.imag() != 0.0f) {
@@ -10474,12 +11070,12 @@ void CGrid::operator-=(const std::complex<float_t> complex_value) {
 	}
 }
 
-// elementwise substraction of the values of the 'other' NGrid from the real parts of 'this' CGrid
+// elementwise subtraction of the values of the 'other' NGrid from the real parts of 'this' CGrid
 void CGrid::operator-=(const NGrid& other) {
 	this->real -= other;
 }
 
-// elementwise substraction of the complex values of the 'other' CGrid from 'this'
+// elementwise subtraction of the complex values of the 'other' CGrid from 'this'
 void CGrid::operator-=(const CGrid& other) {
 	this->real -= other.real;
 	this->imag -= other.imag;
@@ -10493,7 +11089,7 @@ void CGrid::operator-=(const CGrid& other) {
 std::complex<float_t> CGrid::product() const {
 	// the polar form is r(cosθ + i*sinθ)
 
-	// 1. cacluate the magnitudes
+	// 1. calculate the magnitudes
 	NGrid R = this->magnitude();
 	float_t r = R.product();
 
@@ -10552,10 +11148,10 @@ CGrid CGrid::operator*(const std::complex<float_t> complex_factor) const {
 
 		// add a descriptor set to the task (transient resource, owned by the task)
 		DescriptorSet& ds = task.add_descriptor_set(set_layout);
-		ds.bind_buffer(0, *this->real.get_buffer());
-		ds.bind_buffer(1, *this->imag.get_buffer());
-		ds.bind_buffer(2, *result.real.get_buffer());
-		ds.bind_buffer(3, *result.imag.get_buffer());
+		ds.bind_buffer(0, this->real.get_buffer());
+		ds.bind_buffer(1, this->imag.get_buffer());
+		ds.bind_buffer(2, result.real.get_buffer());
+		ds.bind_buffer(3, result.imag.get_buffer());
 		ds.write();
 
 		// record command buffer
@@ -10564,14 +11160,17 @@ CGrid CGrid::operator*(const std::complex<float_t> complex_factor) const {
 		cb.bind_pipeline(pipeline);
 		cb.bind_descriptor_set(ds, pipeline);
 		cb.bind_push_constants(constants, pipeline);
+		cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(pipeline, this->get_elements(), 1, 1);
 		cb.end_recording();
 
 		// submit command buffer to compute queue on device
-		task.timeline_sync(this->real.get_timeline_semaphore());
-		task.timeline_sync(this->imag.get_timeline_semaphore());
-		task.timeline_sync(result.real.get_timeline_semaphore());
-		task.timeline_sync(result.imag.get_timeline_semaphore());
+		uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+		this->real.set_tasks_finished_semaphore_counter(finished_counter);
+		this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+		result.real.set_tasks_finished_semaphore_counter(finished_counter);
+		result.imag.set_tasks_finished_semaphore_counter(finished_counter);
 		task.submit();
 
 		return result;
@@ -10617,7 +11216,7 @@ CGrid CGrid::matrix_product(const NGrid& other) const {
 	return result;
 }
 
-// calclulate the matrix product of two complex matrices
+// calculate the matrix product of two complex matrices
 CGrid CGrid::matrix_product(const CGrid& other) const {
 	if (this->get_dimensions() > 2 || this->get_dimensions() == 0 || other.get_dimensions() > 2 || other.get_dimensions() == 0) {
 		Log::error("invalid call of CGrid::matrix_product; first array has shape ", this->get_shapestring(), ", second array has shape ",
@@ -10669,12 +11268,12 @@ CGrid CGrid::matrix_product(const CGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *other.real.get_buffer());
-	ds.bind_buffer(3, *other.imag.get_buffer());
-	ds.bind_buffer(4, *result.real.get_buffer());
-	ds.bind_buffer(5, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, other.real.get_buffer());
+	ds.bind_buffer(3, other.imag.get_buffer());
+	ds.bind_buffer(4, result.real.get_buffer());
+	ds.bind_buffer(5, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -10683,16 +11282,22 @@ CGrid CGrid::matrix_product(const CGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(other.real.get_timeline_semaphore());
-	task.timeline_sync(other.imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
+	other.real.set_tasks_finished_semaphore_counter(finished_counter);
+	other.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -10746,14 +11351,14 @@ CGrid CGrid::Hadamard_product(const CGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *this->real.get_shape_buffer());
-	ds.bind_buffer(3, *other.real.get_buffer());
-	ds.bind_buffer(4, *other.imag.get_buffer());
-	ds.bind_buffer(5, *other.real.get_shape_buffer());
-	ds.bind_buffer(6, *result.real.get_buffer());
-	ds.bind_buffer(7, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, this->real.get_shape_buffer());
+	ds.bind_buffer(3, other.real.get_buffer());
+	ds.bind_buffer(4, other.imag.get_buffer());
+	ds.bind_buffer(5, other.real.get_shape_buffer());
+	ds.bind_buffer(6, result.real.get_buffer());
+	ds.bind_buffer(7, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -10762,16 +11367,24 @@ CGrid CGrid::Hadamard_product(const CGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->real.get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.real.get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(other.real.get_timeline_semaphore());
-	task.timeline_sync(other.imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
+	other.real.set_tasks_finished_semaphore_counter(finished_counter);
+	other.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -10822,10 +11435,10 @@ CGrid CGrid::operator/(const std::complex<float_t> complex_divisor) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *result.real.get_buffer());
-	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, result.real.get_buffer());
+	ds.bind_buffer(3, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -10834,14 +11447,18 @@ CGrid CGrid::operator/(const std::complex<float_t> complex_divisor) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -10904,14 +11521,14 @@ CGrid CGrid::Hadamard_division(const CGrid& other) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *this->real.get_shape_buffer());
-	ds.bind_buffer(3, *other.real.get_buffer());
-	ds.bind_buffer(4, *other.imag.get_buffer());
-	ds.bind_buffer(5, *other.real.get_shape_buffer());
-	ds.bind_buffer(6, *result.real.get_buffer());
-	ds.bind_buffer(7, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, this->real.get_shape_buffer());
+	ds.bind_buffer(3, other.real.get_buffer());
+	ds.bind_buffer(4, other.imag.get_buffer());
+	ds.bind_buffer(5, other.real.get_shape_buffer());
+	ds.bind_buffer(6, result.real.get_buffer());
+	ds.bind_buffer(7, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -10920,16 +11537,24 @@ CGrid CGrid::Hadamard_division(const CGrid& other) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->real.get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other.real.get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(other.real.get_timeline_semaphore());
-	task.timeline_sync(other.imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
+	other.real.set_tasks_finished_semaphore_counter(finished_counter);
+	other.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -10976,10 +11601,10 @@ CGrid CGrid::pow(const float_t exponent_real, const float_t exponent_imag) const
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *result.real.get_buffer());
-	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, result.real.get_buffer());
+	ds.bind_buffer(3, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -10988,14 +11613,18 @@ CGrid CGrid::pow(const float_t exponent_real, const float_t exponent_imag) const
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -11007,7 +11636,7 @@ CGrid CGrid::pow(const float_t exponent) const {
 }
 
 // returns the result of elementwise exponentiation to a complex power
-CGrid CGrid::pow(const std::complex<float_t> complex_exponent) const {
+CGrid CGrid::pow(const std::complex<float_t> complex_exponent)const {
 	return this->pow(complex_exponent.real(), complex_exponent.imag());
 }
 
@@ -11066,14 +11695,14 @@ CGrid CGrid::pow(const NGrid& other_real, const NGrid& other_imag, bool other_is
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *this->real.get_shape_buffer());
-	ds.bind_buffer(3, *other_real.get_buffer());
-	ds.bind_buffer(4, other_is_complex ? *other_imag.get_buffer() : *other_real.get_buffer());
-	ds.bind_buffer(5, *other_real.get_shape_buffer());
-	ds.bind_buffer(6, *result.real.get_buffer());
-	ds.bind_buffer(7, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, this->real.get_shape_buffer());
+	ds.bind_buffer(3, other_real.get_buffer());
+	ds.bind_buffer(4, other_is_complex ? other_imag.get_buffer() : other_real.get_buffer());
+	ds.bind_buffer(5, other_real.get_shape_buffer());
+	ds.bind_buffer(6, result.real.get_buffer());
+	ds.bind_buffer(7, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -11082,16 +11711,26 @@ CGrid CGrid::pow(const NGrid& other_real, const NGrid& other_imag, bool other_is
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->real.get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(other_real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	if (other_is_complex) {
+		cb.add_buffer_memory_barrier(other_imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	}
+	cb.add_buffer_memory_barrier(other_real.get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(other_real.get_timeline_semaphore());
-	task.timeline_sync(other_imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
+	other_real.set_tasks_finished_semaphore_counter(finished_counter);
+	other_imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -11140,10 +11779,10 @@ CGrid CGrid::log(const float_t base_real, const float_t base_imag) const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *result.real.get_buffer());
-	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, result.real.get_buffer());
+	ds.bind_buffer(3, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -11152,14 +11791,18 @@ CGrid CGrid::log(const float_t base_real, const float_t base_imag) const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -11201,10 +11844,10 @@ CGrid CGrid::exp() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *result.real.get_buffer());
-	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, result.real.get_buffer());
+	ds.bind_buffer(3, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -11213,14 +11856,18 @@ CGrid CGrid::exp() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -11250,14 +11897,14 @@ CGrid CGrid::reshape(const std::vector<uint32_t>& new_shape, std::complex<float_
 	return result;
 }
 
-CGrid CGrid::reshape(std::initializer_list<uint32_t> new_shape, float_t default_init_value) const {
+CGrid CGrid::reshape(const std::initializer_list<uint32_t> new_shape, float_t default_init_value) const {
 	CGrid result(new_shape);
 	result.real = this->real.reshape(new_shape, default_init_value);
 	result.imag = this->imag.reshape(new_shape, 0.0f);
 	return result;
 }
 
-CGrid CGrid::reshape(std::initializer_list<uint32_t> new_shape, std::complex<float_t> default_complex_init_value) const {
+CGrid CGrid::reshape(const std::initializer_list<uint32_t> new_shape, std::complex<float_t> default_complex_init_value) const {
 	CGrid result(new_shape);
 	result.real = this->real.reshape(new_shape, default_complex_init_value.real());
 	result.imag = this->imag.reshape(new_shape, default_complex_init_value.imag());
@@ -11272,7 +11919,7 @@ template<typename... Args> CGrid CGrid::reshape(Args... args) const {
 	return result;
 }
 
-CGrid CGrid::concatenate(const NGrid& other, const uint32_t axis) const {
+CGrid CGrid::concatenate(const NGrid& other, const uint32_t axis)const {
 	CGrid result;
 	result.real = this->real.concatenate(other, axis);
 	result.imag = this->imag.reshape(result.real.get_shape(), 0.0f); // initialize imaginary part with zeros
@@ -11300,19 +11947,19 @@ CGrid CGrid::padding(const uint32_t amount, const std::complex<float_t> init_val
 	return result;
 }
 
-CGrid CGrid::convolution(const NGrid& kernel, uint32_t padding_amount, float_t padding_value) const {
+CGrid CGrid::convolution(const NGrid& kernel, const uint32_t padding_amount, const float_t padding_value) const {
 	return this->convolution(CGrid(kernel), padding_amount, std::complex<float_t>(padding_value, 0.0f));
 }
 
-CGrid CGrid::convolution(const NGrid& kernel, uint32_t padding_amount, std::complex<float_t> padding_value) const {
+CGrid CGrid::convolution(const NGrid& kernel, const uint32_t padding_amount, const std::complex<float_t> padding_value) const {
 	return this->convolution(CGrid(kernel), padding_amount, padding_value);
 }
 
-CGrid CGrid::convolution(const CGrid& kernel, uint32_t padding_amount, float_t padding_value) const {
+CGrid CGrid::convolution(const CGrid& kernel, const uint32_t padding_amount, const float_t padding_value) const {
 	return this->convolution(kernel, padding_amount, std::complex<float_t>(padding_value, 0.0f));
 }
 
-CGrid CGrid::convolution(const CGrid& kernel, uint32_t padding_amount, std::complex<float_t> padding_value) const {
+CGrid CGrid::convolution(const CGrid& kernel, const  uint32_t padding_amount, const std::complex<float_t> padding_value) const {
 	// check if kernel has valid dimensions
 	if (kernel.get_dimensions() != this->get_dimensions()) {
 		Log::warning("invalid usage of CGrid::convolution: dimensions of 'kernel' (", kernel.get_dimensions(), " dimensions, shape ", kernel.get_shapestring(),
@@ -11355,15 +12002,15 @@ CGrid CGrid::convolution(const CGrid& kernel, uint32_t padding_amount, std::comp
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *this->real.get_shape_buffer());
-	ds.bind_buffer(3, *kernel.real.get_buffer());
-	ds.bind_buffer(4, *kernel.imag.get_buffer());
-	ds.bind_buffer(5, *kernel.real.get_shape_buffer());
-	ds.bind_buffer(6, *result.real.get_buffer());
-	ds.bind_buffer(7, *result.imag.get_buffer());
-	ds.bind_buffer(8, *result.real.get_shape_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, this->real.get_shape_buffer());
+	ds.bind_buffer(3, kernel.real.get_buffer());
+	ds.bind_buffer(4, kernel.imag.get_buffer());
+	ds.bind_buffer(5, kernel.real.get_shape_buffer());
+	ds.bind_buffer(6, result.real.get_buffer());
+	ds.bind_buffer(7, result.imag.get_buffer());
+	ds.bind_buffer(8, result.real.get_shape_buffer());
 	ds.write();
 
 	// record command buffer
@@ -11372,20 +12019,30 @@ CGrid CGrid::convolution(const CGrid& kernel, uint32_t padding_amount, std::comp
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->real.get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(kernel.real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(kernel.imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(kernel.real.get_shape_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
+	kernel.real.set_tasks_finished_semaphore_counter(finished_counter);
+	kernel.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
 }
 
-CGrid CGrid::transpose(const std::vector<uint32_t> target_axis_order) const {
+CGrid CGrid::transpose(const std::vector<uint32_t>& target_axis_order) const {
 	CGrid result;
 	result.real = this->real.transpose(target_axis_order);
 	result.imag = this->imag.transpose(target_axis_order);
@@ -11410,44 +12067,29 @@ LUresultComplex CGrid::lu() const {
 	result.L = result.L.reshape({ this->get_shape()[0], this->get_shape()[0] }); result.L.real.fill_identity();
 	result.U = *this; // U is initialized with the source matrix
 	result.P = result.P.reshape({ this->get_shape()[0], this->get_shape()[0] });	result.P.fill_identity();
+	result.swap_data = result.swap_data.reshape(2);
 
 	// acquire an idle compute task
 	ComputeTask& main_task = manager->get_compute_task(__FUNCTION__);
-
-	// add temporary buffers
-	Buffer<uint32_t>& swap_row = main_task.add_temp_buffer<uint32_t>(1, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<uint32_t>& swap_count = main_task.add_temp_buffer<uint32_t>(1, BufferUsage::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// create descriptor set layout (static resource)
 	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
 	static bool layout_initialized = false;
 	if (!layout_initialized) {
-		set_layout.add_bindings(7, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
+		set_layout.add_bindings(6, DescriptorType::STORAGE_BUFFER_DESCRIPTOR);
 		set_layout.finalize();
 		layout_initialized = true;
 	}
 
 	// define descriptor set
 	DescriptorSet& ds = main_task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *result.L.real.get_buffer());
-	ds.bind_buffer(1, *result.L.imag.get_buffer());
-	ds.bind_buffer(2, *result.U.real.get_buffer());
-	ds.bind_buffer(3, *result.U.imag.get_buffer());
-	ds.bind_buffer(4, *result.P.get_buffer());
-	ds.bind_buffer(5, swap_row);
-	ds.bind_buffer(6, swap_count);
+	ds.bind_buffer(0, result.L.real.get_buffer());
+	ds.bind_buffer(1, result.L.imag.get_buffer());
+	ds.bind_buffer(2, result.U.real.get_buffer());
+	ds.bind_buffer(3, result.U.imag.get_buffer());
+	ds.bind_buffer(4, result.P.get_buffer());
+	ds.bind_buffer(5, result.swap_data.get_buffer());
 	ds.write();
-
-	// submit main task (with empty command buffer) to mark it as available for reset as soon as all other tasks are done;
-	// copy the swap count back the the staging buffer after the main loop has finished
-	CommandBuffer& cb_main = main_task.get_command_buffer();
-	cb_main.begin_recording();
-	cb_main.add_buffer_memory_barrier(*result.swap_count_buffer, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT);
-	cb_main.copy_buffer(*result.swap_count_buffer, *result.swap_count_staging_buffer);
-	cb_main.end_recording();
-	Semaphore& mt_semaphore = main_task.add_temp_timeline_semaphore(UINT64_MAX);
-	main_task.timeline_sync(mt_semaphore, this->get_shape()[0], 0); // =triggered by the final iteration of the main loop
-	main_task.submit();
 
 	// create pipelines (static resources)
 	uint32_t constants_size = 3 * sizeof(uint32_t);
@@ -11484,51 +12126,74 @@ LUresultComplex CGrid::lu() const {
 		cb.bind_pipeline(check_swap_pipeline);
 		cb.bind_descriptor_set(ds, check_swap_pipeline);
 		cb.bind_push_constants(constants, check_swap_pipeline);
-		cb.dispatch(check_swap_pipeline, this->get_shape()[0], 1, 1);
-		cb.add_buffer_memory_barrier(swap_row, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.U.real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.U.imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.swap_data.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(check_swap_pipeline, this->get_shape()[0], 1, 1);
 
 		// perform row swap (=if needed)
 		// (1d dispatch with one thread for each column)
 		cb.bind_pipeline(perform_swap_pipeline);
 		cb.bind_descriptor_set(ds, perform_swap_pipeline);
 		cb.bind_push_constants(constants, perform_swap_pipeline);
-		cb.dispatch(perform_swap_pipeline, this->get_shape()[1], 1, 1);
-		cb.add_buffer_memory_barrier(*result.L.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(*result.L.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(*result.U.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(*result.U.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(*result.P.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.U.real.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.U.imag.get_buffer(), VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.L.real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.L.imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.P.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.swap_data.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
+		cb.dispatch(perform_swap_pipeline, this->get_shape()[1], 1, 1);
 
 		// update L matrix in column k
 		// (1d dispatch with one thread for each row)
 		cb.bind_pipeline(l_update_pipeline);
 		cb.bind_descriptor_set(ds, l_update_pipeline);
 		cb.bind_push_constants(constants, l_update_pipeline);
-		cb.dispatch(l_update_pipeline, this->get_shape()[0], 1, 1);
-		cb.add_buffer_memory_barrier(*result.L.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-		cb.add_buffer_memory_barrier(*result.L.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+		cb.add_buffer_memory_barrier(result.L.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.L.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.U.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.U.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 		cb.record_barriers();
-
+		cb.dispatch(l_update_pipeline, this->get_shape()[0], 1, 1);
 
 		// update U matrix in rows [k+1] to [rows-1]
 		cb.bind_pipeline(u_update_pipeline);
 		cb.bind_descriptor_set(ds, u_update_pipeline);
 		cb.bind_push_constants(constants, u_update_pipeline);
+		cb.add_buffer_memory_barrier(result.L.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.L.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.U.real.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.add_buffer_memory_barrier(result.U.imag.get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb.record_barriers();
 		cb.dispatch(u_update_pipeline, result.U.get_elements(), 1, 1);
 
 		cb.end_recording();
 
 		// signal timeline semaphore when the iteration is finished
-		task_k.timeline_sync(result.L.real.get_timeline_semaphore());
-		task_k.timeline_sync(result.L.imag.get_timeline_semaphore());
-		task_k.timeline_sync(result.U.real.get_timeline_semaphore());
-		task_k.timeline_sync(result.U.imag.get_timeline_semaphore());
-		task_k.timeline_sync(result.P.get_timeline_semaphore());
-		task_k.add_timeline_signal_semaphore(mt_semaphore, k);
+		uint64_t finished_counter = task_k.timeline_sync(*NGrid::timeline_semaphore);
+		this->real.set_tasks_finished_semaphore_counter(finished_counter);
+		this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+		result.L.real.set_tasks_finished_semaphore_counter(finished_counter);
+		result.L.imag.set_tasks_finished_semaphore_counter(finished_counter);
+		result.U.real.set_tasks_finished_semaphore_counter(finished_counter);
+		result.U.imag.set_tasks_finished_semaphore_counter(finished_counter);
+		result.P.set_tasks_finished_semaphore_counter(finished_counter);
 		task_k.submit();
 	}
+
+	CommandBuffer& cb_main = main_task.get_command_buffer(); // empty command buffer, just to trigger a fence signal when done
+	uint64_t finished_counter = main_task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.L.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.L.imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.U.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.U.imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.P.set_tasks_finished_semaphore_counter(finished_counter);
+	result.swap_data.set_tasks_finished_semaphore_counter(finished_counter);
+	main_task.submit();
 
 	return result;
 }
@@ -11566,10 +12231,10 @@ CGrid CGrid::l_inverse() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *result.real.get_buffer());
-	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, result.real.get_buffer());
+	ds.bind_buffer(3, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -11578,14 +12243,18 @@ CGrid CGrid::l_inverse() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->get_shape()[1], 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -11625,10 +12294,10 @@ CGrid CGrid::u_inverse() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *result.real.get_buffer());
-	ds.bind_buffer(3, *result.imag.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, result.real.get_buffer());
+	ds.bind_buffer(3, result.imag.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -11637,14 +12306,18 @@ CGrid CGrid::u_inverse() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, this->get_shape()[1], 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(result.real.get_timeline_semaphore());
-	task.timeline_sync(result.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.real.set_tasks_finished_semaphore_counter(finished_counter);
+	result.imag.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -11696,7 +12369,7 @@ CGrid CGrid::inverse(const LUresultComplex& LUP) {
 
 // checks if the inverse of a square matrix exists;
 // if it doesn't the Moore_Penrose pseudo-inverse (for non-square matrices) may still exist!
-const bool CGrid::is_invertible() const {
+bool CGrid::is_invertible() const {
 	// check if matrix is 2d
 	if (this->get_dimensions() != 2) {
 		return false;
@@ -11725,7 +12398,7 @@ const bool CGrid::is_invertible() const {
 }
 
 // check if a matrix is invertible based on its corresponding upper triangular matrix
-const bool CGrid::is_invertible(const CGrid& U) {
+bool CGrid::is_invertible(const CGrid& U) {
 
 	// for a square matrix to be invertible the determinant of the U matrix must not be zero;
 	// the determinant of a triangular matrix is the product of all diagonal elements;
@@ -11799,9 +12472,9 @@ NGrid CGrid::magnitude() const {
 
 	// add a descriptor set to the task (transient resource, owned by the task)
 	DescriptorSet& ds = task.add_descriptor_set(set_layout);
-	ds.bind_buffer(0, *this->real.get_buffer());
-	ds.bind_buffer(1, *this->imag.get_buffer());
-	ds.bind_buffer(2, *result.get_buffer());
+	ds.bind_buffer(0, this->real.get_buffer());
+	ds.bind_buffer(1, this->imag.get_buffer());
+	ds.bind_buffer(2, result.get_buffer());
 	ds.write();
 
 	// record command buffer
@@ -11810,13 +12483,17 @@ NGrid CGrid::magnitude() const {
 	cb.bind_pipeline(pipeline);
 	cb.bind_descriptor_set(ds, pipeline);
 	cb.bind_push_constants(constants, pipeline);
+	cb.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb.record_barriers();
 	cb.dispatch(pipeline, result.get_elements(), 1, 1);
 	cb.end_recording();
 
 	// submit command buffer to compute queue on device
-	task.timeline_sync(this->real.get_timeline_semaphore());
-	task.timeline_sync(this->imag.get_timeline_semaphore());
-	task.timeline_sync(result.get_timeline_semaphore());
+	uint64_t finished_counter = task.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+	result.set_tasks_finished_semaphore_counter(finished_counter);
 	task.submit();
 
 	return result;
@@ -11894,14 +12571,13 @@ void CGrid::set_workgroup_size_2d(uint32_t size) {
 			"only ", max_invocations, " are allowed -> reducing size to ", workgroup_size_2d);
 	}
 }
-
 // convert the CGrid to an NGrid by extracting the real part;
 // the imaginary part is discarded
 CGrid::operator NGrid() const {
 	return this->real;
 }
 
-void CGrid::print(std::string comment, int32_t precision, bool with_indices, bool rows_inline, std::string delimiter) const {
+void CGrid::print(const std::string& comment, const int32_t precision, const bool with_indices, const bool rows_inline, const std::string& delimiter) const {
 	uint32_t elements = this->get_elements();
 	if (elements == 0) {
 		return; // empty CGrid, nothing to print
@@ -11910,8 +12586,8 @@ void CGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 	bool has_imaginary_values = this->imag.abs().sum() > 0.0f;
 
 	// read the entire array into a vector
-	std::vector<float_t> flat_data_real = this->real.get_buffer()->read();
-	std::vector<float_t> flat_data_imag = this->imag.get_buffer()->read();
+	std::vector<float_t> flat_data_real = this->real.get();
+	std::vector<float_t> flat_data_imag = this->imag.get();
 
 	uint32_t fract_significant_digits = precision < 0 ? std::numeric_limits<float_t>::max_digits10 : precision;
 
@@ -11945,10 +12621,10 @@ void CGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 
 	// define descriptor set
 	DescriptorSet& ds_real = task_real.add_descriptor_set(set_layout);
-	ds_real.bind_buffer(0, *this->real.get_buffer());
-	ds_real.bind_buffer(1, *required_digits.real.get_buffer());
-	ds_real.bind_buffer(2, *make_scientific.real.get_buffer());
-	ds_real.bind_buffer(3, *has_fractional.real.get_buffer());
+	ds_real.bind_buffer(0, this->real.get_buffer());
+	ds_real.bind_buffer(1, required_digits.real.get_buffer());
+	ds_real.bind_buffer(2, make_scientific.real.get_buffer());
+	ds_real.bind_buffer(3, has_fractional.real.get_buffer());
 	ds_real.write();
 
 	// record command buffer
@@ -11957,18 +12633,17 @@ void CGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 	cb_real.bind_pipeline(pipeline);
 	cb_real.bind_descriptor_set(ds_real, pipeline);
 	cb_real.bind_push_constants(constants_real, pipeline);
+	cb_real.add_buffer_memory_barrier(this->real.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	cb_real.record_barriers();
 	cb_real.dispatch(pipeline, elements, 1, 1);
 	cb_real.end_recording();
 
 	// submit command buffer to compute queue on device
-	task_real.timeline_sync(this->real.get_timeline_semaphore());
-	task_real.timeline_sync(this->imag.get_timeline_semaphore());
-	task_real.timeline_sync(required_digits.real.get_timeline_semaphore());
-	task_real.timeline_sync(required_digits.imag.get_timeline_semaphore());
-	task_real.timeline_sync(make_scientific.real.get_timeline_semaphore());
-	task_real.timeline_sync(make_scientific.imag.get_timeline_semaphore());
-	task_real.timeline_sync(has_fractional.real.get_timeline_semaphore());
-	task_real.timeline_sync(has_fractional.imag.get_timeline_semaphore());
+	uint64_t finished_counter = task_real.timeline_sync(*NGrid::timeline_semaphore);
+	this->real.set_tasks_finished_semaphore_counter(finished_counter);
+	required_digits.real.set_tasks_finished_semaphore_counter(finished_counter);
+	make_scientific.real.set_tasks_finished_semaphore_counter(finished_counter);
+	has_fractional.real.set_tasks_finished_semaphore_counter(finished_counter);
 	task_real.submit();
 
 	// 2. === IMAGINARY PART ===
@@ -11985,10 +12660,10 @@ void CGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 
 		// define descriptor set
 		DescriptorSet& ds_imag = task_imag.add_descriptor_set(set_layout);
-		ds_imag.bind_buffer(0, *this->imag.get_buffer());
-		ds_imag.bind_buffer(1, *required_digits.imag.get_buffer());
-		ds_imag.bind_buffer(2, *make_scientific.imag.get_buffer());
-		ds_imag.bind_buffer(3, *has_fractional.imag.get_buffer());
+		ds_imag.bind_buffer(0, this->imag.get_buffer());
+		ds_imag.bind_buffer(1, required_digits.imag.get_buffer());
+		ds_imag.bind_buffer(2, make_scientific.imag.get_buffer());
+		ds_imag.bind_buffer(3, has_fractional.imag.get_buffer());
 		ds_imag.write();
 
 		// record command buffer
@@ -11997,18 +12672,17 @@ void CGrid::print(std::string comment, int32_t precision, bool with_indices, boo
 		cb_imag.bind_pipeline(pipeline);
 		cb_imag.bind_descriptor_set(ds_imag, pipeline);
 		cb_imag.bind_push_constants(constants_imag, pipeline);
+		cb_imag.add_buffer_memory_barrier(this->imag.get_buffer(), VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+		cb_imag.record_barriers();
 		cb_imag.dispatch(pipeline, elements, 1, 1);
 		cb_imag.end_recording();
 
 		// submit command buffer to compute queue on device
-		task_imag.timeline_sync(this->real.get_timeline_semaphore());
-		task_imag.timeline_sync(this->imag.get_timeline_semaphore());
-		task_imag.timeline_sync(required_digits.real.get_timeline_semaphore());
-		task_imag.timeline_sync(required_digits.imag.get_timeline_semaphore());
-		task_imag.timeline_sync(make_scientific.real.get_timeline_semaphore());
-		task_imag.timeline_sync(make_scientific.imag.get_timeline_semaphore());
-		task_imag.timeline_sync(has_fractional.real.get_timeline_semaphore());
-		task_imag.timeline_sync(has_fractional.imag.get_timeline_semaphore());
+		uint64_t finished_counter = task_imag.timeline_sync(*NGrid::timeline_semaphore);
+		this->imag.set_tasks_finished_semaphore_counter(finished_counter);
+		required_digits.imag.set_tasks_finished_semaphore_counter(finished_counter);
+		make_scientific.imag.set_tasks_finished_semaphore_counter(finished_counter);
+		has_fractional.imag.set_tasks_finished_semaphore_counter(finished_counter);
 		task_imag.submit();
 	}
 

@@ -5,6 +5,7 @@
 // it checks if a row swap is needed for the current row 'k'
 
 #version 450 core
+#extension GL_EXT_shader_atomic_float : require
 
 // setup specialization constants
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -15,8 +16,7 @@ layout(set = 0, binding = 1) buffer l_imag_buffer { float L_imag[]; }; // Imagin
 layout(set = 0, binding = 2) buffer u_real_buffer { float U_real[]; }; // Real part of Upper triangular matrix U
 layout(set = 0, binding = 3) buffer u_imag_buffer { float U_imag[]; }; // Imaginary part of Upper triangular matrix U
 layout(set = 0, binding = 4) buffer p_buffer      { float P[]; };      // Permutation matrix P
-layout(set = 0, binding = 5) buffer swap_row_buffer { uint swap_row[]; }; // stores the row to swap for the current row 'k'
-layout(set = 0, binding = 6) buffer swap_count_buffer { uint swap_count[]; }; // stores the number of row swaps performed
+layout(set = 0, binding = 5) buffer swap_data_buffer {float swap_data[];};  // element 0 stores the row to swap for the current row 'k', element 1 stores the number of swaps performed
 
 // --- Push Constants ---
 layout(push_constant) uniform push_constants {
@@ -29,14 +29,16 @@ layout(push_constant) uniform push_constants {
 void main() {
     uint row = gl_GlobalInvocationID.x;
     
-    // Initialize swap_row with the current row k (done by a single thread)
-    if (gl_LocalInvocationID.x == 0) {
-        // This loop ensures initialization happens correctly even with concurrent dispatches
-        while (swap_row[0] < k) {
-            atomicExchange(swap_row[0], k);
-        }
+    // initialize swap_count
+    if (k == 0 && gl_LocalInvocationID.x == 0) {
+        atomicExchange(swap_data[1], 0);
     }
-    barrier();
+
+    // Initialize swap_row with the current row k (done by a single thread),
+    if (gl_LocalInvocationID.x == 0) {
+        atomicExchange(swap_data[0], k);
+    }
+    memoryBarrierBuffer(); barrier();
 
     // Each thread from k+1 to rows-1 checks if its element in column k has the largest magnitude so far.
     if (row > k && row < rows) {
@@ -45,15 +47,15 @@ void main() {
         float current_mag_sq = U_real[row * cols + k] * U_real[row * cols + k] + U_imag[row * cols + k] * U_imag[row * cols + k];
         
         // Atomically read the current pivot row and calculate its magnitude
-        uint current_swap_row = atomicAdd(swap_row[0], 0); // Atomic read
+        uint current_swap_row = uint(atomicAdd(swap_data[0], 0.0f)); // atomic read
         float pivot_mag_sq = U_real[current_swap_row * cols + k] * U_real[current_swap_row * cols + k] + U_imag[current_swap_row * cols + k] * U_imag[current_swap_row * cols + k];
 
         // If this row's element has a larger magnitude, attempt to set it as the new pivot row.
         // The while loop helps resolve potential race conditions between threads.
         while (current_mag_sq > pivot_mag_sq) {
-            atomicExchange(swap_row[0], row);
+            atomicExchange(swap_data[0], row);
             // Re-read the pivot to see if another thread with an even larger magnitude won
-            current_swap_row = atomicAdd(swap_row[0], 0);
+            current_swap_row = uint(atomicAdd(swap_data[0], 0.0f)); // atomic read
             pivot_mag_sq = U_real[current_swap_row * cols + k] * U_real[current_swap_row * cols + k] + U_imag[current_swap_row * cols + k] * U_imag[current_swap_row * cols + k];
         }
     }

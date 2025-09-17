@@ -38,43 +38,43 @@ void main() {
 
 
         else {
-            // get value properties
-            bool negative = value < 0;
-            float abs_value = abs(value);
-            uint int_digits = abs_value > 1.0 ? uint(ceil(log10(abs_value))) : 1;
-            uint leading_zeros = abs_value < 1.0 && abs_value != 0 ? uint(ceil(-log10(abs_value)) - 1) : 0;
-            has_fractional[idx] = float(abs_value - round(abs_value) != 0);
-            memoryBarrierBuffer(); // to make sure 'has_fractional' is available later in the code
-
-            // avoid printing '-0'
-            if (value == 0.0f && value < 0.0f) {
-                value = 0.0f;
-                data[idx] = 0.0f;
-                negative = false;
-            }
-
-            // calculate the required digits        
-            uint digits = negative ? 1 : 0; // if value is negative: add 1 digit for the minus sign
-            digits += int_digits;
-            digits += leading_zeros;
-            if (fract_significant_digits !=0 && bool(has_fractional[idx])) {
-                digits += fract_significant_digits + 1; // add 1 digit for the decimal point
-            }
-
-            // check if scientific format is better
-            uint sci_digits = 6; // this is the minimum to display sign, integer part, the letter 'e', the exponent sign and a 2-digit exponent
-            if (fract_significant_digits != 0 && bool(has_fractional[idx])) {
-                sci_digits += 1 + fract_significant_digits; // add 1 digit for the decimal point
-            }
-
-            // write final result to buffer
-            if (sci_digits < digits) {
-                make_scientific[idx] = 1.0f;
-                required_digits[idx] = float(sci_digits);
+            if (value == 0.0f) {
+                make_scientific[idx] = 0.0f;
+                has_fractional[idx] = 0.0f;
+                required_digits[idx] = 1.0f;
             }
             else {
-                make_scientific[idx] = 0.0f;
-                required_digits[idx] = float(digits);
+                // get value properties
+                bool negative = value < 0;
+                float abs_value = abs(value);
+                uint int_digits = abs_value >= 1.0f ? uint(floor(log10(abs_value)) + 1.0f) : 1;
+                uint leading_zeros = abs_value < 1.0 && abs_value != 0 ? uint(ceil(-log10(abs_value)) - 1) : 0;
+                has_fractional[idx] = (abs_value == floor(abs_value)) ? 0.0f : 1.0f;
+                memoryBarrierBuffer(); // to make sure 'has_fractional' is available later in the code
+
+                // calculate the required digits        
+                uint digits = negative ? 1 : 0; // if value is negative: add 1 digit for the minus sign
+                digits += int_digits;
+                digits += leading_zeros;
+                if (fract_significant_digits !=0 && bool(has_fractional[idx])) {
+                    digits += fract_significant_digits + 1; // add 1 digit for the decimal point
+                }
+
+                // check if scientific format is better
+                uint sci_digits = 6; // this is the minimum to display sign, integer part, the letter 'e', the exponent sign and a 2-digit exponent
+                if (fract_significant_digits != 0 && bool(has_fractional[idx])) {
+                    sci_digits += 1 + fract_significant_digits; // add 1 digit for the decimal point
+                }
+
+                // write final result to buffer
+                if (sci_digits < digits) {
+                    make_scientific[idx] = 1.0f;
+                    required_digits[idx] = float(sci_digits);
+                }
+                else {
+                    make_scientific[idx] = 0.0f;
+                    required_digits[idx] = float(digits);
+                }
             }
         }
     }

@@ -5,6 +5,7 @@
 // it checks if a row swap is needed for the current row 'k'
 
 #version 450 core
+#extension GL_EXT_shader_atomic_float : require
 
 // setup specialization constants
 // in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
@@ -17,8 +18,7 @@ layout(set = 0, binding = 2) buffer p_buffer    { float P[]; };     // Permutati
                                                                     // note: the P matrix could be of type 'uint' instead of 'float',
                                                                     // but using floats is more convenient for the host application,
                                                                     // since data buffers of NGrid objects are always floats by design
-layout(set = 0, binding = 3) buffer swap_row_buffer {uint swap_row[];};  // stores the row to swap for the current row 'k'
-layout(set = 0, binding = 4) buffer swap_count_buffer {uint swap_count[];}; // single element
+layout(set = 0, binding = 3) buffer swap_data_buffer {float swap_data[];};  // element 0 stores the row to swap for the current row 'k', element 1 stores the number of swaps performed
                                                                     
 // --- Push Constants ---
 layout(push_constant) uniform push_constants {
@@ -30,25 +30,24 @@ layout(push_constant) uniform push_constants {
 // --- Main Function ---
 void main() {
     uint row = gl_GlobalInvocationID.x;
-    
+
     // initialize swap_count
-    // this only happens once during first iteration (k==0)
-    if (k == 0 && row == 0) {
-        swap_count[0] = 0;
+    if (k == 0 && gl_LocalInvocationID.x == 0) {
+        atomicExchange(swap_data[1], 0);
     }
 
     // initialize swap_row with current row k (done by local thread 0)
     if (gl_LocalInvocationID.x == 0) {
-        while (swap_row[0] < k) {
-            atomicExchange(swap_row[0], k);
+        while (swap_data[0] < k) {
+            atomicExchange(swap_data[0], k);
         }
     }
-    barrier();
+    memoryBarrierBuffer(); barrier();
 
     if (row > k && row < rows) {
         // search for highest absolute value in column k (below row k)
-        while (U[row * cols + k] > U[swap_row[0] * cols + k]) {
-            atomicExchange(swap_row[0], row);
+        while (U[row * cols + k] > U[uint(swap_data[0]) * cols + k]) {
+            atomicExchange(swap_data[0], row);
         }
     }
     memoryBarrierBuffer(); barrier();

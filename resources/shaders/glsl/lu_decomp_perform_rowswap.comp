@@ -5,6 +5,7 @@
 // performs a row swap (if needed) for the current row 'k'
 
 #version 450 core
+#extension GL_EXT_shader_atomic_float : require
 
 // setup specialization constants
 // in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
@@ -17,8 +18,7 @@ layout(set = 0, binding = 2) buffer p_buffer    { float P[]; };     // Permutati
                                                                     // note: the P matrix could be of type 'uint' instead of 'float',
                                                                     // but using floats is more convenient for the host application,
                                                                     // since data buffers of NGrid objects are always floats by design
-layout(set = 0, binding = 3) buffer swap_row_buffer {uint swap_row[];};  // stores the row to swap for the current row 'k'
-layout(set = 0, binding = 4) buffer swap_count_buffer {uint swap_count[];}; // single element
+layout(set = 0, binding = 3) buffer swap_data_buffer {float swap_data[];};  // element 0 stores the row to swap for the current row 'k', element 1 stores the number of swaps performed
                                                                     
 // --- Push Constants ---
 layout(push_constant) uniform push_constants {
@@ -27,13 +27,12 @@ layout(push_constant) uniform push_constants {
     uint k;     // pivot iterator, with elements {k,k} referring to the diagonal; counts from k to rows-1
 };
 
-shared uint swap_row_cpy;
+shared uint swap_row;
 
 // --- Main Function ---
 void main() {
     if (gl_LocalInvocationID.x == 0) {
-        swap_row_cpy = swap_row[0];         // copy to shared local variable to reduce global memory access
-        if (k == 0) { swap_count[0] = 0; }  // initialize counter in first iteration
+        swap_row = uint(atomicAdd(swap_data[0], 0.0f));         // copy to shared local variable (via atomic read) to reduce global memory access
     }
     memoryBarrierShared(); barrier();
 
@@ -44,36 +43,36 @@ void main() {
     
     // if swap_row == k: nothing to swap;
     // else:
-    if (swap_row_cpy > k && swap_row_cpy < rows && i < cols) {
+    if (swap_row > k && swap_row < rows && i < cols) {
 
         // swap ENTIRE row in permutation matrix P
         if (i < cols_P) {
             temp = P[k * cols_P + i];
-            P[k * cols_P + i] = P[swap_row_cpy * cols_P + i];
-            P[swap_row_cpy * cols_P + i] = temp;
+            P[k * cols_P + i] = P[swap_row * cols_P + i];
+            P[swap_row * cols_P + i] = temp;
         }
 
         // swap row in U matrix
         // note: swapping in columns <k is not necessary, since these elements are expected to already be zeroed out
         if (i >= k) {
             temp = U[k * cols + i];
-            U[k * cols + i] = U[swap_row_cpy * cols + i];
-            U[swap_row_cpy * cols + i] = temp;
+            U[k * cols + i] = U[swap_row * cols + i];
+            U[swap_row * cols + i] = temp;
         }
         
         // swap the already computed part in the L matrix (columns 0 to k-1)
         else { // i<k
             if (i < cols_L) {
                 temp = L[k * cols_L + i];
-                L[k * cols_L + i] = L[swap_row_cpy * cols_L + i];
-                L[swap_row_cpy * cols_L + i] = temp;
+                L[k * cols_L + i] = L[swap_row * cols_L + i];
+                L[swap_row * cols_L + i] = temp;
             }
         }
 
         // update swap counter
         // (only necessary once per row, therefore column k takes care of it exclusively)
         if (i == k) {
-            swap_count[0]++;
+            atomicAdd(swap_data[1], 1);
         }
     }
     memoryBarrierBuffer(); barrier();
