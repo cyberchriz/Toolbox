@@ -1,6 +1,6 @@
 ﻿<div align="center">
   <br>
-    <img src="./docs/media/ngrid-logo.png" alt="NGrid Logo" width="550" height="200"/>
+    <img src="./docs/media/ngrid-logo.png" alt="NGrid Logo" width="800" height="300"/>
   <br>
   <h1 align="center">
     NGrid - High-Performance GPU Computing
