@@ -32,8 +32,9 @@
 // Everything inside this block is conditional on USE_RENDERDOC_API_DEFINE being set by CMake.
 // This ensures that if the option is OFF, none of RenderDoc's code/types are compiled.
 #ifdef USE_RENDERDOC_API_DEFINE
+#ifndef _RELEASE
 #include <renderdoc_app.h> // CMake must set the include path correctly for this!
-#endif
+
 
 // Global variables (inline ensures single definition across translation units)
 inline RENDERDOC_API_1_6_0* rdoc_api = NULL;
@@ -47,6 +48,9 @@ inline void* renderdoc_module = NULL;
 
 // Helper function to get the API (renamed to avoid conflict with the type 'pRENDERDOC_GetAPI')
 typedef pRENDERDOC_GetAPI PFN_RENDERDOC_GetAPI; // Typedef for clarity
+
+#endif  // _RELEASE
+#endif  // USE_RENDERDOC_API_DEFINE
 
 
 // class for debugging

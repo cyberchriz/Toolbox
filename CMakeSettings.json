@@ -35,8 +35,19 @@
           "name": "USE_RENDERDOC_API",
           "value": "true",
           "type": "BOOL"
+        },
+        {
+          "name": "USE_GLM",
+          "value": "True",
+          "type": "BOOL"
+        },
+        {
+          "name": "FETCH_GLM",
+          "value": "true",
+          "type": "BOOL"
         }
-      ]
+      ],
+      "intelliSenseMode": "windows-msvc-x64"
     },
     {
       "name": "x64-Release",

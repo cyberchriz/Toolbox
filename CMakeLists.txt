@@ -4,7 +4,7 @@
 #==============================================================================
 
 # --- Basic Setup ---
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.5)
 
 # --- Project Definition ---
 set(PROJECT_NAME "MyProject" CACHE STRING "Name of the project")
@@ -42,10 +42,11 @@ message(STATUS "Configuring project: ${PROJECT_NAME} v${PROJECT_VERSION}")
 if(NOT IS_DIRECTORY "${CMAKE_BINARY_DIR}" OR NOT EXISTS "${CMAKE_BINARY_DIR}/CMakeCache.txt")
     message(STATUS "\n=================================================================================")
     message(STATUS " This looks like the first run of CMake for this project.")
+    message(STATUS " Please make sure all environment variables are configured correctly.")
     message(STATUS " Review and configure options using:")
     message(STATUS "   - cmake-gui or ccmake")
     message(STATUS "   - Command line: cmake .. -D<OPTION>=<VALUE>")
-    message(STATUS "   - Visual Studio: CMake Settings editor")
+    message(STATUS "   - Visual Studio: CMake Settings editor (CMakeSettings.json)")
     message(STATUS " Ensure all required system dependencies (VulkanSDK, build tools, etc.) are installed.")
     message(STATUS " For find_package, you might need to set CMAKE_PREFIX_PATH or specific *_ROOT variables.")
     message(STATUS " FetchContent options allow downloading some dependencies automatically.")
@@ -280,66 +281,67 @@ set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps" CACHE PATH "Base directory
 # --- Vulkan (Requires SDK installation - find_package only) ---
 option(USE_VULKAN "Find and link Vulkan" ON)
 if(USE_VULKAN)
-    find_package(Vulkan REQUIRED)
+    find_package(Vulkan REQUIRED QUIET)
     if(Vulkan_FOUND)
         message(STATUS "Found Vulkan: ${Vulkan_LIBRARIES}")
         target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS})
         target_link_libraries(${PROJECT_NAME} PUBLIC ${Vulkan_LIBRARIES})
+    else()
+        message(WARNING "Vulkan installation not found via find_package !!! Make sure the Vulkan SDK is installed.")
     endif()
 endif()
 
 # --- GLFW3 ---
-option(USE_GLFW "Find or fetch and link GLFW3" OFF)
-option(FETCH_GLFW "Download GLFW3 using FetchContent (if USE_GLFW is ON)" OFF)
-mark_as_advanced(FETCH_GLFW) # Hide Fetch option by default in GUI
+option(USE_GLFW "Find or fetch and link GLFW3" ON)
 
 if(USE_GLFW)
-    if(FETCH_GLFW)
-        message(STATUS "Attempting to fetch GLFW3 via FetchContent")
-        FetchContent_Declare(glfw GIT_REPOSITORY https://github.com/glfw/glfw.git GIT_TAG 3.3.8) # Check for latest tag
+    # Check if GLFW is already installed
+    message(STATUS "Attempting to find pre-installed GLFW3 via find_package")
+    find_package(glfw3 3.4 QUIET) # Note: Package name is glfw3 here, not glfw
+    if(glfw3_FOUND)
+        message(STATUS "Found GLFW3: ${glfw3_LIBRARIES}")
+        # Use imported target if available (modern FindGLFW3.cmake defines glfw::glfw)
+        if(TARGET glfw::glfw)
+            target_link_libraries(${PROJECT_NAME} PUBLIC glfw::glfw)
+            # target_include_directories usually not needed for imported target
+        else()
+            # Fallback for older find modules
+            target_include_directories(${PROJECT_NAME} PUBLIC ${glfw3_INCLUDE_DIRS})
+            target_link_libraries(${PROJECT_NAME} PUBLIC ${glfw3_LIBRARIES})
+        endif()
+    else()
+        message(STATUS "glfw3 not found, falling back to FetchContent...")
+        FetchContent_Declare(glfw GIT_REPOSITORY https://github.com/glfw/glfw.git GIT_TAG 3.4) # Check for latest tag
         set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE) # Options for fetched dependency
         set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
         set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
         FetchContent_MakeAvailable(glfw)
+        target_include_directories(${PROJECT_NAME} PUBLIC ${glfw_SOURCE_DIR}/include)
         target_link_libraries(${PROJECT_NAME} PUBLIC glfw) # Link target created by FetchContent
         message(STATUS "Using GLFW3 via FetchContent")
-    else()
-        message(STATUS "Attempting to find pre-installed GLFW3 via find_package")
-        find_package(glfw3 3.3 REQUIRED) # Note: Package name is glfw3 here
-        if(glfw3_FOUND)
-            message(STATUS "Found GLFW3: ${glfw3_LIBRARIES}")
-            # Use imported target if available (modern FindGLFW3.cmake defines glfw::glfw)
-            if(TARGET glfw::glfw)
-                 target_link_libraries(${PROJECT_NAME} PUBLIC glfw::glfw)
-                 # target_include_directories usually not needed for imported target
-            else()
-                 # Fallback for older find modules
-                 target_include_directories(${PROJECT_NAME} PUBLIC ${glfw3_INCLUDE_DIRS})
-                 target_link_libraries(${PROJECT_NAME} PUBLIC ${glfw3_LIBRARIES})
-            endif()
-        endif()
+        message(STATUS "GLFW Source Dir: ${glfw_SOURCE_DIR}")
     endif()
 endif()
 
 # --- GLM (Header Only) ---
-option(USE_GLM "Find or fetch and use GLM" OFF)
-option(FETCH_GLM "Download GLM using FetchContent (if USE_GLM is ON)" ON) # Default ON for header-only
-mark_as_advanced(FETCH_GLM)
+option(USE_GLM "Find or fetch and use GLM" ON)
 
 if(USE_GLM)
-    if(FETCH_GLM)
-        message(STATUS "Attempting to fetch GLM via FetchContent")
-        FetchContent_Declare(glm GIT_REPOSITORY https://github.com/g-truc/glm.git GIT_TAG 0.9.9.8) # Check for latest tag
-        FetchContent_MakeAvailable(glm) # Handles includes for header-only
-        message(STATUS "Using GLM via FetchContent")
+    # Check if GLM is installed
+    find_path(GLM_INCLUDE_DIR glm/glm.hpp)
+    if(GLM_INCLUDE_DIR)
+        message(STATUS "Found installed GLM at: ${GLM_INCLUDE_DIR}")
+        add_library(glm INTERFACE)
+        target_include_directories(glm INTERFACE ${GLM_INCLUDE_DIR})
     else()
-        message(STATUS "Attempting to find pre-installed GLM via find_package")
-        find_package(glm 0.9.9 REQUIRED)
-        if(glm_FOUND)
-            message(STATUS "Found GLM: ${glm_INCLUDE_DIRS}")
-            target_include_directories(${PROJECT_NAME} PUBLIC ${glm_INCLUDE_DIRS})
-        endif()
+        message(STATUS "GLM not found, falling back to FetchContent...")
+        FetchContent_Declare(glm GIT_REPOSITORY https://github.com/g-truc/glm.git GIT_TAG 1.0.1) # Check for latest tag
+        FetchContent_MakeAvailable(glm) # Handles includes for header-only
+        message(STATUS "Now using GLM via FetchContent")
+        # verify again that GLM is now available (=after FetchContent)
     endif()
+    # Ensure GLM is linked
+    target_link_libraries(${PROJECT_NAME} PRIVATE glm)
 endif()
 
 # --- RenderDoc API (for programmatic capture) ---
@@ -350,10 +352,6 @@ option(USE_RENDERDOC_API "Enable programmatic RenderDoc capture API calls" ON)
 mark_as_advanced(USE_RENDERDOC_API)
 
 if(USE_RENDERDOC_API)
-    message(STATUS "RENDERDOC_API_INCLUDE_DIR should point to the 'api' directory inside your RenderDoc installation.")
-    message(STATUS "Example: C:/Program Files/RenderDoc/renderdoc/api")
-    message(STATUS "Example: C:/Program Files (x86)/RenderDoc/renderdoc/api")
-    message(STATUS "Example: /usr/local/include/renderdoc/api")
 
     # This list will hold all potential RenderDoc API include paths
     set(RENDERDOC_SEARCH_PATHS)
@@ -364,16 +362,19 @@ if(USE_RENDERDOC_API)
         if(CMAKE_PROGRAM_FILES)
             list(APPEND RENDERDOC_SEARCH_PATHS "${CMAKE_PROGRAM_FILES}/RenderDoc/renderdoc/api")
             list(APPEND RENDERDOC_SEARCH_PATHS "${CMAKE_PROGRAM_FILES}/RenderDoc/renderdoc")
+            list(APPEND RENDERDOC_SEARCH_PATHS "${CMAKE_PROGRAM_FILES}/RenderDoc")
         endif()
         # CMAKE_PROGRAM_FILES_X86 is "C:/Program Files (x86)" on 64-bit Windows
         if(CMAKE_PROGRAM_FILES_X86)
             list(APPEND RENDERDOC_SEARCH_PATHS "${CMAKE_PROGRAM_FILES_X86}/RenderDoc/renderdoc/api")
+            list(APPEND RENDERDOC_SEARCH_PATHS "${CMAKE_PROGRAM_FILES_X86}/RenderDoc/renderdoc")
+            list(APPEND RENDERDOC_SEARCH_PATHS "${CMAKE_PROGRAM_FILES_X86}/RenderDoc")
         endif()
         # You could also add the %LOCALAPPDATA% path if RenderDoc has a user-specific install option
         # For example, if RenderDoc installs to C:\Users\YourUser\AppData\Local\RenderDoc\renderdoc\api
         # list(APPEND RENDERDOC_SEARCH_PATHS "$ENV{LOCALAPPDATA}/RenderDoc/renderdoc/api")
-    endif()
 
+    else()
     # Linux specific paths (and potentially macOS, though RenderDoc installation differs there)
     # These are typically hardcoded because there aren't standard CMake variables like on Windows for /usr/local
     list(APPEND RENDERDOC_SEARCH_PATHS
@@ -381,6 +382,7 @@ if(USE_RENDERDOC_API)
         "/opt/renderdoc/include/renderdoc/api"
         "/usr/include/renderdoc/api"
     )
+    endif()
 
     find_path(RENDERDOC_API_INCLUDE_DIR
         NAMES renderdoc_app.h
@@ -394,12 +396,11 @@ if(USE_RENDERDOC_API)
         target_include_directories(${PROJECT_NAME} PUBLIC ${RENDERDOC_API_INCLUDE_DIR})
         target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RENDERDOC_API_DEFINE=1)
     else()
-        message(WARNING "Could not find RenderDoc API header (renderdoc_app.h). "
-                        "Programmatic capture will not be available. "
-                        "Please set RENDERDOC_API_INCLUDE_DIR manually (e.g., -DRENDERDOC_API_INCLUDE_DIR=\"C:/Path/To/RenderDoc/api\") "
-                        "if you need it.")
-        # Optionally, turn off the option if the header isn't found
-        # set(USE_RENDERDOC_API OFF CACHE BOOL "RenderDoc API disabled: header not found" FORCE)
+        message(WARNING "Could not find RenderDoc API header (renderdoc_app.h). Programmatic capture will not be available.")
+        message(STATUS "Please set RENDERDOC_API_INCLUDE_DIR manually: it should point to the 'api' folder within your RenderDoc installation.")
+        message(STATUS "     Example: C:/Program Files/RenderDoc/renderdoc/api")
+        message(STATUS "     Example: C:/Program Files (x86)/RenderDoc/renderdoc/api")
+        message(STATUS "     Example: /usr/local/include/renderdoc/api")
     endif()
 
     if(WIN32)
@@ -425,17 +426,18 @@ option(USE_BOOST "Find and link Boost" OFF)
 # Fetching Boost is complex, sticking to find_package
 if(USE_BOOST)
     message(STATUS "Attempting to find pre-installed Boost via find_package")
-    # set(Boost_USE_STATIC_LIBS ON)
-    # List required components explicitly
-    find_package(Boost 1.88.0 COMPONENTS system filesystem REQUIRED)
+    set(Boost_USE_STATIC_LIBS ON)
+    find_package(Boost 1.88.0 COMPONENTS system filesystem)
     if(Boost_FOUND)
         message(STATUS "Found Boost ${Boost_VERSION_STRING}: ${Boost_LIBRARIES}")
         target_include_directories(${PROJECT_NAME} PUBLIC ${Boost_INCLUDE_DIRS})
         target_link_libraries(${PROJECT_NAME} PUBLIC ${Boost_LIBRARIES})
+    else()
+        message(WARNING "CMake option USE_BOOST is set to ON, but Boost couldn't be found !'")
     endif()
 endif()
 
-message(STATUS "External dependencies configured.")
+message(STATUS "Configuration of external dependencies is now complete.")
 
 
 #==============================================================================
@@ -445,8 +447,10 @@ option(COMPILE_GLSL_SHADERS "Enable automatic GLSL shader (re)compilation" ON)
 if(COMPILE_GLSL_SHADERS AND EXISTS "${PROJECT_GLSL_DIR}")
     find_program(GLSLANG_VALIDATOR_EXECUTABLE NAMES glslangValidator glslc)
     if(NOT GLSLANG_VALIDATOR_EXECUTABLE)
-        message(WARNING "GLSL compiler not found. Skipping shader compilation.")
-        set(COMPILE_GLSL_SHADERS OFF) # Disable if not found, so install doesn't fail
+        message(WARNING "Option COMPILE_GLSL_SHADERS is set to ON, but GLSL compiler (glslangValidator) can't be found!!!")
+        message(STATUS "Shader compilation will be skipped.")
+        message(STATUS "Please install the Vulkan SDK to get this tool. Download from: https://www.lunarg.com/vulkan-sdk/")
+        set(COMPILE_GLSL_SHADERS OFF) # Disable if not found, so install doesn't fail entirely
     else()
         message(STATUS "Using GLSL compiler: ${GLSLANG_VALIDATOR_EXECUTABLE}")
         file(MAKE_DIRECTORY "${PROJECT_SPIRV_DIR}") # Ensure output directory exists
@@ -552,7 +556,10 @@ else()
      message(STATUS "SPIR-V to C++ header generation skipped (COMPILE_GLSL_SHADERS is OFF).")
 endif()
 
-
+#==============================================================================
+# Section: Copy Resources
+#==============================================================================
+file(COPY "${CMAKE_SOURCE_DIR}/resources" DESTINATION "${CMAKE_BINARY_DIR}")
 
 #==============================================================================
 # Section: Installation
