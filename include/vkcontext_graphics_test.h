@@ -11,36 +11,48 @@
 
 void vkcontext_graphics_test() {
 
+	Log::set_level(LEVEL_WARNING);
+
 	// setup environment
 	VulkanManager& manager = VulkanManager::get_singleton();
 	Device& device = manager.get_device();
-	Semaphore* semaphore = manager.get_timeline_semaphore(0, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+	Semaphore* tl_semaphore = manager.get_timeline_semaphore(0, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
 	Surface& surface = manager.get_surface();
 	VkSurfaceFormatKHR surface_format = device.select_surface_format(surface);
 
-	// load mesh
-	Mesh model(device, "resources/models/obj/Skull/12140_Skull_v3_L2.obj", semaphore); // object source: https://free3d.com/3d-model/skull-v3--785914.html
+	// load model
+	Mesh model(device, "resources/models/obj/Skull/12140_Skull_v3_L2.obj", tl_semaphore); // object source: https://free3d.com/3d-model/skull-v3--785914.html
+	Sampler texture_sampler(device);
+	Texture model_texture(device, "resources/models/obj/Skull/Skull.jpg", VK_FORMAT_R8G8B8A8_SRGB, tl_semaphore);
 
 	// create entity from mesh
 	Entity entity(model);
 
-	// setup camera
-	Camera camera({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f });
-
-	glm::vec4 light_position = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f); // A directional light from the top-right-front
-	glm::vec4 view_position = glm::vec4(2.0f, 2.0f, 2.0f, 1.0f);
+	// define scene objects
+	Camera camera(
+		glm::vec3(15.0f, -40.0f, 20.0f), 	// Position
+		glm::vec3(0.0f, 1.0f, 0.0f),		// World Up
+		-90.0f,								// Yaw
+		70.0f								// Pitch
+	);
+	VkExtent2D extent = { 1920, 1080 };
+	camera.set_aspect_ratio(float(extent.width) / float(extent.height));
+	camera.set_near_plane(0.01f);
+	Light directional_light(
+		glm::vec4(15.0f, -50.0f, 40.0f, 1.0f),		// Position
+		glm::vec3{ 0.5f, 0.5f, 0.5f }				// Color
+	);
 
 	// create pipeline dependencies
 	RenderPass renderpass(device);
 	SubPass subpass(renderpass);
-	uint32_t color_attachment_id = renderpass.add_color_attachment(surface_format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE);
-	uint32_t depth_attachment_id = renderpass.add_attachment(AttachmentType::DEPTH_TYPE, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE);
+	uint32_t color_attachment_id = renderpass.add_color_attachment(surface_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE);
+	uint32_t depth_attachment_id = renderpass.add_attachment(AttachmentType::DEPTH_TYPE, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE);
 	subpass.add_attachment_reference(color_attachment_id);
 	subpass.add_attachment_reference(depth_attachment_id);
 	uint32_t subpass_index = subpass.finalize(0, VK_PIPELINE_BIND_POINT_GRAPHICS);
 	renderpass.finalize();
 
-	VkExtent2D extent = { 1920, 1080 };
 	DepthBuffer depth_buffer(device, VK_IMAGE_TYPE_2D, VkExtent3D({ extent.width, extent.height, 1 }), VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
 	Swapchain swapchain(device, renderpass, surface, surface_format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, depth_buffer, NULLOPT, extent);
@@ -49,11 +61,13 @@ void vkcontext_graphics_test() {
 	std::optional<ShaderModule> fragment_shader = std::make_optional<ShaderModule>(device, FRAGMENT_SHADER_GENERIC_SPIRV_BIN, FRAGMENT_SHADER_GENERIC_SPIRV_BYTES);
 
 	DescriptorSetLayout set_layout(device);
-	set_layout.add_binding(STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_ALL_GRAPHICS);
+	set_layout.add_binding(STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_ALL_GRAPHICS);			// for materials
+	set_layout.add_binding(COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);	// for texture
 	set_layout.finalize();
 
 	DescriptorSet set(device, set_layout, manager.get_descriptor_pool());
 	set.bind_buffer(0, model.get_material_buffer());
+	set.bind_texture(1, model_texture);
 	set.write();
 
 	std::vector<VkClearValue> clear_values(2);
@@ -62,23 +76,23 @@ void vkcontext_graphics_test() {
 
 	float blend_factors[4] = { 1.0f,1.0f,1.0f,1.0f };
 	const auto color_blend_state = std::make_optional<ColorBlendState>(
-		VK_BLEND_FACTOR_ZERO,
 		VK_BLEND_FACTOR_ONE,
+		VK_BLEND_FACTOR_ZERO,
 		VK_BLEND_OP_ADD,
-		VK_BLEND_FACTOR_ZERO,
 		VK_BLEND_FACTOR_ONE,
+		VK_BLEND_FACTOR_ZERO,
 		VK_BLEND_OP_ADD,
 		blend_factors
 	);
 
-	PushConstants constants(
-		entity.get_model_matrix(),
-		camera.get_view_matrix(),
-		camera.get_projection_matrix(),
-		light_position,
-		view_position
-	);
-	size_t material_offset = constants.add_values(uint32_t(0)); // reserved for the submesh material index
+	PushConstants constants;
+	size_t model_matrix_offset = constants.add_values(entity.get_model_matrix());
+	size_t view_matrix_offset = constants.add_values(camera.get_view_matrix());
+	size_t projection_offset = constants.add_values(camera.get_projection_matrix());
+	size_t camera_position_offset = constants.add_values(glm::vec4(camera.get_position(), 0.0f));
+	size_t light_position_offset = constants.add_values(directional_light.get_position());
+	size_t light_color_offset = constants.add_values(glm::vec4(directional_light.get_color(), 1.0f));
+	size_t material_offset = constants.add_values(uint32_t(0));
 
 	GraphicsPipelineLayout pipeline_layout(device, set_layout, constants);
 
@@ -95,22 +109,39 @@ void vkcontext_graphics_test() {
 	);
 
 	// acquire a graphics task
-	Task& task = manager.get_graphics_task();
+	Task& task = manager.get_graphics_task(__FUNCTION__);
+	Semaphore& image_available_bin_semaphore = task.make_temp_binary_semaphore(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+	Semaphore& render_finished_bin_semaphore = task.make_temp_binary_semaphore(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
 
 	// main render loop
 	while (true) {
+		Log::debug("===== MAIN RENDER LOOP: START OF NEXT LOOP ITERATION =====");
+
 		// process events (TODO)
 
-		// update scene (TODO)
+		// update scene (push constants updates via in-place overwrites)
+		entity.rotate(glm::vec3(0.0f, 0.0f, 0.5f));
+		//directional_light.translate(glm::vec3(-0.1f, 0.0f, 0.0f));
+		//camera.translate(glm::vec3(-0.02, 0.002f, 0.0f));
+		constants.add_values(entity.get_model_matrix(), model_matrix_offset);
+		constants.add_values(camera.get_view_matrix(), view_matrix_offset);
+		constants.add_values(camera.get_projection_matrix(), projection_offset);
+		constants.add_values(directional_light.get_position(), light_position_offset);
 
 		// render next frame
-		uint32_t image_index = swapchain.acquire_next_image(*semaphore);
+		uint32_t image_index = swapchain.acquire_next_image(image_available_bin_semaphore);
 		CommandBuffer& cb = task.get_command_buffer();
 		cb.begin_recording();
+
+		// Set dynamic state before starting render pass
+		cb.set_viewport(0.0f, 0.0f, swapchain.get_extent().width, swapchain.get_extent().height);
+		cb.set_scissor({ 0, 0 }, swapchain.get_extent());
+
+		// bind resources
+		cb.begin_renderpass(renderpass, swapchain.get_framebuffer(image_index), { 0,0 }, swapchain.get_extent(), clear_values);
 		cb.bind_pipeline(pipeline);
 		cb.bind_descriptor_set(set, pipeline);
 		cb.bind_mesh(model);
-		cb.begin_renderpass(renderpass, swapchain.get_framebuffer(image_index), { 0,0 }, swapchain.get_extent(), clear_values);
 
 		// Loop through each sub-mesh and issue a draw call (= draw vertices per sub-mesh)
 		for (const auto& submesh : model.get_submeshes()) {
@@ -122,10 +153,16 @@ void vkcontext_graphics_test() {
 		cb.end_renderpass();
 		cb.end_recording();
 
-		task.timeline_sync(*semaphore);
+		task.timeline_sync(*tl_semaphore);
+		task.wait_binary_semaphore(image_available_bin_semaphore);
+		task.signal_binary_semaphore(render_finished_bin_semaphore);
 		task.submit();
 
-		swapchain.present_rendered_image(*semaphore);
+		swapchain.present_rendered_image(render_finished_bin_semaphore);
+
+		task.get_fence().wait(__FUNCTION__);
+		task.get_fence().reset(__FUNCTION__);
+		task.clear_semaphore_list();
 	}
 }
 #endif

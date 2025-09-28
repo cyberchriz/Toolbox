@@ -807,7 +807,7 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 
 		// write shape to a temporary staging buffer, then copy it to the shape buffer on the device
 		Task& task = manager->get_compute_task(__FUNCTION__);
-		Buffer<uint32_t>& staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		Buffer<uint32_t>& staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		staging_buffer.write(this->shape, this->dimensions, 0, 0);
 		CommandBuffer& cb = task.get_command_buffer();
 		cb.begin_recording();
@@ -963,7 +963,7 @@ NGrid& NGrid::set(const std::initializer_list<uint32_t> index, const float_t val
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// write value to a temporary staging buffer (transient resource, owned by the task)
-	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	staging_buffer.write_element(0, value);
 
 	// copy from staging buffer to data buffer
@@ -987,7 +987,7 @@ NGrid& NGrid::set(const std::vector<uint32_t>& index, const float_t value) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// write value to a temporary staging buffer (transient resource, owned by the task)
-	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	staging_buffer.write_element(0, value);
 
 	// copy from staging buffer to data buffer
@@ -1043,7 +1043,7 @@ NGrid& NGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, ui
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// write value to a temporary staging buffer (transient resource, owned by the task)
-	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(num_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(num_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	staging_buffer.write(data, num_elements, source_offset_elements, 0);
 
 	// copy from staging buffer to data buffer
@@ -1083,7 +1083,7 @@ NGrid& NGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// write value to a temporary staging buffer (transient resource, owned by the task)
-	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(copied_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(copied_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	staging_buffer.write(data, copied_elements, source_offset_elements, 0);
 
 	// copy from staging buffer to data buffer
@@ -1196,9 +1196,9 @@ NGrid& NGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// create a buffer for the offset (transient resource, owned by the task)
-	Buffer<uint32_t>& offset_staging = task.add_temp_buffer<uint32_t>(offset_dim, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& offset_staging = task.make_temp_buffer<uint32_t>(offset_dim, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	offset_staging.write(target_origin_offset);
-	Buffer<uint32_t>& offset = task.add_temp_buffer<uint32_t>(offset_dim, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& offset = task.make_temp_buffer<uint32_t>(offset_dim, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// define push_constants (transient resource, owned by the task)
 	PushConstants& constants = task.add_constants(
@@ -1219,7 +1219,7 @@ NGrid& NGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -1269,7 +1269,7 @@ NGrid& NGrid::set(const NGrid& other, const std::initializer_list<uint32_t>& tar
 // acquiring multiple (or all) elements at once is preferable whenever possible)
 float_t NGrid::get(const uint32_t flat_index) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
 	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
@@ -1299,7 +1299,7 @@ std::vector<float> NGrid::get() const {
 // this overload uses parameters "read_elements" and "source_offset_elements" to allow copying only a subset of the data
 std::vector<float> NGrid::get(const uint32_t read_elements, const uint32_t source_offset_elements) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& staging_buffer = task.add_temp_buffer<float_t>(read_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(read_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
 	static uint64_t float_size = sizeof(float);
@@ -1415,9 +1415,9 @@ NGrid NGrid::subgrid(const std::vector<uint32_t>& source_offset, const std::vect
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// create a temporary staging buffer for the source offset (transient resource, owned by the task)
-	Buffer<uint32_t>& offset_staging = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& offset_staging = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	offset_staging.write(source_offset);
-	Buffer<uint32_t>& source_offset_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& source_offset_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// define push constants (transient resource, owned by the task)
 	PushConstants& constants = task.add_constants(
@@ -1438,7 +1438,7 @@ NGrid NGrid::subgrid(const std::vector<uint32_t>& source_offset, const std::vect
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, subgrid.get_buffer());
@@ -1504,7 +1504,7 @@ NGrid& NGrid::fill(const float_t value) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -1554,7 +1554,7 @@ NGrid& NGrid::fill_zero() {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -1605,7 +1605,7 @@ NGrid& NGrid::fill_identity() {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.write();
@@ -1660,7 +1660,7 @@ NGrid& NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -1713,7 +1713,7 @@ NGrid& NGrid::fill_random_uniform(const float_t min, const float_t max) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -1771,7 +1771,7 @@ NGrid& NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -1834,7 +1834,7 @@ NGrid& NGrid::fill_random_binary(float_t ratio) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -1892,7 +1892,7 @@ NGrid& NGrid::fill_random_sign(const float_t ratio) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -1948,7 +1948,7 @@ NGrid& NGrid::fill_range(const float_t start, const float_t step) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.write();
@@ -2007,7 +2007,7 @@ NGrid& NGrid::fill_dropout(const float_t ratio) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -2053,7 +2053,7 @@ NGrid& NGrid::fill_index() {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -2110,7 +2110,7 @@ NGrid& NGrid::weightinit_tanh_normal(const uint32_t fan_in, const uint32_t fan_o
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -2159,7 +2159,7 @@ NGrid& NGrid::weightinit_tanh_uniform(const uint32_t fan_in, const uint32_t fan_
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -2208,7 +2208,7 @@ NGrid& NGrid::weightinit_sigmoid(const uint32_t fan_in, const uint32_t fan_out) 
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -2257,7 +2257,7 @@ NGrid& NGrid::weightinit_relu(const uint32_t fan_in) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -2306,7 +2306,7 @@ NGrid& NGrid::weightinit_elu(const uint32_t fan_in) {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.write();
 
@@ -2354,11 +2354,11 @@ float_t NGrid::min() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -2372,7 +2372,7 @@ float_t NGrid::min() const {
 		);
 
 		// add a descriptor set (transient resource, owned by the task)
-		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, *input_buffer);
 		ds.bind_buffer(1, *local_results_buffer);
 		ds.write();
@@ -2458,11 +2458,11 @@ float_t NGrid::max() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -2476,7 +2476,7 @@ float_t NGrid::max() const {
 		);
 
 		// add a descriptor set (transient resource, owned by the task)
-		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, *input_buffer);
 		ds.bind_buffer(1, *local_results_buffer);
 		ds.write();
@@ -2562,11 +2562,11 @@ float_t NGrid::maxabs() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -2580,7 +2580,7 @@ float_t NGrid::maxabs() const {
 		);
 
 		// add a descriptor set (transient resource, owned by the task)
-		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, *input_buffer);
 		ds.bind_buffer(1, *local_results_buffer);
 		ds.write();
@@ -2813,11 +2813,11 @@ float_t NGrid::sum() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -2831,7 +2831,7 @@ float_t NGrid::sum() const {
 		);
 
 		// add a descriptor set (transient resource, owned by the task)
-		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, *input_buffer);
 		ds.bind_buffer(1, *local_results_buffer);
 		ds.write();
@@ -2922,7 +2922,7 @@ NGrid NGrid::operator+(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -2975,7 +2975,7 @@ NGrid NGrid::operator+(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -3078,7 +3078,7 @@ NGrid NGrid::operator-(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -3166,11 +3166,11 @@ float_t NGrid::product() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.add_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.add_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.add_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -3184,7 +3184,7 @@ float_t NGrid::product() const {
 		);
 
 		// add a descriptor set (transient resource, owned by the task)
-		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, *input_buffer);
 		ds.bind_buffer(1, *local_results_buffer);
 		ds.write();
@@ -3275,7 +3275,7 @@ NGrid NGrid::operator*(const float_t factor) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -3372,7 +3372,7 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, other.get_buffer());
 	ds.bind_buffer(2, result.get_buffer());
@@ -3449,7 +3449,7 @@ NGrid NGrid::Hadamard_product(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -3547,7 +3547,7 @@ NGrid NGrid::Hadamard_division(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -3624,7 +3624,7 @@ NGrid NGrid::operator%(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -3680,7 +3680,7 @@ NGrid NGrid::pow(const float_t exponent) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -3781,7 +3781,7 @@ NGrid NGrid::pow(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -3847,7 +3847,7 @@ NGrid NGrid::log(const float_t base) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -3896,7 +3896,7 @@ NGrid NGrid::exp() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -3952,7 +3952,7 @@ NGrid NGrid::round(uint32_t precision) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4003,7 +4003,7 @@ NGrid NGrid::floor() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4054,7 +4054,7 @@ NGrid NGrid::ceil() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4105,7 +4105,7 @@ NGrid NGrid::abs() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4161,7 +4161,7 @@ NGrid NGrid::min(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4213,7 +4213,7 @@ NGrid NGrid::max(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4268,7 +4268,7 @@ NGrid NGrid::min(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -4329,7 +4329,7 @@ NGrid NGrid::max(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -4394,7 +4394,7 @@ NGrid NGrid::cos(const AngularUnit source_angle_unit) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4448,7 +4448,7 @@ NGrid NGrid::sin(const AngularUnit source_angle_unit) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4502,7 +4502,7 @@ NGrid NGrid::tan(const AngularUnit source_angle_unit) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4556,7 +4556,7 @@ NGrid NGrid::acos(const AngularUnit result_angle_unit) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4610,7 +4610,7 @@ NGrid NGrid::asin(const AngularUnit result_angle_unit) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4664,7 +4664,7 @@ NGrid NGrid::atan(const AngularUnit result_angle_unit) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4714,7 +4714,7 @@ NGrid NGrid::cosh() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4764,7 +4764,7 @@ NGrid NGrid::sinh() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4814,7 +4814,7 @@ NGrid NGrid::tanh() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4864,7 +4864,7 @@ NGrid NGrid::acosh() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4914,7 +4914,7 @@ NGrid NGrid::asinh() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -4964,7 +4964,7 @@ NGrid NGrid::atanh() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5023,7 +5023,7 @@ NGrid NGrid::replace(const float_t old_value, const float_t new_value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5094,7 +5094,7 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const NGrid& replacing_map) 
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.bind_buffer(2, condition_map.get_buffer());
@@ -5170,7 +5170,7 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const float_t replacing_valu
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.bind_buffer(2, condition_map.get_buffer());
@@ -5228,7 +5228,7 @@ NGrid NGrid::sign() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5278,7 +5278,7 @@ NGrid NGrid::isinf() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5327,7 +5327,7 @@ NGrid NGrid::isnan() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5390,7 +5390,7 @@ NGrid NGrid::scale_minmax(const float_t range_from, const float_t range_to) cons
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5449,7 +5449,7 @@ NGrid NGrid::scale_mean() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5510,7 +5510,7 @@ NGrid NGrid::scale_zscore(const float_t z_score) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5660,7 +5660,7 @@ NGrid NGrid::sigmoid() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5710,7 +5710,7 @@ NGrid NGrid::sigmoid_drv() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5761,7 +5761,7 @@ NGrid NGrid::elu(const float_t alpha) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5814,7 +5814,7 @@ NGrid NGrid::elu_drv(const float_t alpha) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5867,7 +5867,7 @@ NGrid NGrid::relu(const float_t alpha) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5919,7 +5919,7 @@ NGrid NGrid::relu_drv(const float_t alpha) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -5968,7 +5968,7 @@ NGrid NGrid::tanh_drv() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6025,7 +6025,7 @@ NGrid NGrid::outliers_clamp_minmax(const float_t min_value, const float_t max_va
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6082,7 +6082,7 @@ NGrid NGrid::outliers_clamp_zscore(const float_t z_score) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6140,7 +6140,7 @@ NGrid NGrid::outliers_mean_imputation(const float_t z_score) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6198,7 +6198,7 @@ NGrid NGrid::outliers_value_imputation(const float_t z_score, const float_t valu
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6249,7 +6249,7 @@ NGrid NGrid::recover() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6303,7 +6303,7 @@ NGrid NGrid::operator>(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6354,7 +6354,7 @@ NGrid NGrid::operator>=(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6404,7 +6404,7 @@ NGrid NGrid::operator==(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6454,7 +6454,7 @@ NGrid NGrid::operator!=(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6504,7 +6504,7 @@ NGrid NGrid::operator<(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6554,7 +6554,7 @@ NGrid NGrid::operator<=(const float_t value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -6608,7 +6608,7 @@ NGrid NGrid::operator>(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -6668,7 +6668,7 @@ NGrid NGrid::operator>=(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -6728,7 +6728,7 @@ NGrid NGrid::operator==(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -6788,7 +6788,7 @@ NGrid NGrid::operator!=(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -6848,7 +6848,7 @@ NGrid NGrid::operator<(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -6908,7 +6908,7 @@ NGrid NGrid::operator<=(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -6993,7 +6993,7 @@ NGrid NGrid::operator!() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -7046,7 +7046,7 @@ NGrid NGrid::operator&&(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -7106,7 +7106,7 @@ NGrid NGrid::operator||(const NGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -7194,7 +7194,7 @@ NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, const float_t defau
 		static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 		// add a descriptor set to the task (transient resource, owned by the task)
-		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, this->get_buffer());
 		ds.bind_buffer(1, this->get_shape_buffer());
 		ds.bind_buffer(2, result.get_buffer());
@@ -7303,7 +7303,7 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, other.get_buffer());
@@ -7372,7 +7372,7 @@ NGrid NGrid::padding(const uint32_t amount, const float_t init_value) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, result.get_buffer());
@@ -7414,15 +7414,15 @@ NGrid NGrid::pool_max(const std::vector<uint32_t>& window_shape, const std::vect
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy window shape to a temporary staging buffer
-	Buffer<uint32_t>& window_shape_staging_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& window_shape_staging_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	window_shape_staging_buffer.write(window_shape);
-	Buffer<uint32_t>& window_shape_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& window_shape_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// copy stride shape to a temporary staging buffer
 	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t>& stride_shape_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-	Buffer<uint32_t>& stride_shape_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& stride_shape_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -7468,7 +7468,7 @@ NGrid NGrid::pool_max(const std::vector<uint32_t>& window_shape, const std::vect
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, window_shape_buffer);
@@ -7526,15 +7526,15 @@ NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::v
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy window shape to a temporary staging buffer
-	Buffer<uint32_t>& window_shape_staging_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& window_shape_staging_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	window_shape_staging_buffer.write(window_shape);
-	Buffer<uint32_t>& window_shape_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& window_shape_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// copy stride shape to a temporary staging buffer
 	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t>& stride_shape_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-	Buffer<uint32_t>& stride_shape_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& stride_shape_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -7580,7 +7580,7 @@ NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::v
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, window_shape_buffer);
@@ -7638,15 +7638,15 @@ NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vect
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy window shape to a temporary staging buffer
-	Buffer<uint32_t>& window_shape_staging_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& window_shape_staging_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	window_shape_staging_buffer.write(window_shape);
-	Buffer<uint32_t>& window_shape_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& window_shape_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// copy stride shape to a temporary staging buffer
 	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t>& stride_shape_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-	Buffer<uint32_t>& stride_shape_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& stride_shape_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -7692,7 +7692,7 @@ NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vect
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, window_shape_buffer);
@@ -7750,15 +7750,15 @@ NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vec
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy window shape to a temporary staging buffer
-	Buffer<uint32_t>& window_shape_staging_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& window_shape_staging_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	window_shape_staging_buffer.write(window_shape);
-	Buffer<uint32_t>& window_shape_buffer = task.add_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& window_shape_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// copy stride shape to a temporary staging buffer
 	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t>& stride_shape_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-	Buffer<uint32_t>& stride_shape_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& stride_shape_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -7804,7 +7804,7 @@ NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vec
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, window_shape_buffer);
@@ -7890,7 +7890,7 @@ NGrid NGrid::convolution(const NGrid& kernel, const uint32_t padding_amount, con
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, kernel.get_buffer());
@@ -7951,9 +7951,9 @@ NGrid NGrid::transpose(const std::vector<uint32_t>& target_axis_order) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// add a temporary staging buffer to store the target axis order
-	Buffer<uint32_t>& target_axis_order_staging_buffer = task.add_temp_buffer<uint32_t>(target_axis_order.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& target_axis_order_staging_buffer = task.make_temp_buffer<uint32_t>(target_axis_order.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	target_axis_order_staging_buffer.write(target_axis_order);
-	Buffer<uint32_t>& target_axis_order_buffer = task.add_temp_buffer<uint32_t>(target_axis_order.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& target_axis_order_buffer = task.make_temp_buffer<uint32_t>(target_axis_order.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// define push constants (transient resource, owned by the task)
 	PushConstants& constants = task.add_constants(
@@ -7974,7 +7974,7 @@ NGrid NGrid::transpose(const std::vector<uint32_t>& target_axis_order) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, target_axis_order_buffer);
@@ -8057,7 +8057,7 @@ LUresult NGrid::lu() const {
 		);
 
 		// define descriptor set (transient resource, owned by the task)
-		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task_k.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, result.L.get_buffer());
 		ds.bind_buffer(1, result.U.get_buffer());
 		ds.bind_buffer(2, result.P.get_buffer());
@@ -8154,7 +8154,7 @@ NGrid NGrid::l_inverse() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());// 'this' must be in the form of a lower triangular matrix
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -8211,7 +8211,7 @@ NGrid NGrid::u_inverse() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer()); // 'this' must be in the form of an upper triangular matrix
 	ds.bind_buffer(1, result.get_buffer());
 	ds.write();
@@ -8259,12 +8259,12 @@ QRresult NGrid::qr(const bool hessenberg) const {
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
 
 	// create temporary buffers
-	Buffer<float_t>& Temp_w = main_task.add_temp_buffer<float_t>(cols, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Temp_u = main_task.add_temp_buffer<float_t>(rows, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Temp_y = main_task.add_temp_buffer<float_t>(hessenberg ? rows : 1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // (small dummy for standard QR, only used for Hessenberg)
-	Buffer<float_t>& Alpha = main_task.add_temp_buffer<float_t>(k_max, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Gamma = main_task.add_temp_buffer<float_t>(k_max, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& LocalResults = main_task.add_temp_buffer<float_t>(row_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // to store local results from parallel reductions
+	Buffer<float_t>& Temp_w = main_task.make_temp_buffer<float_t>(cols, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_u = main_task.make_temp_buffer<float_t>(rows, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_y = main_task.make_temp_buffer<float_t>(hessenberg ? rows : 1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // (small dummy for standard QR, only used for Hessenberg)
+	Buffer<float_t>& Alpha = main_task.make_temp_buffer<float_t>(k_max, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Gamma = main_task.make_temp_buffer<float_t>(k_max, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& LocalResults = main_task.make_temp_buffer<float_t>(row_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // to store local results from parallel reductions
 
 	// initialize result members
 	uint32_t cols_V = k_max;
@@ -8324,7 +8324,7 @@ QRresult NGrid::qr(const bool hessenberg) const {
 		Task& task_k = manager->get_compute_task(__FUNCTION__);
 
 		// define descriptor set (transient resource, managed by the main task)
-		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task_k.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, result.Q.get_buffer());
 		ds.bind_buffer(1, result.R.get_buffer());
 		ds.bind_buffer(2, result.V.get_buffer());
@@ -8607,10 +8607,10 @@ void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta
 
 	// create temporary buffers
 	uint32_t current_size = end_row - start_row;
-	Buffer<float_t>& v_k = main_task.add_temp_buffer<float_t>(3, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& tau_k = main_task.add_temp_buffer<float_t>(1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Temp_y = main_task.add_temp_buffer<float_t>(current_size, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Temp_w = main_task.add_temp_buffer<float_t>(current_size, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& v_k = main_task.make_temp_buffer<float_t>(3, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& tau_k = main_task.make_temp_buffer<float_t>(1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_y = main_task.make_temp_buffer<float_t>(current_size, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_w = main_task.make_temp_buffer<float_t>(current_size, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// define descriptor set layout
 	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
@@ -8648,7 +8648,7 @@ void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta
 		CommandBuffer& cb = task_k.get_command_buffer();
 
 		// define descriptor set
-		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task_k.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, this->get_buffer());
 		ds.bind_buffer(1, v_k);
 		ds.bind_buffer(2, Temp_y);
@@ -8850,8 +8850,8 @@ RREF NGrid::rref(const NGrid& augment) const {
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
 
 	// add temporary buffers (owned by the main task)
-	Buffer<uint32_t>& swap_row = main_task.add_temp_buffer<uint32_t>(1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // row to be swapped for current row 'k'
-	Buffer<float_t>& multipliers = main_task.add_temp_buffer<float_t>(this->shape[0], BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // multipliers in column 'k'
+	Buffer<uint32_t>& swap_row = main_task.make_temp_buffer<uint32_t>(1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // row to be swapped for current row 'k'
+	Buffer<float_t>& multipliers = main_task.make_temp_buffer<float_t>(this->shape[0], BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // multipliers in column 'k'
 
 	// define descriptor set layout
 	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
@@ -8897,7 +8897,7 @@ RREF NGrid::rref(const NGrid& augment) const {
 		Task& task_k = manager->get_compute_task(__FUNCTION__);
 
 		// define descriptor set
-		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task_k.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, result.coeffs.get_buffer());
 		ds.bind_buffer(1, result.solution.get_buffer());
 		ds.bind_buffer(2, swap_row);
@@ -8980,7 +8980,7 @@ RREF NGrid::rref(const NGrid& augment) const {
 		Task& task_k = manager->get_compute_task(__FUNCTION__);
 
 		// define descriptor set
-		DescriptorSet& ds = task_k.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task_k.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, result.coeffs.get_buffer());
 		ds.bind_buffer(1, result.solution.get_buffer());
 		ds.bind_buffer(2, swap_row);
@@ -9053,8 +9053,8 @@ NGrid NGrid::mirror(const std::vector<bool>& mirror_axes) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy the mirror axes to a storage buffer
-	Buffer<uint32_t>& mirror_axes_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<uint32_t>& mirror_axes_staging_buffer = task.add_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& mirror_axes_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& mirror_axes_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	if (mirror_axes.size() == 0) {
 		// if no axes are specified, mirror all axes
@@ -9086,7 +9086,7 @@ NGrid NGrid::mirror(const std::vector<bool>& mirror_axes) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, mirror_axes_buffer);
@@ -9167,7 +9167,7 @@ NGrid NGrid::remap(const NGrid& target_index_map) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, target_index_map.get_buffer());
 	ds.bind_buffer(2, result.get_buffer());
@@ -9693,7 +9693,7 @@ NGrid NGrid::stationary(const uint32_t degree) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, differenced_result.get_buffer());
 	ds.write();
@@ -9770,7 +9770,7 @@ NGrid NGrid::stationary_log(const uint32_t degree, const float_t log_base) const
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, differenced_result.get_buffer());
 	ds.write();
@@ -9836,7 +9836,7 @@ NGrid NGrid::sort(const bool ascending) const {
 		);
 
 		// add a descriptor set to the task (transient resource, owned by the task)
-		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, this->get_buffer());
 		ds.bind_buffer(1, result.get_buffer());
 		ds.write();
@@ -9972,7 +9972,7 @@ NGrid NGrid::diagonal() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, this->get_shape_buffer());
 	ds.bind_buffer(2, result.get_buffer());
@@ -10042,7 +10042,7 @@ void NGrid::print(const std::string& comment, const int32_t precision, const boo
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->get_buffer());
 	ds.bind_buffer(1, required_digits_ngrid.get_buffer());
 	ds.bind_buffer(2, make_scientific_ngrid.get_buffer());
@@ -11147,7 +11147,7 @@ CGrid CGrid::operator*(const std::complex<float_t> complex_factor) const {
 		static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 		// add a descriptor set to the task (transient resource, owned by the task)
-		DescriptorSet& ds = task.add_descriptor_set(set_layout);
+		DescriptorSet& ds = task.make_descriptor_set(set_layout);
 		ds.bind_buffer(0, this->real.get_buffer());
 		ds.bind_buffer(1, this->imag.get_buffer());
 		ds.bind_buffer(2, result.real.get_buffer());
@@ -11267,7 +11267,7 @@ CGrid CGrid::matrix_product(const CGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, other.real.get_buffer());
@@ -11350,7 +11350,7 @@ CGrid CGrid::Hadamard_product(const CGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, this->real.get_shape_buffer());
@@ -11434,7 +11434,7 @@ CGrid CGrid::operator/(const std::complex<float_t> complex_divisor) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, result.real.get_buffer());
@@ -11520,7 +11520,7 @@ CGrid CGrid::Hadamard_division(const CGrid& other) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, this->real.get_shape_buffer());
@@ -11600,7 +11600,7 @@ CGrid CGrid::pow(const float_t exponent_real, const float_t exponent_imag) const
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, result.real.get_buffer());
@@ -11694,7 +11694,7 @@ CGrid CGrid::pow(const NGrid& other_real, const NGrid& other_imag, bool other_is
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, this->real.get_shape_buffer());
@@ -11778,7 +11778,7 @@ CGrid CGrid::log(const float_t base_real, const float_t base_imag) const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, result.real.get_buffer());
@@ -11843,7 +11843,7 @@ CGrid CGrid::exp() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, result.real.get_buffer());
@@ -12001,7 +12001,7 @@ CGrid CGrid::convolution(const CGrid& kernel, const  uint32_t padding_amount, co
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, this->real.get_shape_buffer());
@@ -12082,7 +12082,7 @@ LUresultComplex CGrid::lu() const {
 	}
 
 	// define descriptor set
-	DescriptorSet& ds = main_task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = main_task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, result.L.real.get_buffer());
 	ds.bind_buffer(1, result.L.imag.get_buffer());
 	ds.bind_buffer(2, result.U.real.get_buffer());
@@ -12230,7 +12230,7 @@ CGrid CGrid::l_inverse() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, result.real.get_buffer());
@@ -12293,7 +12293,7 @@ CGrid CGrid::u_inverse() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, result.real.get_buffer());
@@ -12471,7 +12471,7 @@ NGrid CGrid::magnitude() const {
 	static ComputePipeline pipeline(manager->get_device(), shader, constants.get_size(), set_layout, workgroup_size_1d, 1, 1);
 
 	// add a descriptor set to the task (transient resource, owned by the task)
-	DescriptorSet& ds = task.add_descriptor_set(set_layout);
+	DescriptorSet& ds = task.make_descriptor_set(set_layout);
 	ds.bind_buffer(0, this->real.get_buffer());
 	ds.bind_buffer(1, this->imag.get_buffer());
 	ds.bind_buffer(2, result.get_buffer());
@@ -12620,7 +12620,7 @@ void CGrid::print(const std::string& comment, const int32_t precision, const boo
 	);
 
 	// define descriptor set
-	DescriptorSet& ds_real = task_real.add_descriptor_set(set_layout);
+	DescriptorSet& ds_real = task_real.make_descriptor_set(set_layout);
 	ds_real.bind_buffer(0, this->real.get_buffer());
 	ds_real.bind_buffer(1, required_digits.real.get_buffer());
 	ds_real.bind_buffer(2, make_scientific.real.get_buffer());
@@ -12659,7 +12659,7 @@ void CGrid::print(const std::string& comment, const int32_t precision, const boo
 		);
 
 		// define descriptor set
-		DescriptorSet& ds_imag = task_imag.add_descriptor_set(set_layout);
+		DescriptorSet& ds_imag = task_imag.make_descriptor_set(set_layout);
 		ds_imag.bind_buffer(0, this->imag.get_buffer());
 		ds_imag.bind_buffer(1, required_digits.imag.get_buffer());
 		ds_imag.bind_buffer(2, make_scientific.imag.get_buffer());

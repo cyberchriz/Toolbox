@@ -2,53 +2,47 @@
 #extension GL_ARB_separate_shader_objects : enable
 
 // Input vertex attributes from the Mesh class (must match the order: position, normal, tex_coord, color).
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec2 inTexCoord;
-layout(location = 3) in vec3 inColor;
+layout(location = 0) in vec3 in_position;
+layout(location = 1) in vec3 in_normal;
+layout(location = 2) in vec2 in_tex_coord;
+layout(location = 3) in vec3 in_color;
 
 // Output to the fragment shader. The locations must match.
-layout(location = 0) out vec3 fragPosition;
-layout(location = 1) out vec3 fragNormal;
-layout(location = 2) out vec3 fragColor;
-layout(location = 3) out vec3 fragViewDir;
-layout(location = 4) out vec2 fragTexCoord;
+layout(location = 0) out vec3 f_position;
+layout(location = 1) out vec3 f_normal;
+layout(location = 2) out vec3 f_color;
+layout(location = 3) out vec3 f_view_dir;
+layout(location = 4) out vec2 f_tex_coord;
 
 // Push constants for dynamic data like camera and model matrices.
-layout(push_constant) uniform PushConstants {
+layout(push_constant) uniform push_constants {
     mat4 model;
     mat4 view;
     mat4 projection;
+    vec4 camera_position;
     vec4 light_position;
-    vec4 view_position;
+    vec4 light_color;
     uint material_index;
-} pushConstants;
+};
 
 void main() {
-    // Transform the vertex position by the model, view, and projection matrices.
-    
-    vec4 worldPos = pushConstants.model * vec4(inPosition, 1.0);
-    gl_Position = pushConstants.projection * pushConstants.view * worldPos;
+    // Transform the vertex position by the model, view, and projection matrices
+    vec4 world_pos = model * vec4(in_position, 1.0);
+    gl_Position = projection * view * world_pos;
 
-    // Pass the vertex's position in world space to the fragment shader.
-    
-    fragPosition = vec3(worldPos);
+    // Pass the vertex's position in world space to the fragment shader
+    f_position = vec3(world_pos);
 
-    // Transform the normal by the model matrix to get it into world space.
-    // We use a mat3 to avoid any translation components.
-    
-    fragNormal = mat3(pushConstants.model) * inNormal;
+    // Transform the normal by the model matrix to get it into world space (using a mat3 to avoid any translation components)
+    f_normal = mat3(model) * in_normal;
 
     // Pass the vertex color directly.
-    fragColor = inColor;
+    f_color = in_color;
 
     // Calculate the view direction for specular lighting.
-    // This is the vector from the vertex to the camera's position.
-    // Since we don't have the camera position, we can calculate it from the view matrix.
-    // The inverse of the view matrix gives us the camera's world space coordinates in the last column.
+    f_view_dir = vec3(camera_position) - f_position;
 
-    mat4 inverseView = inverse(pushConstants.view);
-    vec3 cameraPos = vec3(inverseView[3]);
-    fragViewDir = cameraPos - fragPosition;
-    fragTexCoord = inTexCoord; // directly pass the texture coordinates to the fragment shader
+    // Pass the vertex UV coordinates to the fragment shader.
+    // VULKAN FIX: Flip the V-coordinate (Y-axis) to align with image loading conventions (top-left origin).
+    f_tex_coord = vec2(in_tex_coord.x, 1.0 - in_tex_coord.y);
 }

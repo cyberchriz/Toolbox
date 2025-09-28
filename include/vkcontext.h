@@ -7,6 +7,7 @@
 #define MAX_DESCRIPTOR_SET_COUNT 50 // max number of descriptor sets within the shared singleton descriptor pool
 #define TINYOBJLOADER_IMPLEMENTATION
 #define GLM_ENABLE_EXPERIMENTAL
+#define STB_IMAGE_IMPLEMENTATION
 
 // include headers
 #include <array>
@@ -28,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <third_party/stb_image.h>
 #include <third_party/tiny_obj_loader.h>
 #include <type_traits>
 #include <unordered_map>
@@ -118,61 +120,61 @@ std::vector<const char*> DEFAULT_DEVICE_EXTENSIONS = {
 
 // default enabled device features for the VulkanManager class
 VkPhysicalDeviceFeatures DEFAULT_DEVICE_FEATURES = {
-	VK_TRUE,   /* robustBufferAccess                       */
-	VK_FALSE,  /* fullDrawIndexUint32                      */
-	VK_FALSE,  /* imageCubeArray                           */
-	VK_FALSE,  /* independentBlend                         */
-	VK_FALSE,  /* geometryShader                           */
-	VK_FALSE,  /* tessellationShader                       */
-	VK_FALSE,  /* sampleRateShading                        */
-	VK_FALSE,  /* dualSrcBlend                             */
-	VK_FALSE,  /* logicOp                                  */
-	VK_FALSE,  /* multiDrawIndirect                        */
-	VK_FALSE,  /* drawIndirectFirstInstance                */
-	VK_FALSE,  /* depthClamp                               */
-	VK_FALSE,  /* depthBiasClamp                           */
-	VK_FALSE,  /* fillModeNonSolid                         */
-	VK_FALSE,  /* depthBounds                              */
-	VK_FALSE,  /* wideLines                                */
-	VK_FALSE,  /* largePoints                              */
-	VK_FALSE,  /* alphaToOne                               */
-	VK_FALSE,  /* multiViewport                            */
-	VK_FALSE,  /* samplerAnisotropy                        */
-	VK_FALSE,  /* textureCompressionETC2                   */
-	VK_FALSE,  /* textureCompressionASTC_LDR               */
-	VK_FALSE,  /* textureCompressionBC                     */
-	VK_FALSE,  /* occlusionQueryPrecise                    */
-	VK_FALSE,  /* pipelineStatisticsQuery                  */
-	VK_FALSE,  /* vertexPipelineStoresAndAtomics           */
-	VK_FALSE,  /* fragmentStoresAndAtomics                 */
-	VK_FALSE,  /* shaderTessellationAndGeometryPointSize   */
-	VK_FALSE,  /* shaderImageGatherExtended                */
-	VK_FALSE,  /* shaderStorageImageExtendedFormats        */
-	VK_FALSE,  /* shaderStorageImageMultisample            */
-	VK_FALSE,  /* shaderStorageImageReadWithoutFormat      */
-	VK_FALSE,  /* shaderStorageImageWriteWithoutFormat     */
-	VK_TRUE,   /* shaderUniformBufferArrayDynamicIndexing  */
-	VK_FALSE,  /* shaderSampledImageArrayDynamicIndexing   */
-	VK_TRUE,   /* shaderStorageBufferArrayDynamicIndexing  */
-	VK_FALSE,  /* shaderStorageImageArrayDynamicIndexing   */
-	VK_FALSE,  /* shaderClipDistance                       */
-	VK_FALSE,  /* shaderCullDistance                       */
-	VK_TRUE,   /* shaderFloat64                            */
-	VK_TRUE,   /* shaderInt64                              */
-	VK_TRUE,   /* shaderInt16                              */
-	VK_FALSE,  /* shaderResourceResidency                  */
-	VK_FALSE,  /* shaderResourceMinLod                     */
-	VK_TRUE,   /* sparseBinding                            */
-	VK_TRUE,   /* sparseResidencyBuffer                    */
-	VK_FALSE,  /* sparseResidencyImage2D                   */
-	VK_FALSE,  /* sparseResidencyImage3D                   */
-	VK_FALSE,  /* sparseResidency2Samples                  */
-	VK_FALSE,  /* sparseResidency4Samples                  */
-	VK_FALSE,  /* sparseResidency8Samples                  */
-	VK_FALSE,  /* sparseResidency16Samples                 */
-	VK_FALSE,  /* sparseResidencyAliased                   */
-	VK_FALSE,  /* variableMultisampleRate                  */
-	VK_FALSE   /* inheritedQueries                         */
+	VK_TRUE,    /* robustBufferAccess                               */
+	VK_FALSE,   /* fullDrawIndexUint32                              */
+	VK_FALSE,   /* imageCubeArray                                   */
+	VK_FALSE,   /* independentBlend                                 */
+	VK_TRUE,    /* geometryShader							        */
+	VK_TRUE,    /* tessellationShader                               */
+	VK_FALSE,   /* sampleRateShading                                */
+	VK_FALSE,   /* dualSrcBlend                                     */
+	VK_FALSE,   /* logicOp                                          */
+	VK_FALSE,   /* multiDrawIndirect                                */
+	VK_FALSE,   /* drawIndirectFirstInstance                        */
+	VK_TRUE,    /* depthClamp								        */
+	VK_FALSE,   /* depthBiasClamp                                   */
+	VK_TRUE,    /* fillModeNonSolid							        */
+	VK_FALSE,   /* depthBounds                                      */
+	VK_FALSE,   /* wideLines                                        */
+	VK_FALSE,   /* largePoints                                      */
+	VK_FALSE,   /* alphaToOne                                       */
+	VK_FALSE,   /* multiViewport                                    */
+	VK_TRUE,    /* samplerAnisotropy						        */
+	VK_FALSE,   /* textureCompressionETC2                           */
+	VK_FALSE,   /* textureCompressionASTC_LDR                       */
+	VK_FALSE,   /* textureCompressionBC                             */
+	VK_FALSE,   /* occlusionQueryPrecise                            */
+	VK_FALSE,   /* pipelineStatisticsQuery                          */
+	VK_FALSE,   /* vertexPipelineStoresAndAtomics                   */
+	VK_FALSE,   /* fragmentStoresAndAtomics                         */
+	VK_FALSE,   /* shaderTessellationAndGeometryPointSize           */
+	VK_FALSE,   /* shaderImageGatherExtended                        */
+	VK_FALSE,   /* shaderStorageImageExtendedFormats                */
+	VK_FALSE,   /* shaderStorageImageMultisample                    */
+	VK_FALSE,   /* shaderStorageImageReadWithoutFormat              */
+	VK_FALSE,   /* shaderStorageImageWriteWithoutFormat             */
+	VK_TRUE,    /* shaderUniformBufferArrayDynamicIndexing          */
+	VK_FALSE,   /* shaderSampledImageArrayDynamicIndexing           */
+	VK_TRUE,    /* shaderStorageBufferArrayDynamicIndexing          */
+	VK_FALSE,   /* shaderStorageImageArrayDynamicIndexing           */
+	VK_TRUE,    /* shaderClipDistance						        */
+	VK_FALSE,   /* shaderCullDistance                               */
+	VK_TRUE,    /* shaderFloat64                                    */
+	VK_TRUE,    /* shaderInt64                                      */
+	VK_TRUE,    /* shaderInt16                                      */
+	VK_FALSE,   /* shaderResourceResidency                          */
+	VK_FALSE,   /* shaderResourceMinLod                             */
+	VK_TRUE,    /* sparseBinding                                    */
+	VK_TRUE,    /* sparseResidencyBuffer                            */
+	VK_FALSE,   /* sparseResidencyImage2D                           */
+	VK_FALSE,   /* sparseResidencyImage3D                           */
+	VK_FALSE,   /* sparseResidency2Samples                          */
+	VK_FALSE,   /* sparseResidency4Samples                          */
+	VK_FALSE,   /* sparseResidency8Samples                          */
+	VK_FALSE,   /* sparseResidency16Samples                         */
+	VK_FALSE,   /* sparseResidencyAliased                           */
+	VK_FALSE,   /* variableMultisampleRate                          */
+	VK_FALSE    /* inheritedQueries                                 */
 };
 
 // default pool size per descriptor type (used by the VulkanManager class)
@@ -451,6 +453,7 @@ protected:
 // +=================================+
 class Image {
 	friend class ImageView;
+	friend class Swapchain;
 public:
 	Image() = delete;
 	Image(
@@ -464,6 +467,13 @@ public:
 		VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL,
 		VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 		VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED
+	);
+	// constructor for wrapping an existing VkImage into a custom instance
+	// (e.g. useful to wrap images created by the swapchain constructor)
+	Image(
+		Device& device,
+		VkImage& other_image,
 		VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED
 	);
 
@@ -500,6 +510,7 @@ protected:
 	VkFormat format = VK_FORMAT_UNDEFINED;
 	VkExtent3D extent = {};
 	VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED; // Track current layout
+	bool vkimage_owned_by_instance = false;
 };
 
 // +=================================+   
@@ -1171,7 +1182,7 @@ public:
 	Mesh() = delete;
 
 	// parametric constructor
-	Mesh(Device& device, const std::string& obj_relative_path, Semaphore* semaphore = nullptr);
+	Mesh(Device& device, const std::string& relative_path, Semaphore* semaphore = nullptr);
 
 	// destructor
 	~Mesh();
@@ -1226,6 +1237,11 @@ public:
 	void set_rotation(const glm::vec3& rotation);
 	void set_scale(const glm::vec3& scale);
 
+	void translate(const glm::vec3& position_delta);
+	void rotate(const glm::vec3& rotation_delta);
+	void scale_add(const glm::vec3& scale_delta);
+	void scale_factor(const glm::vec3& scale_multiplier);
+
 	// Public getter method for the mesh.
 	Mesh& get_mesh() const;
 
@@ -1252,12 +1268,14 @@ public:
 	// Constructor with scalar values
 	Camera(float pos_x, float pos_y, float pos_z, float up_x, float up_y, float up_z, float camera_yaw, float camera_pitch);
 
-	// Getters for matrices
+	// Getters
 	glm::mat4 get_view_matrix();
 	glm::mat4 get_projection_matrix();
+	glm::vec3 get_position() const;
 
 	// Setters for camera attributes
-	void set_position(const glm::vec3& new_position);
+	glm::vec3 set_position(const glm::vec3& new_position);
+	glm::vec3 translate(const glm::vec3& delta);
 	void set_world_up(const glm::vec3& new_world_up);
 	void set_yaw(float new_yaw);
 	void set_pitch(float new_pitch);
@@ -1296,9 +1314,48 @@ private:
 	float far_plane;
 };
 
+// +=================================+   
+// | Light                           |
+// +=================================+
+
+// Wrapper class for managing light source properties (position, color and type)
+// The light's position is a glm::vec4 where the 'w' component distinguishes between a positional light (w=1.0f) and a directional light (w=0.0f)
+class Light {
+public:
+	Light(glm::vec4 position, glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f));
+	void translate(const glm::vec3& translation);
+	void set_position(const glm::vec4& new_position);
+	void set_color(const glm::vec3& new_color);
+	const glm::vec4& get_position() const;
+	const glm::vec3& get_color() const;
+
+private:
+	glm::vec4 position;
+	glm::vec3 color;
+};
 
 // +=================================+   
-// | Sample                          |
+// | Light                           |
+// +=================================+
+class View {
+public:
+	// constructor; the position of the view as a glm::vec4 with w=1.0f.
+	View(glm::vec4 position);
+
+	void translate(const glm::vec3& translation);
+
+	// set new_position as a glm::vec4 with w=1.0f.
+	void set_position(const glm::vec4& new_position);
+
+	// return the position of the view as a const glm::vec4 reference
+	const glm::vec4& get_position() const;
+
+private:
+	glm::vec4 position;
+};
+
+// +=================================+   
+// | Sampler                         |
 // +=================================+
 
 // Sampler class for texture sampling
@@ -1314,8 +1371,7 @@ public:
 		VkFilter minFilter = VK_FILTER_LINEAR,
 		VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT,
 		VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-		VkBool32 anisotropyEnable = VK_TRUE,
-		float maxAnisotropy = 16.0f
+		float_t max_anisotropy_level = 16.0f // 0.0f: disabled
 	);
 
 	// destructor
@@ -1329,6 +1385,32 @@ protected:
 	VkSampler sampler = nullptr;
 	VkDevice logical = VK_NULL_HANDLE;
 	VkSamplerCreateInfo sampler_create_info = {};
+};
+
+// +=================================+   
+// | Texture                         |
+// +=================================+
+class Texture {
+public:
+	// Parametric constructor
+	Texture(Device& device, const std::string& filepath, VkFormat format, Semaphore* tl_semaphore);
+
+	// Destructor
+	~Texture();
+
+	// Getters
+	const ImageView& get_image_view() const;
+	const Sampler& get_sampler() const;
+	const Image& get_image() const;
+
+private:
+	Device* device = nullptr;
+	std::unique_ptr<Image> image = nullptr;
+	std::unique_ptr<ImageView> image_view = nullptr;
+	std::unique_ptr<Sampler> sampler = nullptr;
+
+	// Internal helper for Vulkan resource creation
+	void create_image_and_view(const std::string& relative_filepath, VkFormat format, Semaphore* tl_semaphore);
 };
 
 // +=================================+   
@@ -1513,16 +1595,16 @@ public:
 	// destructor
 	~Swapchain();
 
-	uint32_t acquire_next_image(const Semaphore& image_available_semaphore, const std::optional<Fence>& fence = NULLOPT, uint64_t timeout = UINT64_MAX);
+	uint32_t acquire_next_image(Semaphore& image_available_binary_semaphore, const std::optional<Fence>& fence = NULLOPT, uint64_t timeout = UINT64_MAX);
 
 	// present the rendered image to the graphics queue (method overload without semaphores)
 	VkResult present_rendered_image();
 
 	// present the rendered image to the graphics queue (method overload with single semaphore)
-	VkResult present_rendered_image(const Semaphore& wait_semaphore);
+	VkResult present_rendered_image(Semaphore& binary_wait_semaphore);
 
 	// present the rendered image to the graphics queue (method overload with multiple semaphores)
-	VkResult present_rendered_image(const std::vector<Semaphore>& wait_semaphores);
+	VkResult present_rendered_image(std::vector<Semaphore>& binary_wait_semaphores);
 
 	void recreate();
 
@@ -1531,21 +1613,21 @@ public:
 	uint32_t get_height() const;
 	VkExtent2D get_extent() const;
 	VkSwapchainKHR get() const;
-	VkImage get_current_image() const;
+	Image& get_current_image();
 	uint32_t get_current_image_index() const;
 	uint32_t get_image_count() const;
 	VkSurfaceFormatKHR get_surface_format() const;
-	VkImageView get_color_image_view(uint32_t index) const;
-	VkImageView get_framebuffer_image_view(uint32_t index) const;
+	ImageView& get_color_image_view(uint32_t index);
+	ImageView& get_framebuffer_image_view(uint32_t index);
 	VkFramebuffer get_framebuffer(uint32_t index) const;
-	VkImage get_image(uint32_t index) const;
+	Image& get_image(uint32_t index);
 
 protected:
 	void destroy();
 	uint32_t num_images = 0;
-	std::vector<VkImage> image;
-	std::vector<VkImageView> color_image_views;
-	std::vector<VkImageView> framebuffer_image_views;
+	std::vector<Image> images;
+	std::vector<ImageView> color_image_views;
+	std::vector<ImageView> framebuffer_image_views;
 	std::vector<VkFramebuffer> framebuffer;
 	VkSwapchainKHR swapchain = VK_NULL_HANDLE;
 	VkSurfaceCapabilitiesKHR surface_capabilities;
@@ -1651,7 +1733,7 @@ public:
 	);
 
 	// binds a sampler
-	void bind_sampler(uint32_t binding_index, const Sampler& sampler, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL);
+	void bind_texture(uint32_t binding_index, const Texture& texture, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL);
 
 	// binds a storage image
 	void bind_storage_image(
@@ -1918,6 +2000,9 @@ public:
 	template<typename T>
 	void copy_buffer(const Buffer<T>& src_buffer, Buffer<T>& dst_buffer, uint64_t size_bytes = UINT64_MAX, uint64_t src_offset_bytes = 0, uint64_t dst_offset_bytes = 0);
 
+	template<typename T>
+	void copy_buffer_to_image(const Buffer<T>& src_buffer, Image& dst_image);
+
 	void add_device_memory_barrier(
 		VkPipelineStageFlags2 source_stage_flags,
 		VkAccessFlags2 source_access_flags,
@@ -1973,6 +2058,12 @@ public:
 	void draw(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) const;
 	void draw_indexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) const;
 
+	// dynamic viewport
+	void set_viewport(float x_pos, float y_pos, float width, float height, float min_depth = 0.0f, float max_depth = 1.0f);
+
+	// dynamic scissor
+	void set_scissor(const VkOffset2D& offset, const VkExtent2D& extent);
+
 	// command buffer state control
 	void dispatch(const ComputePipeline& pipeline, uint32_t global_size_x, uint32_t global_size_y = 1, uint32_t global_size_z = 1) const; // dispatch for compute
 	void begin_render(VkOffset2D offset, VkExtent2D extent, VkRenderingFlags flags, std::vector<VkRenderingAttachmentInfo>& color_attachments, VkRenderingAttachmentInfo& depth_attachment, VkRenderingAttachmentInfo& stencil_attachment) const;
@@ -1996,6 +2087,8 @@ private:
 	VkQueue queue = nullptr;
 	VkRenderingInfo rendering_info = {};
 	VkCommandPool pool = VK_NULL_HANDLE;
+	std::unique_ptr<VkViewport> viewport = nullptr;
+	std::unique_ptr<VkRect2D> scissor = nullptr;
 	std::vector<VkMemoryBarrier2> device_memory_barriers;
 	std::vector<VkBufferMemoryBarrier2> buffer_memory_barriers;
 	std::vector<VkImageMemoryBarrier2> image_memory_barriers;
@@ -2024,7 +2117,7 @@ public:
 
 	// create temporary buffers (=which can be deleted after task execution has finished);
 	// returns a reference to the new Buffer<T> object
-	template<typename T> Buffer<T>& add_temp_buffer(
+	template<typename T> Buffer<T>& make_temp_buffer(
 		uint32_t elements,
 		BufferType usage = BufferType::STORAGE_BUFFER,
 		VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
@@ -2036,20 +2129,20 @@ public:
 	// if a layout already exists, it will be replaced and a warning is issued;
 	// if you need multiple layouts, please create them externally and provide them to the task using Task::add_descriptor_set(DescriptorSetLayout&);
 	// also keep in mind that a descriptor set layout owned by the task is no longer valid beyond the lifetime of the task!
-	DescriptorSetLayout& add_descriptor_set_layout();
+	DescriptorSetLayout& make_descriptor_set_layout();
 
 	// add a descriptor set for the set layout owned by this compute task
-	DescriptorSet& add_descriptor_set();
+	DescriptorSet& make_descriptor_set();
 
 	// add a descriptor set for the referenced (=externally owned) set layout
-	DescriptorSet& add_descriptor_set(DescriptorSetLayout& descriptor_set_layout);
+	DescriptorSet& make_descriptor_set(DescriptorSetLayout& descriptor_set_layout);
 
 	// add a compute shader module from SPIR-V binary data and returns its ID within this task
-	uint32_t add_shader(const unsigned char* compute_shader_spirv_bin, size_t compute_shader_spirv_bytes);
+	uint32_t make_shader(const unsigned char* compute_shader_spirv_bin, size_t compute_shader_spirv_bytes);
 
 	template<typename ...Args> PushConstants& add_constants(Args... args);
 
-	ComputePipeline& add_pipeline(
+	ComputePipeline& make_pipeline(
 		uint32_t shader_id,
 		uint32_t push_constants_range_size,
 		DescriptorSetLayout& set_layout,
@@ -2059,7 +2152,7 @@ public:
 		std::vector<uint32_t> addon_specialization_constants = {}
 	);
 
-	ComputePipeline& add_pipeline(
+	ComputePipeline& make_pipeline(
 		uint32_t shader_id,
 		DescriptorSetLayout& set_layout,
 		uint32_t workgroup_size_x,
@@ -2068,7 +2161,7 @@ public:
 		std::vector<uint32_t> addon_specialization_constants = {}
 	);
 
-	ComputePipeline& add_pipeline(
+	ComputePipeline& make_pipeline(
 		uint32_t shader_id,
 		uint32_t push_constants_range_size,
 		uint32_t workgroup_size_x,
@@ -2077,7 +2170,7 @@ public:
 		std::vector<uint32_t> addon_specialization_constants = {}
 	);
 
-	ComputePipeline& add_pipeline(
+	ComputePipeline& make_pipeline(
 		uint32_t shader_id,
 		uint32_t workgroup_size_x,
 		uint32_t workgroup_size_y = 1,
@@ -2085,7 +2178,7 @@ public:
 		std::vector<uint32_t> addon_specialization_constants = {}
 	);
 
-	GraphicsPipeline& add_pipeline(
+	GraphicsPipeline& make_pipeline(
 		const RenderPass& renderpass,
 		uint32_t subpass_index,
 		const GraphicsPipelineLayout& pipeline_layout,
@@ -2101,7 +2194,7 @@ public:
 
 	// creates and adds a temporary timeline semaphore owned by this task;
 	// this resource can then be used as a wait or signal semaphore
-	Semaphore& add_temp_timeline_semaphore(
+	Semaphore& make_temp_timeline_semaphore(
 		uint64_t initial_value = 0,
 		VkPipelineStageFlagBits2 wait_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
 		VkPipelineStageFlagBits2 signal_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
@@ -2109,7 +2202,7 @@ public:
 
 	// creates and adds a temporary binary semaphore owned by this task;
 	// this resource can then be used as a wait or signal semaphore
-	Semaphore& add_temp_binary_semaphore(
+	Semaphore& make_temp_binary_semaphore(
 		VkPipelineStageFlagBits2 wait_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
 		VkPipelineStageFlagBits2 signal_dst_stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
 	);
@@ -2117,19 +2210,19 @@ public:
 	// adds a reference to a binary wait semaphore (which will be used during the submit call);
 	// used to add externally owned semaphores (i.e. not owned by this task);
 	// returns the total number of binary wait semaphores which are currently observed by this task
-	uint32_t add_binary_wait_semaphore(Semaphore& semaphore);
+	uint32_t wait_binary_semaphore(Semaphore& semaphore);
 
 	// adds a reference to a binary signal semaphore (which will be used during the submit call);
 	// used to add externally owned semaphores (i.e. not owned by this task);
 	// returns the total number of signal semaphores which are currently affected by this task
-	uint32_t add_binary_signal_semaphore(Semaphore& semaphore);
+	uint32_t signal_binary_semaphore(Semaphore& semaphore);
 
 	// adds a single binary semaphore which functions as a wait semaphore at the beginning of the command buffer execution,
 	// then finally it changes back to the signaled state at the end of execution;
 	// the semaphore MUST be expected to initially reach the signaled state (or already be in the signaled state),
 	// otherwise a deadlock will occur (waiting for the signaled state indefinitely) !!!
 	// the function expects a reference to an externally owned binary semaphore (i.e. not owned by this task)
-	void binary_wait_and_signal(Semaphore& semaphore);
+	void wait_and_signal_binary_semaphore(Semaphore& semaphore);
 
 	// adds a single timeline semaphore which functions as a wait semaphore at the beginning of the command buffer execution,
 	// then it signals the specified signal_value at the end of execution;
@@ -2144,12 +2237,14 @@ public:
 	// adds a reference to a timeline wait semaphore (which will be used during the submit call);
 	// used to add externally owned semaphores (i.e. not owned by this task);
 	// returns the total number of timeline wait semaphores which are currently observed by this task
-	uint32_t add_timeline_wait_semaphore(Semaphore& semaphore, uint64_t wait_value);
+	uint32_t wait_timeline_semaphore(Semaphore& semaphore, uint64_t wait_value);
 
 	// adds a reference to a timeline signal semaphore (which will be used during the submit call);
 	// used to add externally owned semaphores (i.e. not owned by this task);
 	// returns the total number of timeline signal semaphores which are currently affected by this task
-	uint32_t add_timeline_signal_semaphore(Semaphore& semaphore, uint64_t signal_value);
+	uint32_t signal_timeline_semaphore(Semaphore& semaphore, uint64_t signal_value);
+
+	void clear_semaphore_list();
 
 	// reset task (delete all previous resources);
 	// returns false if the task is protected or still busy
@@ -2179,6 +2274,7 @@ private:
 	std::vector<std::unique_ptr<GraphicsPipeline>> graphics_pipelines;
 	std::vector<std::unique_ptr<ShaderModule>> shaders;
 	std::vector<std::variant<
+		std::unique_ptr<Buffer<char8_t>>,
 		std::unique_ptr<Buffer<float_t>>,
 		std::unique_ptr<Buffer<double_t>>,
 		std::unique_ptr<Buffer<int8_t>>,
@@ -2276,7 +2372,11 @@ private:
 	static std::vector<std::unique_ptr<Task>> tasks;
 	static std::vector<std::unique_ptr<Semaphore>> timeline_semaphores;
 	static std::unique_ptr<Surface> surface;
+#ifdef _WIN32
 	static GLFWwindow* glfw_window;
+#elif defined(__ANDROID__)
+	static ANativeWindow* android_window;
+#endif
 
 	VulkanManager(); // private constructor
 };
@@ -2867,7 +2967,7 @@ Image::Image(
 	VkImageUsageFlags usage,
 	VkMemoryPropertyFlags memory_properties,
 	VkImageLayout initial_layout
-) : logical(device.get_logical()), format(format), extent(extent), layout(initial_layout) {
+) : logical(device.get_logical()), format(format), extent(extent), layout(initial_layout), vkimage_owned_by_instance(true) {
 
 	VkImageCreateInfo image_info{};
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -2920,6 +3020,13 @@ Image::Image(
 	Log::debug("in constructor Image::Image(...): image created successfully (handle: ", image, ")");
 }
 
+Image::Image(Device& device, VkImage& other_image, VkImageLayout initial_layout) :
+	logical(device.get_logical()),
+	image(other_image),
+	layout(initial_layout),
+	vkimage_owned_by_instance(false) {
+}
+
 // move constructor
 Image::Image(Image&& other) noexcept :
 	logical(std::exchange(other.logical, VK_NULL_HANDLE)),
@@ -2954,21 +3061,30 @@ VkImage Image::get() const { return image; }
 VkFormat Image::get_format() const { return format; }
 VkExtent3D Image::get_extent() const { return extent; }
 VkImageLayout Image::get_layout() const { return layout; }
-VkDeviceMemory Image::get_memory() const { return memory; }
+
+VkDeviceMemory Image::get_memory() const {
+	if (!vkimage_owned_by_instance) {
+		Log::warning("Invalid usage of Image::get_memory(): the underlying VkImage isn't owned by this Image instance; the corresponding memory region is opaque.");
+		return VkDeviceMemory(VK_NULL_HANDLE);
+	}
+	return memory;
+}
 
 // setters
 void Image::set_layout(VkImageLayout new_layout) { layout = new_layout; }
 
 // helper method for releasing resources
 void Image::destroy() {
-	if (memory != VK_NULL_HANDLE) {
-		vkFreeMemory(logical, memory, nullptr);
-		memory = VK_NULL_HANDLE;
-	}
-	if (image != VK_NULL_HANDLE) {
-		Log::info("Destroying image (handle: ", image, ")");
-		vkDestroyImage(logical, image, nullptr);
-		image = VK_NULL_HANDLE;
+	if (this->vkimage_owned_by_instance) {
+		if (memory != VK_NULL_HANDLE) {
+			vkFreeMemory(logical, memory, nullptr);
+			memory = VK_NULL_HANDLE;
+		}
+		if (image != VK_NULL_HANDLE) {
+			Log::info("Destroying image (handle: ", image, ")");
+			vkDestroyImage(logical, image, nullptr);
+			image = VK_NULL_HANDLE;
+		}
 	}
 }
 
@@ -3588,6 +3704,7 @@ VkResult Fence::reset(std::string caller_function) const {
 VkResult Fence::wait(std::string caller_function, uint64_t timeout_nanosec) const {
 	VkResult result = vkWaitForFences(logical, 1, &fence, VK_TRUE, timeout_nanosec);
 	if (result == VK_SUCCESS) {
+		Log::debug("Fence::wait(): success! Caller function: ", caller_function, ", Fence wrapper: ", this, ", VkFence Vulkan handle: ", fence, ", max timeout value : ", timeout_nanosec, " nanosec");
 		return result; // Fence is signaled
 	}
 	else if (result == VK_TIMEOUT) {
@@ -3627,7 +3744,9 @@ Semaphore::Semaphore(const Device& device, VkPipelineStageFlagBits2 wait_dst_sta
 	if (result != VK_SUCCESS) {
 		Log::warning("Semaphore constructor (for binary semaphore) has failed with VkResult = ", result, ", ", vkresult_to_string(result));
 	}
-
+	else {
+		Log::debug("Semaphore constructor: created binary semaphore ", semaphore);
+	}
 }
 
 // Constructor for a timeline semaphore
@@ -3652,10 +3771,14 @@ Semaphore::Semaphore(const Device& device, uint64_t initial_value, VkPipelineSta
 	if (result != VK_SUCCESS) {
 		Log::warning("Semaphore constructor (for timeline semaphore) has failed with VkResult = ", result, ", ", vkresult_to_string(result));
 	}
+	else {
+		Log::debug("Semaphore constructor: created timeline semaphore ", semaphore);
+	}
 }
 
 // destructor
 Semaphore::~Semaphore() {
+	Log::debug("Semaphore destructor: destroying semaphore ", semaphore);
 	vkDestroySemaphore(logical, semaphore, nullptr);
 	semaphore = VK_NULL_HANDLE;
 }
@@ -4655,14 +4778,14 @@ bool Vertex::operator==(const Vertex& other) const {
 // +=================================+
 
 // parametric constructor
-Mesh::Mesh(Device& device, const std::string& obj_relative_path, Semaphore* timeline_semaphore) : device(device) {
+Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore* timeline_semaphore) : device(device) {
 
 	// Dynamically construct the full absolute path to the OBJ file.
 	// This assumes the `obj_filename` argument is a path relative to the executable's directory.
 	std::filesystem::path project_root = get_executable_directory() / "..";
 
 	// Construct the full path to the OBJ file from the project root.
-	std::filesystem::path full_obj_path = project_root / obj_relative_path;
+	std::filesystem::path full_obj_path = project_root / relative_path;
 
 	// Get the directory of the OBJ file to use as the material search path.
 	std::string mtl_path = full_obj_path.parent_path().string();
@@ -4819,9 +4942,9 @@ Mesh::Mesh(Device& device, const std::string& obj_relative_path, Semaphore* time
 
 	// write vertex, index and material data to staging buffers (owned by the task to ensure their lifetime exceeds this local scope)
 	Log::info("Loading mesh with ", this->vertex_count, " vertices and ", this->index_count, " indices (write to staging buffer, then transfer to device_local memory).");
-	auto& vertex_staging_buffer = task.add_temp_buffer<Vertex>(vertex_count, VERTEX_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	auto& index_staging_buffer = task.add_temp_buffer<uint32_t>(index_count, INDEX_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	auto& material_staging_buffer = task.add_temp_buffer<MaterialStd430>(material_count, STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	auto& vertex_staging_buffer = task.make_temp_buffer<Vertex>(vertex_count, VERTEX_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	auto& index_staging_buffer = task.make_temp_buffer<uint32_t>(index_count, INDEX_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	auto& material_staging_buffer = task.make_temp_buffer<MaterialStd430>(material_count, STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	vertex_staging_buffer.write(vertices);
 	index_staging_buffer.write(indices);
 	material_staging_buffer.write(materials_std430);
@@ -4887,6 +5010,11 @@ void Entity::set_position(const glm::vec3& position) { this->position = position
 void Entity::set_rotation(const glm::vec3& rotation) { this->rotation = rotation; }
 void Entity::set_scale(const glm::vec3& scale) { this->scale = scale; }
 
+void Entity::translate(const glm::vec3& position_delta) { this->position += position_delta; }
+void Entity::rotate(const glm::vec3& rotation_delta) { this->rotation += rotation_delta; }
+void Entity::scale_add(const glm::vec3& scale_delta) { this->scale += scale_delta; }
+void Entity::scale_factor(const glm::vec3& scale_multiplier) { this->scale *= scale_multiplier; }
+
 // Public getter method for the mesh.
 Mesh& Entity::get_mesh() const { return *mesh; }
 
@@ -4942,12 +5070,34 @@ glm::mat4 Camera::get_view_matrix() {
 
 // Returns the projection matrix
 glm::mat4 Camera::get_projection_matrix() {
-	return glm::perspective(glm::radians(fov), aspect_ratio, near_plane, far_plane);
+	glm::mat4 projection = glm::perspective(glm::radians(fov), aspect_ratio, near_plane, far_plane);
+
+	// VULKAN FIX 1: Flip the Y-axis of the projection matrix (not necessary for OpenGL)
+	projection[1][1] *= -1;
+
+	// VULKAN FIX 2: Manually correct the Z-depth range from [-1, 1] to [0, 1]
+	// The two matrix cells responsible for the Z-coordinate transformation (index 2)
+	projection[2][2] *= 0.5f; // Scales the depth by 0.5
+	projection[2][3] += projection[2][2]; // Shifts the depth by 0.5
+
+	return projection;
+}
+
+// return the current camera position
+glm::vec3 Camera::get_position() const {
+	return position;
 }
 
 // Sets the camera's position.
-void Camera::set_position(const glm::vec3& new_position) {
+glm::vec3 Camera::set_position(const glm::vec3& new_position) {
 	position = new_position;
+	return position;
+}
+
+// translate the camera's position by the specified delta
+glm::vec3 Camera::translate(const glm::vec3& delta) {
+	position += delta;
+	return position;
 }
 
 // Sets the world up vector.
@@ -5048,6 +5198,47 @@ void Camera::process_mouse_scroll(float y_offset) {
 }
 
 // +=================================+   
+// | Light                           |
+// +=================================+
+
+Light::Light(glm::vec4 position, glm::vec3 color)
+	: position(position), color(color) {
+}
+
+void Light::translate(const glm::vec3& translation) {
+	// Only translate if it's a positional light (w=1.0f)
+	if (position.w > 0.5f) {
+		position.x += translation.x;
+		position.y += translation.y;
+		position.z += translation.z;
+	}
+}
+
+// setters
+void Light::set_position(const glm::vec4& new_position) { position = new_position; }
+void Light::set_color(const glm::vec3& new_color) { color = new_color; }
+
+// getters
+const glm::vec4& Light::get_position() const { return position; }
+const glm::vec3& Light::get_color() const { return color; }
+
+// +=================================+   
+// | Light                           |
+// +=================================+
+
+View::View(glm::vec4 position) : position(position) {}
+
+void View::translate(const glm::vec3& translation) {
+	position.x += translation.x;
+	position.y += translation.y;
+	position.z += translation.z;
+}
+
+void View::set_position(const glm::vec4& new_position) { position = new_position; }
+
+const glm::vec4& View::get_position() const { return position; }
+
+// +=================================+   
 // | Sampler                         |
 // +=================================+
 
@@ -5060,8 +5251,7 @@ Sampler::Sampler(
 	VkFilter minFilter,
 	VkSamplerAddressMode addressMode,
 	VkSamplerMipmapMode mipmapMode,
-	VkBool32 anisotropyEnable,
-	float maxAnisotropy
+	float_t max_anisotropy_level
 ) : logical(device.get_logical()) {
 	sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 	sampler_create_info.pNext = nullptr;
@@ -5070,8 +5260,8 @@ Sampler::Sampler(
 	sampler_create_info.addressModeU = addressMode;
 	sampler_create_info.addressModeV = addressMode;
 	sampler_create_info.addressModeW = addressMode;
-	sampler_create_info.anisotropyEnable = anisotropyEnable;
-	sampler_create_info.maxAnisotropy = maxAnisotropy;
+	sampler_create_info.anisotropyEnable = max_anisotropy_level > 0.0f;
+	sampler_create_info.maxAnisotropy = max_anisotropy_level;
 	sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 	sampler_create_info.unnormalizedCoordinates = VK_FALSE;
 	sampler_create_info.compareEnable = VK_FALSE;
@@ -5095,6 +5285,99 @@ Sampler::~Sampler() {
 // getters
 const VkSampler Sampler::get() const { return sampler; }
 const VkSampler* Sampler::get_ptr() const { return &sampler; }
+
+// +=================================+   
+// | Texture                         |
+// +=================================+
+
+// Constructor
+Texture::Texture(Device& device, const std::string& filepath, VkFormat format, Semaphore* tl_semaphore)
+	: device(&device) {
+
+	// Initialize Sampler with default settings
+	sampler = std::make_unique<Sampler>(
+		device,
+		VK_FILTER_LINEAR,					// min filter
+		VK_FILTER_LINEAR,					// max filter
+		VK_SAMPLER_ADDRESS_MODE_REPEAT,		// sampler address mode
+		VK_SAMPLER_MIPMAP_MODE_LINEAR,		// sampler minmap mode
+		16.0f								// max anisotropy level
+	);
+
+	// Create Vulkan Image and ImageView
+	create_image_and_view(filepath, format, tl_semaphore);
+}
+
+// Destructor
+Texture::~Texture() {}
+
+// Helper function to load raw data, create staging buffer, and upload to GPU image
+void Texture::create_image_and_view(const std::string& relative_filepath, VkFormat format, Semaphore* tl_semaphore) {
+
+	std::filesystem::path project_root = get_executable_directory() / "..";
+	std::filesystem::path full_filepath = project_root / relative_filepath;
+	std::string full_filepath_str = full_filepath.string();
+
+	int tex_width, tex_height, tex_channels;
+
+	// STB_image loads images upside down for Vulkan, so flip vertically.
+	stbi_set_flip_vertically_on_load(true);
+	stbi_uc* pixels = stbi_load(full_filepath_str.c_str(), &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
+
+	if (!pixels) { Log::error("failed to load texture image: ", full_filepath, ". Reason: ", stbi_failure_reason()); }
+
+	this->image = std::make_unique<Image>(
+		*device,
+		VK_IMAGE_TYPE_2D,
+		format,
+		VkExtent3D(tex_width, tex_height, 1),
+		1u, // mip levels
+		1u, // array layers
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED
+	);
+
+	Log::debug("loaded texture: ", full_filepath, " (", tex_width, "x", tex_height, " pixels)");
+
+	// copy pixel data to device local memory (via staging buffer)
+	VulkanManager& manager = VulkanManager::get_singleton();
+	Task& task = manager.get_graphics_task();
+	CommandBuffer& cb = task.get_command_buffer();
+	uint32_t pixel_count = tex_width * tex_height;
+	size_t pixel_size_bytes = 4; // 4 Bytes/Pixel for STBI_rgb_alpha); TODO: adjust required size for other formats
+	VkDeviceSize image_size = pixel_count * pixel_size_bytes;
+	Buffer<uint32_t>& staging_buffer = task.make_temp_buffer<uint32_t>(pixel_count, TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	void* data;
+	vkMapMemory(device->get_logical(), staging_buffer.get_memory(), 0, image_size, 0, &data);
+	memcpy(data, pixels, static_cast<size_t>(image_size));
+	vkUnmapMemory(device->get_logical(), staging_buffer.get_memory());
+	stbi_image_free(pixels); // Free CPU copy
+	cb.begin_recording();
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+	cb.transition_image_layout(*image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	cb.copy_buffer_to_image(staging_buffer, *image);
+	cb.transition_image_layout(*image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	cb.end_recording();
+	task.timeline_sync(*tl_semaphore);
+	task.submit();
+
+	// create image view
+	image_view = std::make_unique<ImageView>(
+		*device,
+		*image,
+		VK_IMAGE_VIEW_TYPE_2D,
+		VK_IMAGE_ASPECT_COLOR_BIT
+	);
+	// vkQueueWaitIdle(manager.get_device().get_graphics_queue());
+}
+
+// Getters
+const ImageView& Texture::get_image_view() const { return *image_view; }
+const Sampler& Texture::get_sampler() const { return *sampler; }
+const Image& Texture::get_image() const { return *image; }
 
 // +=================================+   
 // | DescriptorSetLayout             |
@@ -5502,29 +5785,24 @@ Swapchain::Swapchain(
 		Log::debug("Swapchain created successfully.");
 	}
 
-	// get images
+	// get swapchain image handles
 	vkGetSwapchainImagesKHR(logical, swapchain, &num_images, nullptr);
-	image.resize(num_images);
-	vkGetSwapchainImagesKHR(logical, swapchain, &num_images, image.data());
+	std::vector<VkImage> image_handles(num_images); // only valid within local scope
+	vkGetSwapchainImagesKHR(logical, swapchain, &num_images, image_handles.data());
+
+	// create custom image objects from handles
+	images.reserve(num_images);
+	for (uint32_t i = 0; i < num_images; i++) {
+		images.emplace_back(device, image_handles[i]);
+		images[i].extent = { extent.width, extent.height, 1u };
+		images[i].format = surface_format.format;
+		images[i].layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	}
 
 	// create image views for Swapchain images
-	color_image_views.resize(num_images);
+	color_image_views.reserve(num_images);
 	for (uint32_t i = 0; i < num_images; i++) {
-		VkImageViewCreateInfo view_info = {};
-		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		view_info.image = image[i];
-		view_info.viewType = view_type;
-		view_info.format = surface_format.format;
-		view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		view_info.subresourceRange.baseMipLevel = 0;
-		view_info.subresourceRange.levelCount = 1;
-		view_info.subresourceRange.baseArrayLayer = 0;
-		view_info.subresourceRange.layerCount = 1;
-
-		result = vkCreateImageView(logical, &view_info, nullptr, &color_image_views[i]);
-		if (result != VK_SUCCESS) {
-			Log::error("Failed to create Swapchain image view ", i);
-		}
+		color_image_views.emplace_back(device, images[i], view_type, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1);
 	}
 	Log::info("Swapchain created with ", num_images, " images/views.");
 
@@ -5536,21 +5814,21 @@ Swapchain::Swapchain(
 	}
 
 	for (uint32_t i = 0; i < num_images; i++) {
-		std::vector<VkImageView> attachments;
-		attachments.reserve(expected_attachments);
-		attachments.push_back(color_image_views[i]);
-		attachments.push_back(depth_buffer.get_image_view().get());
+		std::vector<VkImageView> all_image_views;
+		all_image_views.reserve(expected_attachments);
+		all_image_views.push_back(color_image_views[i].get());
+		all_image_views.push_back(depth_buffer.get_image_view().get());
 
 		// add other attachments
 		if (other_image_views.has_value()) {
-			attachments.insert(attachments.end(), other_image_views.value().begin(), other_image_views.value().end());
+			all_image_views.insert(all_image_views.end(), other_image_views.value().begin(), other_image_views.value().end());
 		}
 
 		VkFramebufferCreateInfo framebuffer_create_info = {};
 		framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		framebuffer_create_info.renderPass = renderpass.get();
-		framebuffer_create_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-		framebuffer_create_info.pAttachments = attachments.data();
+		framebuffer_create_info.attachmentCount = static_cast<uint32_t>(all_image_views.size());
+		framebuffer_create_info.pAttachments = all_image_views.data();
 		framebuffer_create_info.width = extent.width;
 		framebuffer_create_info.height = extent.height;
 		framebuffer_create_info.layers = 1;
@@ -5564,13 +5842,13 @@ Swapchain::Swapchain(
 	Log::info("Swapchain framebuffers created successfully.");
 }
 
-uint32_t Swapchain::acquire_next_image(const Semaphore& image_available_semaphore, const std::optional<Fence>& fence, uint64_t timeout) {
+uint32_t Swapchain::acquire_next_image(Semaphore& image_available_binary_semaphore, const std::optional<Fence>& fence, uint64_t timeout) {
 	VkResult result;
 	if (fence.has_value()) {
-		result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), fence.value().get(), &current_image_index);
+		result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_binary_semaphore.get(), fence.value().get(), &current_image_index);
 	}
 	else {
-		result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_semaphore.get(), nullptr, &current_image_index);
+		result = vkAcquireNextImageKHR(logical, swapchain, timeout, image_available_binary_semaphore.get(), nullptr, &current_image_index);
 	}
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -5616,11 +5894,11 @@ VkResult Swapchain::present_rendered_image() {
 }
 
 // present the rendered image to the graphics queue (method overload with single semaphore)
-VkResult Swapchain::present_rendered_image(const Semaphore& wait_semaphore) {
+VkResult Swapchain::present_rendered_image(Semaphore& binary_wait_semaphore) {
 	VkPresentInfoKHR present_info{};
 	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	present_info.waitSemaphoreCount = 1;
-	present_info.pWaitSemaphores = wait_semaphore.get_ptr();
+	present_info.pWaitSemaphores = binary_wait_semaphore.get_ptr();
 	present_info.swapchainCount = 1;
 	present_info.pSwapchains = &swapchain;
 	present_info.pImageIndices = &current_image_index;
@@ -5644,15 +5922,15 @@ VkResult Swapchain::present_rendered_image(const Semaphore& wait_semaphore) {
 }
 
 // present the rendered image to the graphics queue (method overload with multiple semaphores)
-VkResult Swapchain::present_rendered_image(const std::vector<Semaphore>& wait_semaphores) {
+VkResult Swapchain::present_rendered_image(std::vector<Semaphore>& binary_wait_semaphores) {
 	VkPresentInfoKHR present_info{};
 	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	present_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
-	std::vector<VkSemaphore> wait_semaphore_handles(wait_semaphores.size());
-	for (uint32_t i = 0; i < wait_semaphores.size(); i++) {
-		wait_semaphore_handles[i] = wait_semaphores[i].get();
+	present_info.waitSemaphoreCount = static_cast<uint32_t>(binary_wait_semaphores.size());
+	std::vector<VkSemaphore> binary_wait_semaphore_handles(binary_wait_semaphores.size());
+	for (uint32_t i = 0; i < binary_wait_semaphores.size(); i++) {
+		binary_wait_semaphore_handles[i] = binary_wait_semaphores[i].get();
 	}
-	present_info.pWaitSemaphores = wait_semaphore_handles.data();
+	present_info.pWaitSemaphores = binary_wait_semaphore_handles.data();
 	present_info.swapchainCount = 1;
 	present_info.pSwapchains = &swapchain;
 	present_info.pImageIndices = &current_image_index;
@@ -5692,10 +5970,10 @@ void Swapchain::recreate() {
 		present_mode_preference
 	);
 	swapchain = new_swapchain.get();
-	image = new_swapchain.image;
-	color_image_views = new_swapchain.color_image_views;
+	images = std::move(new_swapchain.images);
+	color_image_views = std::move(new_swapchain.color_image_views);
 	framebuffer = new_swapchain.framebuffer;
-	framebuffer_image_views = new_swapchain.framebuffer_image_views;
+	framebuffer_image_views = std::move(new_swapchain.framebuffer_image_views);
 }
 
 // getters
@@ -5703,28 +5981,26 @@ uint32_t Swapchain::get_width() const { return extent.width; }
 uint32_t Swapchain::get_height() const { return extent.height; }
 VkExtent2D Swapchain::get_extent() const { return extent; }
 VkSwapchainKHR Swapchain::get() const { return swapchain; }
-VkImage Swapchain::get_current_image() const { return image[current_image_index]; }
+Image& Swapchain::get_current_image() { return images[current_image_index]; }
 uint32_t Swapchain::get_current_image_index() const { return current_image_index; }
 uint32_t Swapchain::get_image_count() const { return num_images; }
 VkSurfaceFormatKHR Swapchain::get_surface_format() const { return surface_format; }
 
-VkImageView Swapchain::get_color_image_view(uint32_t index) const {
+ImageView& Swapchain::get_color_image_view(uint32_t index) {
 	if (index < color_image_views.size()) {
 		return color_image_views[index];
 	}
 	else {
 		Log::error("Invalid index for color image view: ", index);
-		return VK_NULL_HANDLE;
 	}
 }
 
-VkImageView Swapchain::get_framebuffer_image_view(uint32_t index) const {
+ImageView& Swapchain::get_framebuffer_image_view(uint32_t index) {
 	if (index < framebuffer_image_views.size()) {
 		return framebuffer_image_views[index];
 	}
 	else {
 		Log::error("Invalid index for framebuffer image view: ", index);
-		return VK_NULL_HANDLE;
 	}
 }
 
@@ -5738,13 +6014,12 @@ VkFramebuffer Swapchain::get_framebuffer(uint32_t index) const {
 	}
 }
 
-VkImage Swapchain::get_image(uint32_t index) const {
-	if (index < image.size()) {
-		return image[index];
+Image& Swapchain::get_image(uint32_t index) {
+	if (index < images.size()) {
+		return images[index];
 	}
 	else {
 		Log::error("Invalid index for image: ", index);
-		return VK_NULL_HANDLE;
 	}
 }
 
@@ -5759,13 +6034,12 @@ void Swapchain::destroy() {
 		swapchain = nullptr;
 	}
 	for (uint32_t i = 0; i < num_images; i++) {
-		vkDestroyImageView(logical, color_image_views[i], nullptr);
 		vkDestroyFramebuffer(logical, framebuffer[i], nullptr);
 	}
 	color_image_views.clear();
 	framebuffer_image_views.clear();
 	framebuffer.clear();
-	image.clear();
+	images.clear();
 	num_images = 0;
 	Log::info("Swapchain destroyed.");
 }
@@ -5977,7 +6251,6 @@ void DescriptorSet::bind_image(uint32_t binding_index, const ImageView& image_vi
 	if (get_descriptor_type(type) != layout.get_binding(binding_index).descriptorType) {
 		Log::warning("in method DescriptorSet::bind_image() for binding index ", binding_index, ": descriptor type mismatch with layout");
 	}
-
 	binding_info[binding_index].binding_index = binding_index;
 	binding_info[binding_index].image_view = image_view.get();
 	binding_info[binding_index].image_layout = image_layout;
@@ -5987,7 +6260,7 @@ void DescriptorSet::bind_image(uint32_t binding_index, const ImageView& image_vi
 }
 
 // binds a sampler
-void DescriptorSet::bind_sampler(uint32_t binding_index, const Sampler& sampler, VkShaderStageFlagBits shader_stage_flags) {
+void DescriptorSet::bind_texture(uint32_t binding_index, const Texture& texture, VkShaderStageFlagBits shader_stage_flags) {
 	uint32_t bindings_count = layout.get_bindings_count();
 	if (binding_index >= bindings_count) {
 		Log::error("in method DescriptorSet::bind_sampler(): argument for the binding index is invalid; value is ", binding_index, " but the descriptor set layout only has ", bindings_count, " bindings (indices 0-", bindings_count - 1, ").");
@@ -5996,9 +6269,10 @@ void DescriptorSet::bind_sampler(uint32_t binding_index, const Sampler& sampler,
 	if (layout.get_binding(binding_index).descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER && layout.get_binding(binding_index).descriptorType != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
 		Log::warning("in method DescriptorSet::bind_sampler() for binding index ", binding_index, ": descriptor type mismatch with layout; layout type is ", layout.get_binding(binding_index).descriptorType, ", expected VK_DESCRIPTOR_TYPE_SAMPLER or VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER.");
 	}
-
 	binding_info[binding_index].binding_index = binding_index;
-	binding_info[binding_index].sampler = sampler.get();
+	binding_info[binding_index].image_view = texture.get_image_view().get();
+	binding_info[binding_index].image_layout = texture.get_image().get_layout();
+	binding_info[binding_index].sampler = texture.get_sampler().get();
 	binding_info[binding_index].descriptor_type = layout.get_binding(binding_index).descriptorType;
 	binding_info[binding_index].updated = false;
 }
@@ -6013,7 +6287,6 @@ void DescriptorSet::bind_storage_image(uint32_t binding_index, const ImageView& 
 	if (layout.get_binding(binding_index).descriptorType != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
 		Log::warning("in method DescriptorSet::bind_storage_image() for binding index ", binding_index, ": descriptor type mismatch with layout; layout type is ", layout.get_binding(binding_index).descriptorType, ", expected VK_DESCRIPTOR_TYPE_STORAGE_IMAGE.");
 	}
-
 	binding_info[binding_index].binding_index = binding_index;
 	binding_info[binding_index].image_view = image_view.get();
 	binding_info[binding_index].image_layout = image_layout;
@@ -6032,7 +6305,6 @@ void DescriptorSet::bind_texel_buffer(uint32_t binding_index, const BufferView<T
 	if (layout.get_binding(binding_index).descriptorType != VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER && layout.get_binding(binding_index).descriptorType != VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
 		Log::warning("in method DescriptorSet::bind_texel_buffer() for binding index ", binding_index, ": descriptor type mismatch with layout; layout type is ", layout.get_binding(binding_index).descriptorType, ", expected a texel buffer type.");
 	}
-
 	binding_info[binding_index].binding_index = binding_index;
 	binding_info[binding_index].buffer_view = buffer_view.get();
 	binding_info[binding_index].descriptor_type = layout.get_binding(binding_index).descriptorType;
@@ -6370,7 +6642,7 @@ GraphicsPipeline::GraphicsPipeline(
 	input_assembly_state_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
 
-	// setup dynamic state(s)
+	// setup dynamic state(s) -> make viewport and scissors always dynamic by default
 	std::vector<VkDynamicState> dynamic_states = {
 		VK_DYNAMIC_STATE_VIEWPORT,
 		VK_DYNAMIC_STATE_SCISSOR
@@ -6396,9 +6668,9 @@ GraphicsPipeline::GraphicsPipeline(
 	rasterization_state_create_info.pNext = nullptr;
 	rasterization_state_create_info.flags = 0; // reserved for future use
 	rasterization_state_create_info.depthClampEnable = VK_FALSE;
-	rasterization_state_create_info.rasterizerDiscardEnable = VK_FALSE; // Changed to FALSE
+	rasterization_state_create_info.rasterizerDiscardEnable = VK_FALSE;
 	rasterization_state_create_info.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterization_state_create_info.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
+	rasterization_state_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
 	rasterization_state_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterization_state_create_info.depthBiasEnable = VK_FALSE;
 	rasterization_state_create_info.lineWidth = 1.0f;
@@ -6445,7 +6717,7 @@ GraphicsPipeline::GraphicsPipeline(
 		depth_stencil_state_create_info.depthTestEnable = VK_TRUE;
 		depth_stencil_state_create_info.depthWriteEnable = VK_TRUE;
 		depth_stencil_state_create_info.depthCompareOp = VK_COMPARE_OP_LESS;
-		depth_stencil_state_create_info.stencilTestEnable = VK_FALSE;
+		depth_stencil_state_create_info.stencilTestEnable = VK_TRUE;
 		pipeline_create_info.pDepthStencilState = &depth_stencil_state_create_info;
 	}
 	else {
@@ -6709,7 +6981,7 @@ CommandBuffer::CommandBuffer(Device& device, const CommandPool& pool) {
 	allocate_info.commandBufferCount = 1;
 	VkResult result = vkAllocateCommandBuffers(logical, &allocate_info, &buffer);
 	if (result == VK_SUCCESS) {
-		Log::info("successfully allocated command buffer (handle: ", buffer, ")");
+		Log::info("successfully allocated command buffer (command buffer handle: ", buffer, ", command pool: ", pool.get(), ")");
 	}
 	else {
 		Log::warning("in CommandBuffer constructor: memory allocation failed (VkResult=", result, ", ", vkresult_to_string(result), ")!");
@@ -6885,6 +7157,36 @@ void CommandBuffer::copy_buffer(const Buffer<T>& src_buffer, Buffer<T>& dst_buff
 	vkCmdCopyBuffer(buffer, src_buffer.get(), dst_buffer.get(), 1, &copy_region);
 }
 
+template<typename T>
+void CommandBuffer::copy_buffer_to_image(const Buffer<T>& src_buffer, Image& dst_image) {
+	// 1. Define the copy region using VkBufferImageCopy
+	// This struct links the linear buffer data to the 3D structure of the image.
+	VkBufferImageCopy region{};
+	region.bufferOffset = 0;
+
+	// Set up the image subresource details (assuming a single 2D image)
+	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	region.imageSubresource.mipLevel = 0;
+	region.imageSubresource.baseArrayLayer = 0;
+	region.imageSubresource.layerCount = 1;
+
+	// Set up the image extent (size)
+	VkExtent3D extent = dst_image.get_extent();
+	region.imageExtent = extent;
+	region.imageOffset = { 0, 0, 0 };
+
+	Log::debug("command buffer ", buffer, ": recording buffer to image copy (", extent.width, "x", extent.height, "x", extent.depth, ") from buffer ", src_buffer.get(), " to image ", dst_image.get());
+
+	vkCmdCopyBufferToImage(
+		buffer,
+		src_buffer.get(),		// VkBuffer
+		dst_image.get(),		// VkImage
+		dst_image.get_layout(),
+		1,						// region_count
+		&region
+	);
+}
+
 void CommandBuffer::add_device_memory_barrier(
 	VkPipelineStageFlags2 source_stage_flags,
 	VkAccessFlags2 source_access_flags,
@@ -6989,6 +7291,7 @@ void CommandBuffer::transition_image_layout(
 	VkPipelineStageFlags2 dst_stage,
 	VkAccessFlags2 dst_access) {
 
+	Log::debug("command buffer ", buffer, ": transitioning image layout for image ", image.get());
 	// Set up the image memory barrier
 	VkImageMemoryBarrier2 image_memory_barrier = {};
 	image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -7036,6 +7339,9 @@ void CommandBuffer::transition_image_layout(
 	VkImageAspectFlags aspect_mask) {
 
 	VkImageLayout old_layout = image.get_layout();
+	if (new_layout == old_layout) { return; } // nothing to do
+
+	Log::debug("command buffer ", buffer, ": transitioning image layout for image ", image.get());
 
 	VkPipelineStageFlags2 src_stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
 	VkAccessFlags2 src_access = VK_ACCESS_2_NONE;
@@ -7065,9 +7371,9 @@ void CommandBuffer::transition_image_layout(
 		dst_access = VK_ACCESS_2_NONE;
 	}
 	else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-		src_stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
-		dst_stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
-		dst_access = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		src_stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+		dst_stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+		dst_access = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 	}
 	else {
 		// Fallback for unhandled transitions
@@ -7083,12 +7389,30 @@ void CommandBuffer::transition_image_layout(
 }
 
 void CommandBuffer::draw(uint32_t index_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance) const {
+	Log::debug("CommandBuffer::draw(): ", index_count, " indices, ", instance_count, " instances, first vertex: ", first_vertex, ", first instance: ", first_instance);
 	vkCmdDraw(buffer, index_count, instance_count, first_vertex, first_instance);
 }
 
 
 void CommandBuffer::draw_indexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance) const {
+	Log::debug("CommandBuffer::draw_indexed(): ", index_count, " indices, ", instance_count, " instances, vertex offset: ", vertex_offset, ", first instance: ", first_instance);
 	vkCmdDrawIndexed(buffer, index_count, instance_count, first_index, vertex_offset, first_instance);
+}
+
+// dynamic viewport
+void CommandBuffer::set_viewport(float x_pos, float y_pos, float width, float height, float min_depth, float max_depth) {
+	Log::debug("CommandBuffer: setting dynamic viewport");
+	if (this->viewport) { this->viewport.reset(); }
+	this->viewport = std::make_unique<VkViewport>(x_pos, y_pos, width, height, min_depth, max_depth);
+	vkCmdSetViewport(this->buffer, 0, 1, this->viewport.get());
+}
+
+// dynamic scissor
+void CommandBuffer::set_scissor(const VkOffset2D& offset, const VkExtent2D& extent) {
+	Log::debug("CommandBuffer: setting dynamic scissor");
+	if (this->scissor) { this->scissor.reset(); }
+	this->scissor = std::make_unique<VkRect2D>(offset, extent);
+	vkCmdSetScissor(this->buffer, 0, 1, this->scissor.get());
 }
 
 // dispatch for compute
@@ -7115,6 +7439,7 @@ void CommandBuffer::begin_render(VkOffset2D offset, VkExtent2D extent, VkRenderi
 	rendering_info.pColorAttachments = color_attachments.data();
 	rendering_info.pDepthAttachment = &depth_attachment;
 	rendering_info.pStencilAttachment = &stencil_attachment;
+	Log::debug("CommandBuffer ", buffer, ": beginning render");
 	vkCmdBeginRendering(buffer, &rendering_info);
 }
 
@@ -7133,10 +7458,12 @@ void CommandBuffer::begin_renderpass(RenderPass& renderpass, VkFramebuffer frame
 	subpass_begin_info.pNext = NULL;
 	subpass_begin_info.contents = VK_SUBPASS_CONTENTS_INLINE;
 
+	Log::debug("CommandBuffer ", buffer, ": beginning renderpass");
 	vkCmdBeginRenderPass2(buffer, &renderpass_begin_info, &subpass_begin_info);
 }
 
 void CommandBuffer::end_renderpass() const {
+	Log::debug("CommandBuffer: ending renderpass");
 	vkCmdEndRenderPass(buffer);
 }
 
@@ -7243,7 +7570,7 @@ Task::Task(Task&& other) noexcept :
 // create temporary buffers (=which can be deleted after task execution has finished);
 // returns a reference to the new Buffer<T> object
 template<typename T>
-Buffer<T>& Task::add_temp_buffer(uint32_t elements, BufferType usage, VkMemoryPropertyFlags memory_property_flags) {
+Buffer<T>& Task::make_temp_buffer(uint32_t elements, BufferType usage, VkMemoryPropertyFlags memory_property_flags) {
 
 	Log::debug("Task::add_temp_buffer(): creating temporary buffer (owned by task ", this, ") of type ", typeid(T).name(), " with ", elements, " elements(", elements * sizeof(T), " bytes) for calling function ", calling_function);
 	std::unique_ptr<Buffer<T>> new_buffer_ptr = std::make_unique<Buffer<T>>(*device, usage, elements, memory_property_flags);
@@ -7258,7 +7585,7 @@ Buffer<T>& Task::add_temp_buffer(uint32_t elements, BufferType usage, VkMemoryPr
 // if a layout already exists, it will be replaced and a warning is issued;
 // if you need multiple layouts, please create them externally and provide them to the task using Task::add_descriptor_set(DescriptorSetLayout&);
 // also keep in mind that a descriptor set layout owned by the task is no longer valid beyond the lifetime of the task!
-DescriptorSetLayout& Task::add_descriptor_set_layout() {
+DescriptorSetLayout& Task::make_descriptor_set_layout() {
 	Log::debug("Task::add_descriptor_set_layout(): creating descriptor set layout (owned by task ", this, ") for calling function ", calling_function);
 	if (this->set_layout != nullptr) {
 		Log::warning("in method Task::add_descriptor_set_layout(): a single compute task is designed to own only one descriptor set layout; this task (", this, ") already has a descriptor set layout, therefore the previous layout will be replaced!");
@@ -7269,26 +7596,25 @@ DescriptorSetLayout& Task::add_descriptor_set_layout() {
 }
 
 // add a descriptor set for the set layout owned by this compute task
-DescriptorSet& Task::add_descriptor_set() {
-	Log::debug("Task::add_descriptor_set(): creating descriptor set (owned by task ", this, ") for calling function ", calling_function);
+DescriptorSet& Task::make_descriptor_set() {
 	if (this->set_layout == nullptr) {
 		Log::warning("method Task::add_descriptor_set() for task ", this, " has failed : please provide a referenced descriptor set layout as function argument or define a descriptor set layout owned by this task first(using Task::add_descriptor_set_layout())");
 	}
 	else {
 		if (this->set != nullptr) {
-			Log::warning("in method Task::add_descriptor_set(): a single compute task is designed to own only one descriptor set; this task (", this, ") already has a descriptor set, therefore the previous set will be replaced!");
+			Log::warning("in method Task::add_descriptor_set(): a single compute task is designed to own only one descriptor set; this task (", this, ") already has a descriptor set (", this->set, "), therefore this previous set will be replaced!");
 			VkDescriptorSet set_handle = this->set->get();
 			this->descriptor_pool->release_set(set_handle);
 			this->set.reset();
 		}
 		this->set = std::make_unique<DescriptorSet>(*this->device, *this->set_layout, *this->descriptor_pool);
 	}
+	Log::debug("Task::add_descriptor_set(): created new descriptor set (set handle: ", this->set, ", owned by task ", this, ") for calling function ", calling_function);
 	return *this->set;
 }
 
 // add a descriptor set for the referenced (=externally owned) set layout
-DescriptorSet& Task::add_descriptor_set(DescriptorSetLayout& descriptor_set_layout) {
-	Log::debug("Task::add_descriptor_set(): creating descriptor set (owned by task ", this, ") for calling function ", calling_function);
+DescriptorSet& Task::make_descriptor_set(DescriptorSetLayout& descriptor_set_layout) {
 	// delete old descriptor set, if any
 	if (set != nullptr) {
 		Log::warning("in method Task::add_descriptor_set(): a single compute task is designed to own only one descriptor set; this task (", this, ") already has a descriptor set, therefore the previous set will be replaced!");
@@ -7297,14 +7623,15 @@ DescriptorSet& Task::add_descriptor_set(DescriptorSetLayout& descriptor_set_layo
 		this->set.reset();
 	}
 	this->set = std::make_unique<DescriptorSet>(*this->device, descriptor_set_layout, *this->descriptor_pool);
+	Log::debug("Task::add_descriptor_set(): created new descriptor set (set handle: ", this->set, ", owned by task ", this, ") for calling function ", calling_function);
 	return *this->set;
 }
 
 // add a compute shader module from SPIR-V binary data and returns its ID within this task
-uint32_t Task::add_shader(const unsigned char* shader_spirv_bin, size_t shader_spirv_bytes) {
-	Log::debug("Task::add_shader(): creating shader module (owned by task ", this, ") for calling function ", calling_function);
+uint32_t Task::make_shader(const unsigned char* shader_spirv_bin, size_t shader_spirv_bytes) {
 	uint32_t shader_id = static_cast<uint32_t>(shaders.size());
 	shaders.push_back(std::make_unique<ShaderModule>(*device, shader_spirv_bin, shader_spirv_bytes));
+	Log::debug("Task::add_shader(): created a shader module (", shaders[shader_id]->get(), ", owned by task ", this, ") for calling function ", calling_function);
 	return shader_id;
 }
 
@@ -7314,7 +7641,7 @@ Task::add_constants(Args... args) {
 	return *constants;
 }
 
-ComputePipeline& Task::add_pipeline(
+ComputePipeline& Task::make_pipeline(
 	uint32_t shader_id,
 	uint32_t push_constants_range_size,
 	DescriptorSetLayout& set_layout,
@@ -7322,14 +7649,13 @@ ComputePipeline& Task::add_pipeline(
 	uint32_t workgroup_size_y,
 	uint32_t workgroup_size_z,
 	std::vector<uint32_t> addon_specialization_constants) {
-
-	Log::debug("Task::add_pipeline(): creating compute pipeline (owned by task ", this, ") for calling function ", calling_function);
 	uint32_t pipeline_id = static_cast<uint32_t>(compute_pipelines.size());
 	compute_pipelines.push_back(std::make_unique<ComputePipeline>(*device, *shaders[shader_id], push_constants_range_size, set_layout, workgroup_size_x, workgroup_size_y, workgroup_size_z, addon_specialization_constants));
+	Log::debug("Task::add_pipeline(): created a compute pipeline (pipeline handle: ", compute_pipelines[pipeline_id]->get(), "owned by task ", this, ") for calling function ", calling_function);
 	return *compute_pipelines[pipeline_id];
 }
 
-ComputePipeline& Task::add_pipeline(
+ComputePipeline& Task::make_pipeline(
 	uint32_t shader_id,
 	DescriptorSetLayout& set_layout,
 	uint32_t workgroup_size_x,
@@ -7337,10 +7663,10 @@ ComputePipeline& Task::add_pipeline(
 	uint32_t workgroup_size_z,
 	std::vector<uint32_t> addon_specialization_constants) {
 
-	return this->add_pipeline(shader_id, this->constants->get_size(), set_layout, workgroup_size_x, workgroup_size_y, workgroup_size_z, addon_specialization_constants);
+	return this->make_pipeline(shader_id, this->constants->get_size(), set_layout, workgroup_size_x, workgroup_size_y, workgroup_size_z, addon_specialization_constants);
 }
 
-ComputePipeline& Task::add_pipeline(uint32_t shader_id,
+ComputePipeline& Task::make_pipeline(uint32_t shader_id,
 	uint32_t push_constants_range_size,
 	uint32_t workgroup_size_x,
 	uint32_t workgroup_size_y,
@@ -7350,10 +7676,10 @@ ComputePipeline& Task::add_pipeline(uint32_t shader_id,
 	if (this->set_layout == nullptr) {
 		Log::error("invalid call of Task::add_pipeline(): either a descriptor set layout must have been added to the task or provided as function argument");
 	}
-	return this->add_pipeline(shader_id, push_constants_range_size, *this->set_layout, workgroup_size_x, workgroup_size_y, workgroup_size_z, addon_specialization_constants);
+	return this->make_pipeline(shader_id, push_constants_range_size, *this->set_layout, workgroup_size_x, workgroup_size_y, workgroup_size_z, addon_specialization_constants);
 }
 
-ComputePipeline& Task::add_pipeline(uint32_t shader_id,
+ComputePipeline& Task::make_pipeline(uint32_t shader_id,
 	uint32_t workgroup_size_x,
 	uint32_t workgroup_size_y,
 	uint32_t workgroup_size_z,
@@ -7362,10 +7688,10 @@ ComputePipeline& Task::add_pipeline(uint32_t shader_id,
 	if (this->set_layout == nullptr) {
 		Log::error("invalid call of Task::add_pipeline(): either a descriptor set layout must have been added to the task (", this, ") or provided as function argument");
 	}
-	return this->add_pipeline(shader_id, this->constants->get_size(), *this->set_layout, workgroup_size_x, workgroup_size_y, workgroup_size_z, addon_specialization_constants);
+	return this->make_pipeline(shader_id, this->constants->get_size(), *this->set_layout, workgroup_size_x, workgroup_size_y, workgroup_size_z, addon_specialization_constants);
 }
 
-GraphicsPipeline& Task::add_pipeline(
+GraphicsPipeline& Task::make_pipeline(
 	const RenderPass& renderpass,
 	uint32_t subpass_index,
 	const GraphicsPipelineLayout& pipeline_layout,
@@ -7394,34 +7720,34 @@ GraphicsPipeline& Task::add_pipeline(
 		tessellation_patch_control_points,
 		depth_stencil_flags
 	));
+	Log::debug("Task::add_pipeline(): created a graphics pipeline (pipeline handle: ", graphics_pipelines[pipeline_id]->get(), "owned by task ", this, ") for calling function ", calling_function);
 	return *graphics_pipelines[pipeline_id];
 }
 
 // creates and adds a temporary timeline semaphore owned by this task;
 // this resource can then be used as a wait or signal semaphore
-Semaphore& Task::add_temp_timeline_semaphore(uint64_t initial_value, VkPipelineStageFlagBits2 wait_dst_stage_mask, VkPipelineStageFlagBits2 signal_dst_stage_mask) {
+Semaphore& Task::make_temp_timeline_semaphore(uint64_t initial_value, VkPipelineStageFlagBits2 wait_dst_stage_mask, VkPipelineStageFlagBits2 signal_dst_stage_mask) {
 	temp_semaphores.push_back(std::make_unique<Semaphore>(*device, initial_value, wait_dst_stage_mask, signal_dst_stage_mask));
-	Log::debug("Task::add_temp_timeline_semaphore(): new timeline semaphore (owned by task ", this, ") created at memory location ", temp_semaphores.back(), " for calling function ", calling_function, "; initial value = ");
+	Log::debug("Task::add_temp_timeline_semaphore(): new timeline semaphore (handle: ", temp_semaphores.back()->get(), "owned by task ", this, ") created at memory location ", temp_semaphores.back(), " for calling function ", calling_function, "; initial value = ");
 	return *temp_semaphores.back();
 }
 
 // creates and adds a temporary binary semaphore owned by this task;
 // this resource can then be used as a wait or signal semaphore
-Semaphore& Task::add_temp_binary_semaphore(VkPipelineStageFlagBits2 wait_dst_stage_mask, VkPipelineStageFlagBits2 signal_dst_stage_mask) {
+Semaphore& Task::make_temp_binary_semaphore(VkPipelineStageFlagBits2 wait_dst_stage_mask, VkPipelineStageFlagBits2 signal_dst_stage_mask) {
 	temp_semaphores.push_back(std::make_unique<Semaphore>(*device, wait_dst_stage_mask, signal_dst_stage_mask));
-	Log::debug("Task::add_temp_binary_semaphore(): new binary semaphore (owned by task ", this, ") created at memory location ", temp_semaphores.back(), " for calling function ", calling_function);
+	Log::debug("Task::add_temp_binary_semaphore(): new binary semaphore (handle: ", temp_semaphores.back()->get(), ", owned by task ", this, ") created at memory location ", temp_semaphores.back(), " for calling function ", calling_function);
 	return *temp_semaphores.back();
 }
 
 // adds a reference to a binary wait semaphore (which will be used during the submit call);
-// used to add externally owned semaphores (i.e. not owned by this task);
 // returns the total number of binary wait semaphores which are currently observed by this task
-uint32_t Task::add_binary_wait_semaphore(Semaphore& semaphore) {
+uint32_t Task::wait_binary_semaphore(Semaphore& semaphore) {
 	if (semaphore.get_type() != VK_SEMAPHORE_TYPE_BINARY) {
 		Log::warning("method Task::add_wait_semaphore() for task ", this, " has failed : this overload expects a binary semaphore(VK_SEMAPHORE_TYPE_BINARY).");
 		return static_cast<uint32_t>(binary_wait_semaphores.size());
 	}
-	Log::debug("Task::add_binary_wait_semaphore(): adding binary wait semaphore for task ", this, " (externally owned, memory location : ", &semaphore, ") for calling function ", calling_function);
+	Log::debug("Task::add_binary_wait_semaphore(): adding binary wait semaphore for task ", this, " (handle: ", semaphore.get(), ", memory location : ", &semaphore, ") for calling function ", calling_function);
 	binary_wait_semaphores_dst_stage_masks.push_back(semaphore.get_wait_dst_stage_mask());
 	binary_signal_semaphores_dst_stage_masks.push_back(semaphore.get_signal_dst_stage_mask());
 	binary_wait_semaphores.push_back(semaphore.get());
@@ -7429,14 +7755,13 @@ uint32_t Task::add_binary_wait_semaphore(Semaphore& semaphore) {
 }
 
 // adds a reference to a binary signal semaphore (which will be used during the submit call);
-// used to add externally owned semaphores (i.e. not owned by this task);
 // returns the total number of signal semaphores which are currently affected by this task
-uint32_t Task::add_binary_signal_semaphore(Semaphore& semaphore) {
+uint32_t Task::signal_binary_semaphore(Semaphore& semaphore) {
 	if (semaphore.get_type() != VK_SEMAPHORE_TYPE_BINARY) {
 		Log::warning("method Task::add_signal_semaphore() for task ", this, " has failed : this overload expects a binary semaphore(VK_SEMAPHORE_TYPE_BINARY).");
 		return static_cast<uint32_t>(binary_signal_semaphores.size());
 	}
-	Log::debug("Task::add_binary_signal_semaphore(): adding binary signal semaphore for task ", this, " (externally owned, memory location ", &semaphore, ") for calling function ", calling_function);
+	Log::debug("Task::add_binary_signal_semaphore(): adding binary signal semaphore for task ", this, " (handle: ", semaphore.get(), ", memory location: ", &semaphore, ") for calling function ", calling_function);
 	binary_wait_semaphores_dst_stage_masks.push_back(semaphore.get_wait_dst_stage_mask());
 	binary_signal_semaphores_dst_stage_masks.push_back(semaphore.get_signal_dst_stage_mask());
 	binary_signal_semaphores.push_back(semaphore.get());
@@ -7448,25 +7773,24 @@ uint32_t Task::add_binary_signal_semaphore(Semaphore& semaphore) {
 // the semaphore MUST be expected to initially reach the signaled state (or already be in the signaled state),
 // otherwise a deadlock will occur (waiting for the signaled state indefinitely) !!!
 // the function expects a reference to an externally owned binary semaphore (i.e. not owned by this task)
-void Task::binary_wait_and_signal(Semaphore& semaphore) {
+void Task::wait_and_signal_binary_semaphore(Semaphore& semaphore) {
 	if (semaphore.get_type() != VK_SEMAPHORE_TYPE_BINARY) {
-		Log::warning("method Task::add_combined_semaphore() for task ", this, " has failed : this overload expects a binary semaphore(VK_SEMAPHORE_TYPE_BINARY).");
+		Log::warning("method Task::add_combined_semaphore() (semaphore handle: ", semaphore.get(), ") for task ", this, " has failed : this overload expects a binary semaphore(VK_SEMAPHORE_TYPE_BINARY).");
 	}
 	Log::debug("Task::binary_wait_and_signal():");
-	this->add_binary_wait_semaphore(semaphore);
-	this->add_binary_signal_semaphore(semaphore);
+	this->wait_binary_semaphore(semaphore);
+	this->signal_binary_semaphore(semaphore);
 }
 
 // adds a single timeline semaphore which functions as a wait semaphore at the beginning of the command buffer execution,
 // then it signals the specified signal_value at the end of execution;
-// this function expects a reference to an externally owned timeline semaphore (i.e. not owned by this task)
 void Task::timeline_sync(Semaphore& semaphore, uint64_t wait_value, uint64_t signal_value) {
 	if (semaphore.get_type() != VK_SEMAPHORE_TYPE_TIMELINE) {
-		Log::warning("method Task::add_combined_semaphore() for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
+		Log::warning("method Task::add_combined_semaphore() (semaphore handle: ", semaphore.get(), ") for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
 	}
-	Log::debug("Task::timeline_sync(): adding timeline wait and signal semaphore for task ", this, " (externally owned, memory location ", &semaphore, ") for calling function ", calling_function, " (wait value = ", wait_value, ", signal value = ", signal_value, ")");
-	this->add_timeline_wait_semaphore(semaphore, wait_value);
-	this->add_timeline_signal_semaphore(semaphore, signal_value);
+	Log::debug("Task::timeline_sync(): adding timeline wait and signal semaphore for task ", this, " (memory location ", &semaphore, ") for calling function ", calling_function, " (wait value = ", wait_value, ", signal value = ", signal_value, ")");
+	this->wait_timeline_semaphore(semaphore, wait_value);
+	this->signal_timeline_semaphore(semaphore, signal_value);
 }
 
 // adds a single semaphore which functions as a wait semaphore at the beginning of the command buffer execution with its current counter value,
@@ -7474,26 +7798,25 @@ void Task::timeline_sync(Semaphore& semaphore, uint64_t wait_value, uint64_t sig
 // returns the new signal value
 uint64_t Task::timeline_sync(Semaphore& semaphore) {
 	if (semaphore.get_type() != VK_SEMAPHORE_TYPE_TIMELINE) {
-		Log::warning("method Task::add_combined_semaphore() for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
+		Log::warning("method Task::add_combined_semaphore() (semaphore handle: ", semaphore.get(), ") for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
 	}
-	Log::debug("Task::timeline_sync(): adding timeline wait and signal semaphore:");
 	uint64_t old_counter_var = semaphore.get_counter_var();
-	this->add_timeline_wait_semaphore(semaphore, old_counter_var);
+	this->wait_timeline_semaphore(semaphore, old_counter_var);
 	semaphore.increment_counter();
 	uint64_t new_counter_var = semaphore.get_counter_var();;
-	this->add_timeline_signal_semaphore(semaphore, new_counter_var);
+	this->signal_timeline_semaphore(semaphore, new_counter_var);
+	Log::debug("Task::timeline_sync(): adding timeline semaphore ", semaphore.get(), " (waiting for counter value ", old_counter_var, ", signaling ", new_counter_var, " when finished)");
 	return new_counter_var;
 }
 
 // adds a reference to a timeline wait semaphore (which will be used during the submit call);
-// used to add externally owned semaphores (i.e. not owned by this task);
 // returns the total number of timeline wait semaphores which are currently observed by this task
-uint32_t Task::add_timeline_wait_semaphore(Semaphore& semaphore, uint64_t wait_value) {
+uint32_t Task::wait_timeline_semaphore(Semaphore& semaphore, uint64_t wait_value) {
 	if (semaphore.get_type() != VK_SEMAPHORE_TYPE_TIMELINE) {
 		Log::warning("method Task::add_wait_semaphore() for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
 		return static_cast<uint32_t>(timeline_wait_semaphores.size());
 	}
-	Log::debug("Task::add_timeline_wait_semaphore(): adding timeline wait semaphore for task ", this, " (externally owned, memory location ", &semaphore, ") for calling function ", calling_function, " (wait value = ", wait_value, ")");
+	Log::debug("Task::add_timeline_wait_semaphore(): adding timeline wait semaphore (handle: ", semaphore.get(), ") for task ", this, " (memory location ", &semaphore, ") for calling function ", calling_function, " (wait value = ", wait_value, ")");
 	timeline_wait_semaphores_dst_stage_masks.push_back(semaphore.get_wait_dst_stage_mask());
 	timeline_wait_semaphores.push_back(semaphore.get());
 	timeline_semaphore_wait_values.push_back(wait_value);
@@ -7501,14 +7824,13 @@ uint32_t Task::add_timeline_wait_semaphore(Semaphore& semaphore, uint64_t wait_v
 }
 
 // adds a reference to a timeline signal semaphore (which will be used during the submit call);
-// used to add externally owned semaphores (i.e. not owned by this task);
 // returns the total number of timeline signal semaphores which are currently affected by this task
-uint32_t Task::add_timeline_signal_semaphore(Semaphore& semaphore, uint64_t signal_value) {
+uint32_t Task::signal_timeline_semaphore(Semaphore& semaphore, uint64_t signal_value) {
 	if (semaphore.get_type() != VK_SEMAPHORE_TYPE_TIMELINE) {
 		Log::warning("method Task::add_signal_semaphore() for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
 		return static_cast<uint32_t>(timeline_signal_semaphores.size());
 	}
-	Log::debug("Task::add_timeline_signal_semaphore(): adding timeline signal semaphore for task ", this, " (externally owned, memory location ", &semaphore, ") for calling function ", calling_function, " (signal value = ", signal_value, ")");
+	Log::debug("Task::add_timeline_signal_semaphore(): adding timeline signal semaphore (handle: ", semaphore.get(), ") for task ", this, " (memory location ", &semaphore, ") for calling function ", calling_function, " (signal value = ", signal_value, ")");
 	timeline_signal_semaphores_dst_stage_masks.push_back(semaphore.get_signal_dst_stage_mask());
 	timeline_signal_semaphores.push_back(semaphore.get());
 	timeline_semaphore_signal_values.push_back(signal_value);
@@ -7516,11 +7838,25 @@ uint32_t Task::add_timeline_signal_semaphore(Semaphore& semaphore, uint64_t sign
 	return static_cast<uint32_t>(timeline_signal_semaphores.size());
 }
 
+void Task::clear_semaphore_list() {
+	binary_wait_semaphores.clear();
+	timeline_wait_semaphores.clear();
+	binary_signal_semaphores.clear();
+	timeline_signal_semaphores.clear();
+	timeline_semaphore_wait_values.clear();
+	timeline_semaphore_signal_values.clear();
+	binary_wait_semaphores_dst_stage_masks.clear();
+	binary_signal_semaphores_dst_stage_masks.clear();
+	timeline_wait_semaphores_dst_stage_masks.clear();
+	timeline_signal_semaphores_dst_stage_masks.clear();
+	timeline_signal_semaphores_ptrs.clear();
+}
+
 // reset task (delete all previous resources);
 // returns false if the task is protected or still busy
 bool Task::reset() {
 	if (fence && !fence->signaled(calling_function)) {
-		Log::warning("Task::reset() has failed: the task (", this, ") for calling function ", calling_function, " is still busy(its fence isn't yet in the signaled state)");
+		Log::warning("Task::reset() has failed: the task (", this, ") for calling function ", calling_function, " is still busy (its fence [", fence, "] isn't yet in the signaled state)");
 		return false;
 	}
 	if (protection_flag) {
@@ -7564,18 +7900,8 @@ bool Task::reset() {
 		shaders.clear();
 
 		// clear semaphores
-		binary_wait_semaphores.clear();
-		timeline_wait_semaphores.clear();
-		binary_signal_semaphores.clear();
-		timeline_signal_semaphores.clear();
-		timeline_semaphore_wait_values.clear();
-		timeline_semaphore_signal_values.clear();
-		binary_wait_semaphores_dst_stage_masks.clear();
-		binary_signal_semaphores_dst_stage_masks.clear();
-		timeline_wait_semaphores_dst_stage_masks.clear();
-		timeline_signal_semaphores_dst_stage_masks.clear();
+		clear_semaphore_list();
 		temp_semaphores.clear();
-		timeline_signal_semaphores_ptrs.clear();
 
 		// reset calling function
 		calling_function = "NONE (=TASK IS AVAILABLE)";
@@ -7968,7 +8294,7 @@ Surface& VulkanManager::get_surface(uint32_t initial_width, uint32_t initial_hei
 #elif defined(__ANDROID__)
 		// For Android, we get the ANativeWindow directly.
 		ANativeWindow* window = nullptr;
-		surface = std::make_unique<Surface>(*instance, window);
+		surface = std::make_unique<Surface>(*instance, android_window);
 #else
 		Log::error("Failed to acquire Surface object for this operating system.");
 #endif
@@ -8016,7 +8342,12 @@ std::unique_ptr<DescriptorPool> VulkanManager::shared_descriptor_pool = nullptr;
 std::vector<std::unique_ptr<Task>> VulkanManager::tasks = {};
 std::vector<std::unique_ptr<Semaphore>> VulkanManager::timeline_semaphores = {};
 std::unique_ptr<Surface> VulkanManager::surface = nullptr;
+
+#ifdef _WIN32
 GLFWwindow* VulkanManager::glfw_window = nullptr;
+#elif defined(__ANDROID__)
+ANativeWindow* VulkanManager::android_window = nullptr;
+#endif
 
 // helper function to convert VkResult values to human-readable strings
 std::string vkresult_to_string(VkResult result) {
