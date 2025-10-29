@@ -169,6 +169,7 @@ elseif (MSVC)
     # Other common flags/warnings
     target_compile_options(${PROJECT_NAME} PRIVATE
         /WX- /wd4251 /wd4275 /wd4100 /EHsc /MP /utf-8 /Zc:__cplusplus
+        /bigobj # To increase the object file section limit for large template/header-only files.
     )
     # Build type flags
     target_compile_options(${PROJECT_NAME} PRIVATE

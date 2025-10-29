@@ -9,39 +9,42 @@
 #include <spirv_bin_precompiled.h>	// fallback include for spirv_bin.h if not found in the include path
 #endif
 
-void vkcontext_graphics_test() {
+void vkcontext_graphics_test_skull() {
 
 	Log::set_level(LEVEL_WARNING);
 
 	// setup environment
-	VulkanManager& manager = VulkanManager::get_singleton();
+	auto& manager = VulkanManager::get_singleton();
 	Device& device = manager.get_device();
 	Semaphore* tl_semaphore = manager.get_timeline_semaphore(0, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
 	Surface& surface = manager.get_surface();
-	VkSurfaceFormatKHR surface_format = device.select_surface_format(surface);
+	auto surface_format = device.select_surface_format(surface);
 
 	// load model
-	Mesh model(device, "resources/models/obj/Skull/12140_Skull_v3_L2.obj", tl_semaphore); // object source: https://free3d.com/3d-model/skull-v3--785914.html
-	Sampler texture_sampler(device);
-	Texture model_texture(device, "resources/models/obj/Skull/Skull.jpg", VK_FORMAT_R8G8B8A8_SRGB, tl_semaphore);
+	Mesh model(device, "resources/models/obj/Skull/12140_Skull_v3_L2.obj", tl_semaphore, true, false); // object source: https://free3d.com/3d-model/skull-v3--785914.html
 
-	// create entity from mesh
-	Entity entity(model);
-
-	// define scene objects
-	Camera camera(
-		glm::vec3(15.0f, -40.0f, 20.0f), 	// Position
-		glm::vec3(0.0f, 1.0f, 0.0f),		// World Up
-		-90.0f,								// Yaw
-		70.0f								// Pitch
-	);
+	// create scene
 	VkExtent2D extent = { 1920, 1080 };
-	camera.set_aspect_ratio(float(extent.width) / float(extent.height));
-	camera.set_near_plane(0.01f);
-	Light directional_light(
-		glm::vec4(15.0f, -50.0f, 40.0f, 1.0f),		// Position
-		glm::vec3{ 0.5f, 0.5f, 0.5f }				// Color
+	Scene scene;
+	uint32_t entity_id = scene.add_entity(&model, { 0.0f, 0.0f, 0.0f }, true);
+	scene.get_active_camera().set_position({ 0.0f, -32.0f, 22.0f });
+	scene.get_active_camera().set_world_up({ 0.0f, 1.0f, 0.0f });
+	scene.get_active_camera().set_yaw(-90.0f);
+	scene.get_active_camera().set_pitch(70.0f);
+	scene.get_active_camera().set_aspect_ratio(extent);
+	scene.get_active_camera().set_near_plane(0.01f);
+	scene.get_active_camera().set_far_plane(100.0f);
+	scene.set_ambient({ 0.1f, 0.1f, 0.1f });
+	scene.set_exposure(3.0f);
+	uint32_t light_id = scene.add_scene_light(
+		LightType::SPOT_LIGHT,			// type
+		glm::vec3(0.0f, -30.0f, 30.0f),	// Position
+		glm::vec3{ 1.0f, 1.0f, 1.0f }	// Color
 	);
+	scene.get_scene_light(light_id).set_direction(glm::normalize(scene.get_entity(entity_id).get_position() - scene.get_scene_light(light_id).get_position()));
+	scene.get_scene_light(light_id).set_intensity(2000.0f);
+	scene.get_scene_light(light_id).set_range(200.0f);
+	scene.get_scene_light(light_id).set_cone_angle(0.78f, 1.57f); // angle units: radians
 
 	// create pipeline dependencies
 	RenderPass renderpass(device);
@@ -53,46 +56,48 @@ void vkcontext_graphics_test() {
 	uint32_t subpass_index = subpass.finalize(0, VK_PIPELINE_BIND_POINT_GRAPHICS);
 	renderpass.finalize();
 
-	DepthBuffer depth_buffer(device, VK_IMAGE_TYPE_2D, VkExtent3D({ extent.width, extent.height, 1 }), VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	DepthBuffer depth_buffer(device, extent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
 	Swapchain swapchain(device, renderpass, surface, surface_format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, depth_buffer, NULLOPT, extent);
 
 	ShaderModule vertex_shader(device, VERTEX_SHADER_GENERIC_SPIRV_BIN, VERTEX_SHADER_GENERIC_SPIRV_BYTES);
-	std::optional<ShaderModule> fragment_shader = std::make_optional<ShaderModule>(device, FRAGMENT_SHADER_GENERIC_SPIRV_BIN, FRAGMENT_SHADER_GENERIC_SPIRV_BYTES);
+	auto fragment_shader = std::make_optional<ShaderModule>(device, FRAGMENT_SHADER_GENERIC_SPIRV_BIN, FRAGMENT_SHADER_GENERIC_SPIRV_BYTES);
 
 	DescriptorSetLayout set_layout(device);
-	set_layout.add_binding(STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_ALL_GRAPHICS);			// for materials
-	set_layout.add_binding(COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);	// for texture
+	set_layout.add_bindings(3, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);						// for materials, lights, scene Material texIDs
+	set_layout.add_bindings(1, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_VERTEX_BIT);							// for model matrices
+	set_layout.add_bindings(1, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES);	// for textures
 	set_layout.finalize();
 
 	DescriptorSet set(device, set_layout, manager.get_descriptor_pool());
-	set.bind_buffer(0, model.get_material_buffer());
-	set.bind_texture(1, model_texture);
+	set.bind_buffer(0, scene.get_unique_materials_buffer(tl_semaphore));
+	set.bind_buffer(1, scene.get_lights_buffer(tl_semaphore));
+	set.bind_buffer(2, scene.get_scene_texIDs_buffer(tl_semaphore));
+	set.bind_buffer(3, scene.get_model_matrices_buffer(tl_semaphore));
+	set.bind_textures(4, scene.get_textures());
 	set.write();
 
 	std::vector<VkClearValue> clear_values(2);
 	clear_values[0].color = { {0.0f, 0.0f, 0.0f, 1.0f} };
 	clear_values[1].depthStencil = { 1.0f, 0 };
 
-	float blend_factors[4] = { 1.0f,1.0f,1.0f,1.0f };
 	const auto color_blend_state = std::make_optional<ColorBlendState>(
 		VK_BLEND_FACTOR_ONE,
 		VK_BLEND_FACTOR_ZERO,
 		VK_BLEND_OP_ADD,
 		VK_BLEND_FACTOR_ONE,
 		VK_BLEND_FACTOR_ZERO,
-		VK_BLEND_OP_ADD,
-		blend_factors
+		VK_BLEND_OP_ADD
 	);
 
 	PushConstants constants;
-	size_t model_matrix_offset = constants.add_values(entity.get_model_matrix());
-	size_t view_matrix_offset = constants.add_values(camera.get_view_matrix());
-	size_t projection_offset = constants.add_values(camera.get_projection_matrix());
-	size_t camera_position_offset = constants.add_values(glm::vec4(camera.get_position(), 0.0f));
-	size_t light_position_offset = constants.add_values(directional_light.get_position());
-	size_t light_color_offset = constants.add_values(glm::vec4(directional_light.get_color(), 1.0f));
+	size_t view_matrix_offset = constants.add_values(scene.get_active_camera().get_view_matrix());
+	size_t projection_offset = constants.add_values(scene.get_active_camera().get_projection_matrix());
+	size_t camera_position_offset = constants.add_values(scene.get_active_camera().get_position());
 	size_t material_offset = constants.add_values(uint32_t(0));
+	size_t light_count_offset = constants.add_values(scene.get_visible_lights_count());
+	size_t ambient_scene_color_offset = constants.add_values(scene.get_ambient());
+	size_t exposure_offset = constants.add_values(scene.get_exposure());
 
 	GraphicsPipelineLayout pipeline_layout(device, set_layout, constants);
 
@@ -103,7 +108,6 @@ void vkcontext_graphics_test() {
 		subpass_index,
 		pipeline_layout,
 		vertex_shader,
-		std::vector<VertexDescriptions>{ model.get_vertex_descriptions() },
 		color_blend_state,
 		fragment_shader
 	);
@@ -120,13 +124,12 @@ void vkcontext_graphics_test() {
 		// process events (TODO)
 
 		// update scene (push constants updates via in-place overwrites)
-		entity.rotate(glm::vec3(0.0f, 0.0f, 0.5f));
-		//directional_light.translate(glm::vec3(-0.1f, 0.0f, 0.0f));
-		//camera.translate(glm::vec3(-0.02, 0.002f, 0.0f));
-		constants.add_values(entity.get_model_matrix(), model_matrix_offset);
-		constants.add_values(camera.get_view_matrix(), view_matrix_offset);
-		constants.add_values(camera.get_projection_matrix(), projection_offset);
-		constants.add_values(directional_light.get_position(), light_position_offset);
+		scene.get_entity(entity_id).rotate(glm::vec3(0.0f, 0.0f, 0.5f));
+		constants.add_values(scene.get_active_camera().get_view_matrix(), view_matrix_offset);
+		constants.add_values(scene.get_active_camera().get_projection_matrix(), projection_offset);
+
+		set.bind_buffer(3, scene.get_model_matrices_buffer(tl_semaphore));
+		set.write();
 
 		// render next frame
 		uint32_t image_index = swapchain.acquire_next_image(image_available_bin_semaphore);
@@ -134,7 +137,7 @@ void vkcontext_graphics_test() {
 		cb.begin_recording();
 
 		// Set dynamic state before starting render pass
-		cb.set_viewport(0.0f, 0.0f, swapchain.get_extent().width, swapchain.get_extent().height);
+		cb.set_viewport({ 0, 0 }, swapchain.get_extent());
 		cb.set_scissor({ 0, 0 }, swapchain.get_extent());
 
 		// bind resources
@@ -143,11 +146,14 @@ void vkcontext_graphics_test() {
 		cb.bind_descriptor_set(set, pipeline);
 		cb.bind_mesh(model);
 
-		// Loop through each sub-mesh and issue a draw call (= draw vertices per sub-mesh)
-		for (const auto& submesh : model.get_submeshes()) {
-			constants.add_values(submesh.material_index, material_offset); // in-place overwrite
-			cb.bind_push_constants(constants, pipeline);
-			cb.draw_indexed(submesh.index_count, 1, submesh.first_index, submesh.vertex_offset, 0);
+		// for each entity loop over sub-meshes and issue a draw call (= draw vertices per sub-mesh)
+		std::vector<Entity*> entities = scene.get_visible_entities();
+		for (uint32_t entity_index = 0; entity_index < entities.size(); entity_index++) {
+			for (const auto& submesh : entities[entity_index]->get_mesh().get_submeshes()) {
+				constants.add_values(submesh.scene_local_material_index, material_offset); // in-place overwrite
+				cb.bind_push_constants(constants, pipeline);
+				cb.draw_indexed(submesh.index_count, 1, submesh.first_index, submesh.vertex_offset, entity_index);
+			}
 		}
 
 		cb.end_renderpass();

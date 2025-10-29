@@ -1,13 +1,16 @@
+// include guard
 #ifndef VKCONTEXT_H
+#define VKCONTEXT_H
 
 // Macros & Preprocessor Definitions
-#define VKCONTEXT_H
 #define NOMINMAX
 #define NULLOPT std::nullopt
 #define MAX_DESCRIPTOR_SET_COUNT 50 // max number of descriptor sets within the shared singleton descriptor pool
 #define TINYOBJLOADER_IMPLEMENTATION
+#define TINYGLTF_IMPLEMENTATION
+#define TINYGLTF_NO_STB_IMAGE_LOAD
 #define GLM_ENABLE_EXPERIMENTAL
-#define STB_IMAGE_IMPLEMENTATION
+#define MAX_TEXTURES 1024 // max number of textures that can be loaded
 
 // include headers
 #include <array>
@@ -17,9 +20,12 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/hash.hpp>
+#include <glm/gtx/norm.hpp>
 #include <initializer_list>
 #include <iostream>
 #include <log.h>
@@ -29,10 +35,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <third_party/json.hpp>
+#include <third_party/mikktspace.h>
 #include <third_party/stb_image.h>
+#include <third_party/stb_image_write.h>
+#include <third_party/tiny_gltf.h>
 #include <third_party/tiny_obj_loader.h>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -112,7 +123,8 @@ std::vector<const char*> DEFAULT_DEVICE_EXTENSIONS = {
 	"VK_KHR_push_descriptor",
 	"VK_KHR_shader_float16_int8",
 	"VK_KHR_swapchain",
-	"VK_KHR_timeline_semaphore"
+	"VK_KHR_timeline_semaphore",
+	"VK_KHR_sampler_mirror_clamp_to_edge"
 	//"VK_KHR_shader_int64",
 	//"VK_KHR_shader_float64",
 	//"VK_EXT_shader_atomic_float16_add"
@@ -180,7 +192,7 @@ VkPhysicalDeviceFeatures DEFAULT_DEVICE_FEATURES = {
 // default pool size per descriptor type (used by the VulkanManager class)
 std::vector<VkDescriptorPoolSize> DEFAULT_POOL_SIZE = {
 	{VK_DESCRIPTOR_TYPE_SAMPLER, 5},
-	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3},
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES},
 	{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 5},
 	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 5},
 	{VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 3},
@@ -199,12 +211,20 @@ std::vector<VkDescriptorPoolSize> DEFAULT_POOL_SIZE = {
 	// {VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV, 0}
 };
 
-// Default camera values
-const float CAMERA_YAW = -90.0f;
-const float CAMERA_PITCH = 0.0f;
-const float CAMERA_SPEED = 2.5f;
-const float CAMERA_SENSITIVITY = 0.1f;
-const float CAMERA_FOV = 45.0f;
+// default settings for cameras
+const glm::vec3 CAMERA_DEFAULT_POSITION = { 0.0f, 0.0f, 0.0f };
+const float CAMERA_DEFAULT_YAW = -90.0f;
+const float CAMERA_DEFAULT_PITCH = 0.0f;
+const glm::vec3 CAMERA_DEFAULT_UP = { 0.0f, 1.0f, 0.0f };
+const glm::vec3 DEFAULT_WORLD_UP = { 0.0f, 1.0f, 0.0f };
+const float CAMERA_DEFAULT_SPEED = 2.5f;
+const float CAMERA_DEFAULT_SENSITIVITY = 0.1f;
+const float CAMERA_DEFAULT_FOV = 45.0f;
+const float CAMERA_DEFAULT_ASPECT_RATIO = 16.0f / 9.0f;			// standard widescreen aspect ratio
+const float CAMERA_DEFAULT_NEAR_PLANE = 0.01f;					// Must be > 0. Prevents Z-fighting near the camera.
+const float CAMERA_DEFAULT_FAR_PLANE = 1000.0f;					// Determines maximum rendering distance.
+const glm::vec3 SCENE_DEFAULT_AMBIENT = { 0.1f, 0.1f, 0.1f };	// default ambient light color
+const float SCENE_DEFAULT_EXPOSURE = 1.0f;
 
 // preferred formats
 const std::vector<VkFormat> DEPTH_FORMAT_CANDIDATES = {
@@ -241,10 +261,14 @@ class Device;
 class Event;
 class ImageView;
 class Image;
+class Light;
+struct LightGPU;
+class Mesh;
 class ShaderModule;
 class SubPass;
 class Surface;
 class RenderPass;
+class Texture;
 struct Vertex;
 
 // +=================================+   
@@ -255,7 +279,8 @@ enum BufferType {
 	STORAGE_BUFFER,
 	UNIFORM_BUFFER,
 	INDEX_BUFFER,
-	TRANSFER_BUFFER
+	TRANSFER_BUFFER,
+	NUM_BUFFER_TYPES
 };
 
 enum DescriptorType {
@@ -263,14 +288,16 @@ enum DescriptorType {
 	STORAGE_BUFFER_DESCRIPTOR,
 	STORAGE_IMAGE_DESCRIPTOR,
 	SAMPLED_IMAGE_DESCRIPTOR,
-	COMBINED_IMAGE_SAMPLER_DESCRIPTOR
+	COMBINED_IMAGE_SAMPLER_DESCRIPTOR,
+	NUM_DESCRIPTOR_TYPES
 };
 
 enum QueueFamily {
 	GRAPHICS_QUEUE,
 	COMPUTE_QUEUE,
 	TRANSFER_QUEUE,
-	UNKNOWN_QUEUE
+	UNKNOWN_QUEUE,
+	NUM_QUEUE_FAMILIES
 };
 
 enum AttachmentType {
@@ -278,13 +305,15 @@ enum AttachmentType {
 	COLOR_TYPE,
 	DEPTH_TYPE,
 	RESOLVE_TYPE,
-	PRESERVE_TYPE
+	PRESERVE_TYPE,
+	NUM_ATTACHMENT_TYPES
 };
 
 enum TaskType {
 	TASK_TYPE_COMPUTE,
 	TASK_TYPE_GRAPHICS,
-	TASK_TYPE_TRANSFER
+	TASK_TYPE_TRANSFER,
+	NUM_TASK_TYPES
 };
 
 enum CameraMovement {
@@ -293,7 +322,21 @@ enum CameraMovement {
 	CAMERA_LEFT,
 	CAMERA_RIGHT,
 	CAMERA_UP,
-	CAMERA_DOWN
+	CAMERA_DOWN,
+	NUM_CAMERA_MOVEMENTS
+};
+
+enum LightType {
+	DIRECTIONAL_LIGHT,
+	POINT_LIGHT,
+	SPOT_LIGHT,
+	NUM_LIGHT_TYPES
+};
+
+enum AlphaMode {
+	OPAQUE_MODE,
+	MASK_MODE,
+	BLEND_MODE
 };
 
 // +=================================+   
@@ -318,6 +361,108 @@ std::filesystem::path get_executable_directory() {
 	}
 	Log::error("Could not determine executable path.");
 #endif
+}
+
+std::string resolve_path(const std::string& base_directory_path, const std::string& relative_uri) {
+	// 1. Create a path object for the base directory
+	std::filesystem::path base = base_directory_path;
+
+	// 2. Append the relative URI to the base path
+	std::filesystem::path resolved_path = base / relative_uri;
+
+	// 3. Return the normalized, absolute path string
+	return resolved_path.lexically_normal().string();
+}
+
+// helper struct for 1x1 image creation;
+// simplifies the creation of tinygltf::Image objects in memory,
+// which is required for the Texture constructor
+struct DefaultImage {
+	tinygltf::Image image;
+
+	// Creates a 1x1 4-component (RGBA) 8-bit image.
+	DefaultImage(const std::array<unsigned char, 4>& data) {
+		image.width = 1;
+		image.height = 1;
+		image.component = 4; // RGBA
+		image.bits = 8;
+		image.pixel_type = TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE;
+		image.image.assign(data.begin(), data.end());
+	}
+};
+
+VkFormat get_texture_format(int components, bool is_srgb) {
+	if (is_srgb) {
+		// SRGB Formats (for color textures like Base Color, Emissive)
+		switch (components) {
+		case 1: return VK_FORMAT_R8_SRGB;
+		case 2: return VK_FORMAT_R8G8_SRGB;
+		case 3: return VK_FORMAT_R8G8B8A8_SRGB;
+		case 4: return VK_FORMAT_R8G8B8A8_SRGB;
+		default:
+			// Fallback to the safest option
+			Log::warning("Unsupported SRGB component count: " + std::to_string(components));
+			return VK_FORMAT_R8G8B8A8_SRGB;
+		}
+	}
+	else {
+		// UNORM Formats (for non-color data like Normal, MR, Occlusion)
+		switch (components) {
+		case 1: return VK_FORMAT_R8_UNORM;
+		case 2: return VK_FORMAT_R8G8_UNORM;
+		case 3:	return VK_FORMAT_R8G8B8A8_UNORM;
+		case 4: return VK_FORMAT_R8G8B8A8_UNORM;
+		default:
+			// Fallback to the safest option
+			Log::error("Unsupported UNORM component count: " + std::to_string(components));
+			return VK_FORMAT_R8G8B8A8_UNORM;
+		}
+	}
+}
+
+uint32_t get_format_bytes_per_pixel(VkFormat format) {
+	switch (format) {
+		// --- 8 bits (1 byte) per pixel ---
+	case VK_FORMAT_R8_UNORM:
+	case VK_FORMAT_R8_SRGB:
+		return 1;
+
+		// --- 16 bits (2 bytes) per pixel ---
+	case VK_FORMAT_R8G8_UNORM:
+	case VK_FORMAT_R16_SFLOAT:
+	case VK_FORMAT_R16_UNORM:
+		return 2;
+
+		// --- 24 bits (3 bytes) per pixel ---
+	case VK_FORMAT_R8G8B8_UNORM:
+	case VK_FORMAT_R8G8B8_SRGB:
+		return 3;
+
+		// --- 32 bits (4 bytes) per pixel (Most Common for Standard Textures) ---
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_B8G8R8A8_UNORM:
+	case VK_FORMAT_R32_SFLOAT: // Single float (e.g., depth maps)
+		return 4;
+
+		// --- 64 bits (8 bytes) per pixel ---
+	case VK_FORMAT_R32G32_SFLOAT: // vec2 (e.g., UV coordinates if stored in a texture)
+		return 8;
+
+		// --- 128 bits (16 bytes) per pixel ---
+	case VK_FORMAT_R32G32B32A32_SFLOAT: // vec4 (e.g., HDR data)
+	case VK_FORMAT_R32G32B32_SFLOAT:    // vec3
+		return 16;
+
+		// --- Compressed Formats (These are blocked-based, not pixel-based, and require special handling) ---
+	case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+	case VK_FORMAT_BC7_UNORM_BLOCK:
+		Log::error("in helper function get_format_bytes_per_pixel(): Attempted to get BPP for a block-compressed format.");
+
+	default:
+		Log::warning("Unknown or unsupported VkFormat passed to get_format_bytes_per_pixel(): ", format);
+		return 0; // Return 0 for safety
+	}
 }
 
 // +=================================+   
@@ -496,21 +641,26 @@ public:
 	VkExtent3D get_extent() const;
 	VkImageLayout get_layout() const;
 	VkDeviceMemory get_memory() const;
+	uint32_t get_mip_levels() const;
+	uint32_t get_layer_count() const;
+	VkDeviceSize get_allocation_size() const;
 
 	// setters
 	void set_layout(VkImageLayout new_layout);
 
 protected:
 	void destroy();
-	uint32_t find_memory_type(Device& device, VkMemoryPropertyFlags properties, uint32_t type_filter); // helper method to find a suitable memory type
-
+	uint32_t find_memory_type(Device& device, VkMemoryPropertyFlags properties, uint32_t type_filter);
 	VkDevice logical = VK_NULL_HANDLE;
 	VkImage image = VK_NULL_HANDLE;
 	VkDeviceMemory memory = VK_NULL_HANDLE;
 	VkFormat format = VK_FORMAT_UNDEFINED;
 	VkExtent3D extent = {};
+	uint32_t mip_levels = 1;
 	VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED; // Track current layout
 	bool vkimage_owned_by_instance = false;
+	uint32_t array_layers = 1;
+	VkDeviceSize allocation_size = 0;
 };
 
 // +=================================+   
@@ -883,29 +1033,6 @@ private:
 };
 
 // +=================================+   
-// | VertexDescriptions              |
-// +=================================+
-class VertexDescriptions {
-public:
-	VertexDescriptions();
-
-	~VertexDescriptions();
-
-	void add_attribute(uint32_t location, uint32_t binding, VkFormat format, uint32_t offset = 0);
-
-	// adds a binding to the vertex descriptions and returns the index of the new binding
-	uint32_t add_binding(uint32_t stride, VkVertexInputRate input_rate = VK_VERTEX_INPUT_RATE_VERTEX);
-
-	// getters
-	const std::vector<VkVertexInputAttributeDescription>& get_attribute_descriptions() const;
-	const std::vector<VkVertexInputBindingDescription>& get_input_bindings() const;
-
-protected:
-	std::vector<VkVertexInputAttributeDescription> attribute_descriptions = {};
-	std::vector<VkVertexInputBindingDescription> binding_descriptions = {};
-};
-
-// +=================================+   
 // | ShaderModule                    |
 // +=================================+
 class ShaderModule {
@@ -1000,12 +1127,65 @@ public:
 protected:
 	template<typename T> constexpr size_t get_std430_alignment() const; // helper method
 	template<typename T> size_t get_padded_offset();
-	static constexpr float_t reserve = 0.5;    // reserve space for future growth (>=50% of current size)
-	static constexpr size_t min_capacity = 32; // min capacity in bytes (should be a multiple of 4)
+	static constexpr float_t reserve = 0.5;		// reserve space for future growth (>=50% of current size)
+	static constexpr size_t min_capacity = 256;	// min capacity in bytes (should be a multiple of 4)
 	uint32_t* data = nullptr;
 	size_t size = 0;
 	size_t capacity = min_capacity;
 };
+
+// +=================================+   
+// | Light                           |
+// +=================================+
+
+// Wrapper class for managing light source properties (position, color and type)
+struct LightGPU {
+	glm::vec4	position;	// x, y, z = position; w = range
+	glm::vec4	direction;	// x, y, z = direction; w = type
+	glm::vec4	color;		// r, g, b = color; a = intensity
+	glm::vec4	spot;		// x = inner_cone_angle; y = outer_cone_angle
+};
+
+class Light {
+public:
+	Light() : unique_ID(next_unique_ID++) {}; ~Light() {};
+	Light(LightType type, glm::vec3 position, glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f), bool visible = true);
+	void translate(const glm::vec3& translation);
+	void set_position(const glm::vec3& new_position);
+	void set_color(const glm::vec3& new_color);
+	void set_intensity(float_t value);
+	void set_type(LightType type);
+	void set_inner_cone_angle(float_t angle);
+	void set_outer_cone_angle(float_t angle);
+	void set_cone_angle(float_t inner_angle, float_t outer_angle);
+	void set_direction(const glm::vec3& new_direction);
+	void set_range(const float_t value);
+	void set_visible(bool is_visible = true);
+	const glm::vec3& get_position() const;
+	const glm::vec3& get_color() const;
+	const glm::vec3& get_direction() const;
+	float_t get_intensity() const;
+	LightType get_type() const;
+	LightGPU get_light_gpu() const;
+	float_t get_range() const;
+	bool is_visible() const;
+	int get_unique_ID() const;
+private:
+	int unique_ID = -1;
+	static int next_unique_ID;
+	glm::vec3 position = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 direction = { 0.0f, 0.0f, -1.0f };
+	glm::vec3 color = { 1.0f, 1.0f, 1.0f };
+	float_t intensity = 1.0f;
+	float_t range = 0.0f; // 0.0 generally means infinite range/no falloff
+	LightType type = LightType::POINT_LIGHT;
+	float inner_cone_angle = 0.0f;					// spot-light specific
+	float outer_cone_angle = glm::radians(45.0f);	// spot-light specific
+	bool visible = true;
+};
+
+// initialize static member
+int Light::next_unique_ID = 0;
 
 // +=================================+   
 // | Buffer<T>                       |
@@ -1094,265 +1274,284 @@ protected:
 // +=================================+   
 // | Vertex                          |
 // +=================================+
+
+#pragma pack(push, 1) 
 struct Vertex {
-	glm::vec3 position;
-	glm::vec3 normal;
-	glm::vec2 tex_coord;
-	glm::vec4 color;
-	uint32_t material_index;
+	glm::vec4	color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+	glm::vec4	tangent = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);;
+	glm::vec3	position = { 0.0f, 0.0f, 0.0f };
+	glm::vec3	normal = { 0.0f, 0.0f, 0.0f };
+	glm::vec2	tex_coord = { 0.0f, 0.0f };
+	uint32_t	material_index = 0;
 	bool operator==(const Vertex& other) const;
+};
+#pragma pack(pop)
+
+// +=================================+   
+// | MikkTSpace Adapter              |
+// +=================================+
+
+// --- MIKKTSPACE DATA ADAPTER ---
+// This struct will hold the mesh data pointers and serves as the 'user data' 
+// passed to the MikkTSpace C library.
+struct MikkTSpaceData {
+	// Pointers to the final, indexed, and welded vertex/index buffers (snake_case)
+	std::vector<Vertex>* vertices = nullptr;
+	const std::vector<uint32_t>* indices = nullptr;
+
+	// Helper to get the actual index into the vertex array from MikkTSpace's indices (snake_case)
+	static uint32_t get_vertex_index(const SMikkTSpaceContext* context, int i_face, int i_vert) {
+		// Retrieve our custom user data struct
+		const MikkTSpaceData* user_data = static_cast<const MikkTSpaceData*>(context->m_pUserData);
+
+		// This calculates the index *into the conceptual index buffer*
+		const uint32_t index_in_buffer = (static_cast<uint32_t>(i_face) * 3) + static_cast<uint32_t>(i_vert);
+
+		if (user_data->indices && !user_data->indices->empty()) {
+			// Indexed case: The value at that position in the index buffer is the final Vertex index
+			return user_data->indices->at(index_in_buffer);
+		}
+		else {
+			// De-indexed case: The index_in_buffer *is* the final Vertex index
+			// (e.g., face 0, vert 1 -> index 1 in vertices array)
+			return index_in_buffer;
+		}
+	}
+};
+
+// Contains all the required static C-style callbacks and the main entry point.
+struct MeshTangentGenerator {
+
+	static int get_num_faces(const SMikkTSpaceContext* context) {
+		const MikkTSpaceData* user_data = static_cast<const MikkTSpaceData*>(context->m_pUserData);
+		// Total number of indices must be divisible by 3 for triangles
+
+		if (user_data->indices && !user_data->indices->empty()) {
+			// Indexed case: Calculate from index buffer size
+			return static_cast<int>(user_data->indices->size() / 3);
+		}
+		else {
+			// De-indexed case: Calculate from vertex buffer size
+			return static_cast<int>(user_data->vertices->size() / 3);
+		}
+	}
+
+	static int get_num_vertices_of_face(const SMikkTSpaceContext* context, int i_face) {
+		// We always use triangles, so 3 vertices per face
+		return 3;
+	}
+
+	static void get_position(const SMikkTSpaceContext* context, float fv_pos_out[], int i_face, int i_vert) {
+		const uint32_t vertex_index = MikkTSpaceData::get_vertex_index(context, i_face, i_vert);
+		const MikkTSpaceData* user_data = static_cast<const MikkTSpaceData*>(context->m_pUserData);
+
+		const glm::vec3& pos = user_data->vertices->at(vertex_index).position;
+		fv_pos_out[0] = pos.x;
+		fv_pos_out[1] = pos.y;
+		fv_pos_out[2] = pos.z;
+	}
+
+	static void get_normal(const SMikkTSpaceContext* context, float fv_norm_out[], int i_face, int i_vert) {
+		const uint32_t vertex_index = MikkTSpaceData::get_vertex_index(context, i_face, i_vert);
+		const MikkTSpaceData* user_data = static_cast<const MikkTSpaceData*>(context->m_pUserData);
+
+		const glm::vec3& norm = user_data->vertices->at(vertex_index).normal;
+		fv_norm_out[0] = norm.x;
+		fv_norm_out[1] = norm.y;
+		fv_norm_out[2] = norm.z;
+	}
+
+	static void get_tex_coord(const SMikkTSpaceContext* context, float fv_tex_out[], int i_face, int i_vert) {
+		const uint32_t vertex_index = MikkTSpaceData::get_vertex_index(context, i_face, i_vert);
+		const MikkTSpaceData* user_data = static_cast<const MikkTSpaceData*>(context->m_pUserData);
+
+		const glm::vec2& uv = user_data->vertices->at(vertex_index).tex_coord;
+		fv_tex_out[0] = uv.x;
+		fv_tex_out[1] = uv.y;
+	}
+
+	static void set_tspace_basic(
+		const SMikkTSpaceContext* context,
+		const float fv_tangent[],
+		const float f_sign,
+		int i_face,
+		int i_vert) {
+		// Get non-const access to update the vertex data
+		MikkTSpaceData* user_data = const_cast<MikkTSpaceData*>(
+			static_cast<const MikkTSpaceData*>(context->m_pUserData)
+			);
+		const uint32_t vertex_index = MikkTSpaceData::get_vertex_index(context, i_face, i_vert);
+
+		Vertex& v = user_data->vertices->at(vertex_index);
+
+		// 1. Get the tangent calculated by MikkTSpace (This vector is still in glTF Y-up space)
+		glm::vec3 tangent = { fv_tangent[0], fv_tangent[1], fv_tangent[2] };
+
+		// 2. --- HOST-SIDE COORDINATE TRANSFORMATION (Y-up to Z-up) ---
+		// Apply the coordinate system rotation to the Tangent (XYZ): (x, y, z) -> (x, z, -y)
+		v.tangent.x = tangent.x;
+		const float original_y = tangent.y;
+		v.tangent.y = tangent.z;      // New Y is old Z
+		v.tangent.z = -original_y;    // New Z is negated old Y
+		v.tangent.w = -f_sign;
+	}
+
+	// ====================================================================
+	// PUBLIC ENTRY POINT
+	// ====================================================================
+	static void generate_tangents(
+		std::vector<Vertex>& vertices,
+		const std::vector<uint32_t>& indices
+	) {
+		// Check for valid geometry based on whether indices are provided or not.
+		if (indices.empty()) {
+			// De-indexed case: vertices must be non-empty and a multiple of 3 (for triangles)
+			if (vertices.empty() || (vertices.size() % 3 != 0)) {
+				Log::warning("MikkTSpace: Invalid vertex count for de-indexed mesh. Skipping tangent generation.");
+				return;
+			}
+		}
+		else {
+			// Indexed case: indices must be non-empty and a multiple of 3
+			if (indices.size() % 3 != 0) {
+				Log::warning("MikkTSpace: Invalid index count for indexed mesh. Skipping tangent generation.");
+				return;
+			}
+		}
+		// If we reach here, the geometry is valid for MikkTSpace.
+
+		// 1. Setup the UserData structure
+		MikkTSpaceData user_data;
+		user_data.vertices = &vertices;
+		user_data.indices = &indices; // Pass the index buffer (empty if de-indexed)
+
+		// 2. Setup the MikkTSpace interface, mapping C++ static methods to C function pointers
+		SMikkTSpaceInterface mikkt_interface = {};
+		mikkt_interface.m_getNumFaces = MeshTangentGenerator::get_num_faces;
+		mikkt_interface.m_getNumVerticesOfFace = MeshTangentGenerator::get_num_vertices_of_face;
+		mikkt_interface.m_getPosition = MeshTangentGenerator::get_position;
+		mikkt_interface.m_getNormal = MeshTangentGenerator::get_normal;
+		mikkt_interface.m_getTexCoord = MeshTangentGenerator::get_tex_coord;
+		mikkt_interface.m_setTSpaceBasic = MeshTangentGenerator::set_tspace_basic;
+
+		// 3. Setup the Context
+		SMikkTSpaceContext context = {};
+		context.m_pInterface = &mikkt_interface;
+		context.m_pUserData = &user_data; // Pass our data structure pointer
+
+		// 4. Run the MikkTSpace calculation!
+		if (!genTangSpace(&context, 0.0f)) {
+			Log::warning("MikkTSpace Error: Failed to generate tangent space!");
+		}
+	}
+};
+
+// +=================================+   
+// | SceneMaterialTexIDs             |
+// +=================================+
+// struct for mapping global texture IDs to unique texture IDs used by the Scene
+struct SceneMaterialTexIDs {
+	int	ambient_tex_id = -1;
+	int	base_color_tex_id = -1;
+	int	specular_tex_id = -1;
+	int	specular_color_tex_id = -1;
+
+	int	displacement_tex_id = -1;
+	int	alpha_tex_id = -1;
+	int	reflection_tex_id = -1;
+	int	metallic_roughness_tex_id = -1;	// Combined map for metallic and roughness values
+
+	int	normal_tex_id = -1;				// Texture used for normal mapping
+	int	occlusion_tex_id = -1;			// Texture used for ambient occlusion.
+	int	emissive_tex_id = -1;
+	int clearcoat_tex_id = -1;
+
+	int clearcoat_roughness_tex_id = -1;
+	int clearcoat_normal_tex_id = -1;
+	int sheen_color_tex_id = -1;
+	int sheen_roughness_tex_id = -1;
+
+	int transmission_tex_id = -1;
+	int thickness_tex_id = -1;
+	int specular_gloss_diffuse_tex_id = -1;
+	int specular_gloss_tex_id = -1;
+};
+
+// +=================================+   
+// | MaterialTexIDs                  |
+// +=================================+
+// struct for storing global texture IDs used by the Material
+struct MaterialTexIDs {
+	int	ambient_tex_id = -1;
+	int	base_color_tex_id = -1;
+	int	specular_tex_id = -1;
+	int	specular_color_tex_id = -1;
+
+	int	displacement_tex_id = -1;
+	int	alpha_tex_id = -1;
+	int	reflection_tex_id = -1;
+	int	metallic_roughness_tex_id = -1;	// Combined map for metallic and roughness values
+
+	int	normal_tex_id = -1;				// Texture used for normal mapping
+	int	occlusion_tex_id = -1;			// Texture used for ambient occlusion.
+	int	emissive_tex_id = -1;
+	int clearcoat_tex_id = -1;
+
+	int clearcoat_roughness_tex_id = -1;
+	int clearcoat_normal_tex_id = -1;
+	int sheen_color_tex_id = -1;
+	int sheen_roughness_tex_id = -1;
+
+	int transmission_tex_id = -1;
+	int thickness_tex_id = -1;
+	int specular_gloss_diffuse_tex_id = -1;
+	int specular_gloss_tex_id = -1;
 };
 
 // +=================================+   
 // | Material                        |
 // +=================================+
+
 struct Material {
-	std::string name;
 
-	glm::vec3 ambient;	// ambient color of the material
-	glm::vec3 diffuse;	// diffuse color, often the primary color of the object
-	glm::vec3 specular;	// specular color, for highlights
-	glm::vec3 transmittance; // how much light passes through the object (for transparant objects)
-	glm::vec3 emission;	// color of light emitted by the material
+	// Basic Properties
+	glm::vec4 ambient = { 0.1f, 0.1f, 0.1f, AlphaMode::BLEND_MODE };	// ambient.w is used for the alphaMode: 0=OPAQUE, 1=MASK, 2=BLEND
+	glm::vec4 specular = { 0.1f, 0.1f, 0.1f, 1.0f };
+	glm::vec4 transmittance = { 0.0f, 0.0f, 0.0f, 1.0f };
+	glm::vec4 emission = { 1.0f, 1.0f, 1.0f, 1.0f };
+	glm::vec4 base_color = { 0.7f, 0.7f, 0.7f, 1.0f };
 
-	float shininess;	// specular exponent, controlling the size and sharpness of highlights
-	float ior;			// index of refraction
-	float dissolve;		// 1.0 = fully opaque, 0.0 = fully transparent
-	int   illum;		// illumination model
-	float roughness;
+	float_t shininess = 32.0f;
+	float_t ior = 1.0f;
+	float_t dissolve = 1.0f;
+	float_t roughness = 0.0f;
 
-	// Texture map filenames
-	std::string ambient_texname;
-	std::string diffuse_texname;
-	std::string specular_texname;
-	std::string bump_texname;
-	std::string displacement_texname;
-	std::string alpha_texname;
-	std::string reflection_texname;
+	float_t metallic = 0.0f;
+	float_t alpha_cutoff = 0.0f;
+	int illum = 4;
+	int unique_ID = -1;	// unique GLOBAL(!) material index
+
+	MaterialTexIDs texIDs;
+
+	static int next_unique_ID;
+
+	// Constructor & Destructor
+	Material() : unique_ID(next_unique_ID++) {}
+	~Material() = default;
+
+	// Explicitly deleted copy operations
+	Material(const Material&) = delete;
+	Material& operator=(const Material&) = delete;
+
+	// Defaulted move operations
+	Material(Material&&) = default;
+	Material& operator=(Material&&) = default;
+
+	int get_unique_ID() const { return unique_ID; }
 };
 
-struct MaterialStd430 {
-	glm::vec3 ambient;			float padding1 = 1.0f; // Add padding to align the next vector to a 16-byte boundary.
-	glm::vec3 diffuse;			float padding2 = 1.0f;
-	glm::vec3 specular;			float padding3 = 1.0f;
-	glm::vec3 transmittance;	float padding4 = 1.0f;
-	glm::vec3 emission;			float padding5 = 1.0f;
-	float shininess;
-	float ior;
-	float dissolve;
-	int   illum;
-	float roughness;
-
-	// Delete default constructor to prevent uninitialized objects
-	MaterialStd430() = delete;
-
-	// Constructor to convert from the application-side Material struct
-	// to shader-compliant std430 alignment
-	MaterialStd430(const Material& material) :
-		ambient(material.ambient),
-		diffuse(material.diffuse),
-		specular(material.specular),
-		transmittance(material.transmittance),
-		emission(material.emission),
-		shininess(material.shininess),
-		ior(material.ior),
-		dissolve(material.dissolve),
-		illum(material.illum),
-		roughness(material.roughness)
-	{
-	}
-};
-
-// +=================================+   
-// | SubMesh                         |
-// +=================================+
-struct SubMesh {
-	uint32_t material_index;
-	uint32_t first_index;
-	uint32_t index_count;
-	uint32_t vertex_offset;
-};
-
-// +=================================+   
-// | Mesh                            |
-// +=================================+
-class Mesh {
-public:
-	// constructor
-	Mesh() = delete;
-
-	// parametric constructor
-	Mesh(Device& device, const std::string& relative_path, Semaphore* semaphore = nullptr);
-
-	// destructor
-	~Mesh();
-
-	// getters
-	const Buffer<Vertex>& get_vertex_buffer() const;
-	const Buffer<uint32_t>& get_index_buffer() const;
-	const Buffer<MaterialStd430>& get_material_buffer() const;
-	uint32_t get_index_count() const;
-	uint32_t get_vertex_count() const;
-	const VertexDescriptions& get_vertex_descriptions() const;
-	VkIndexType get_index_type() const;
-	const std::vector<SubMesh>& get_submeshes() const;
-private:
-	Device& device;
-	std::vector<Vertex> vertices;
-	std::vector<uint32_t> indices;
-	std::vector<Material> materials;
-	std::vector<MaterialStd430> materials_std430;
-	std::vector<SubMesh> submeshes;
-
-	std::unique_ptr<Buffer<Vertex>> vertex_buffer;
-	std::unique_ptr<Buffer<uint32_t>> index_buffer;
-	std::unique_ptr<Buffer<MaterialStd430>> material_buffer;
-
-	uint32_t index_count = 0;
-	uint32_t vertex_count = 0;
-	uint32_t material_count = 0;
-	VertexDescriptions vertex_descriptions;
-	VkIndexType index_type;
-};
-
-// +=================================+   
-// | Entity                          |
-// +=================================+
-class Entity {
-public:
-	// deleted default constructor
-	Entity() = delete;
-
-	// parametric constructor
-	Entity(Mesh& mesh);
-
-	// destructor
-	~Entity() = default;
-
-	// Calculates the model matrix, applying the transformations in the correct order: scale, rotate, then translate.
-	glm::mat4 get_model_matrix();
-
-	// Public setter methods for transformations.
-	void set_position(const glm::vec3& position);
-	void set_rotation(const glm::vec3& rotation);
-	void set_scale(const glm::vec3& scale);
-
-	void translate(const glm::vec3& position_delta);
-	void rotate(const glm::vec3& rotation_delta);
-	void scale_add(const glm::vec3& scale_delta);
-	void scale_factor(const glm::vec3& scale_multiplier);
-
-	// Public getter method for the mesh.
-	Mesh& get_mesh() const;
-
-protected:
-	// Transformation properties.
-	glm::vec3 position = glm::vec3(0.0f);
-	glm::vec3 rotation = glm::vec3(0.0f);
-	glm::vec3 scale = glm::vec3(1.0f);
-
-	Mesh* mesh;
-};
-
-
-// +=================================+   
-// | Camera                          |
-// +=================================+
-
-// An abstract camera class that processes input and calculates the corresponding Euler Angles, Vectors, and Matrices for use in rendering.
-class Camera {
-public:
-	// Constructor with vectors
-	Camera(glm::vec3 camera_position = glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3 camera_up = glm::vec3(0.0f, 1.0f, 0.0f), float camera_yaw = CAMERA_YAW, float camera_pitch = CAMERA_PITCH);
-
-	// Constructor with scalar values
-	Camera(float pos_x, float pos_y, float pos_z, float up_x, float up_y, float up_z, float camera_yaw, float camera_pitch);
-
-	// Getters
-	glm::mat4 get_view_matrix();
-	glm::mat4 get_projection_matrix();
-	glm::vec3 get_position() const;
-
-	// Setters for camera attributes
-	glm::vec3 set_position(const glm::vec3& new_position);
-	glm::vec3 translate(const glm::vec3& delta);
-	void set_world_up(const glm::vec3& new_world_up);
-	void set_yaw(float new_yaw);
-	void set_pitch(float new_pitch);
-	void set_movement_speed(float new_speed);
-	void set_mouse_sensitivity(float new_sensitivity);
-	void set_fov(float new_fov);
-	void set_aspect_ratio(float new_aspect_ratio);
-	void set_near_plane(float new_near_plane);
-	void set_far_plane(float new_far_plane);
-
-	// Processes input
-	void process_keyboard(CameraMovement direction, float delta_time);
-	void process_mouse_movement(float x_offset, float y_offset, bool constrain_pitch = true);
-	void process_mouse_scroll(float y_offset);
-
-private:
-	// Camera Attributes
-	glm::vec3 position;
-	glm::vec3 front;
-	glm::vec3 up;
-	glm::vec3 right;
-	glm::vec3 world_up;
-
-	// Euler Angles
-	float yaw;
-	float pitch;
-
-	// Camera options
-	float movement_speed;
-	float mouse_sensitivity;
-	float fov;
-
-	// Projection options
-	float aspect_ratio;
-	float near_plane;
-	float far_plane;
-};
-
-// +=================================+   
-// | Light                           |
-// +=================================+
-
-// Wrapper class for managing light source properties (position, color and type)
-// The light's position is a glm::vec4 where the 'w' component distinguishes between a positional light (w=1.0f) and a directional light (w=0.0f)
-class Light {
-public:
-	Light(glm::vec4 position, glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f));
-	void translate(const glm::vec3& translation);
-	void set_position(const glm::vec4& new_position);
-	void set_color(const glm::vec3& new_color);
-	const glm::vec4& get_position() const;
-	const glm::vec3& get_color() const;
-
-private:
-	glm::vec4 position;
-	glm::vec3 color;
-};
-
-// +=================================+   
-// | Light                           |
-// +=================================+
-class View {
-public:
-	// constructor; the position of the view as a glm::vec4 with w=1.0f.
-	View(glm::vec4 position);
-
-	void translate(const glm::vec3& translation);
-
-	// set new_position as a glm::vec4 with w=1.0f.
-	void set_position(const glm::vec4& new_position);
-
-	// return the position of the view as a const glm::vec4 reference
-	const glm::vec4& get_position() const;
-
-private:
-	glm::vec4 position;
-};
+// initialize static member
+int Material::next_unique_ID = 0;
 
 // +=================================+   
 // | Sampler                         |
@@ -1369,8 +1568,10 @@ public:
 		Device& device,
 		VkFilter magFilter = VK_FILTER_LINEAR,
 		VkFilter minFilter = VK_FILTER_LINEAR,
-		VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		VkSamplerAddressMode address_mode_U = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		VkSamplerAddressMode address_mode_V = VK_SAMPLER_ADDRESS_MODE_REPEAT,
 		VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		uint32_t mip_levels = 1,
 		float_t max_anisotropy_level = 16.0f // 0.0f: disabled
 	);
 
@@ -1387,13 +1588,58 @@ protected:
 	VkSamplerCreateInfo sampler_create_info = {};
 };
 
+
+// +=================================+   
+// | TexturePath                     |
+// +=================================+
+// Custom Key structure for optimized unordered_map lookups
+struct TexturePath {
+	std::string path = "";
+	uint64_t pre_calculated_hash = 0;
+
+	TexturePath(const std::string& filepath) {
+		try {
+			path = std::filesystem::absolute(filepath).string();
+		}
+		catch (const std::filesystem::filesystem_error& e) {
+			path = filepath;
+		}
+		pre_calculated_hash = std::hash<std::string>{}(path);
+	}
+	TexturePath() : pre_calculated_hash(0) {}
+
+	// Overload the equality operator for collision checking
+	bool operator==(const TexturePath& other) const {
+		// 1. CHEAP CHECK: Compare the hash values first. If hashes differ, paths MUST be different.
+		if (pre_calculated_hash != other.pre_calculated_hash) {
+			return false;
+		}
+
+		// 2. EXPENSIVE CHECK (Only executed on hash collision): 
+		// Compare the full strings to handle the rare hash collision scenario.
+		return path == other.path;
+	}
+};
+
+// Specialization of std::hash for the TexturePath struct
+// This tells the unordered_map how to get the hash for bucket lookup.
+template <>
+struct std::hash<TexturePath> {
+	size_t operator()(const TexturePath& tp) const {
+		return tp.pre_calculated_hash;
+	}
+};
+
 // +=================================+   
 // | Texture                         |
 // +=================================+
 class Texture {
+	friend class Mesh;
+	friend class Scene;
 public:
 	// Parametric constructor
-	Texture(Device& device, const std::string& filepath, VkFormat format, Semaphore* tl_semaphore);
+	Texture(Device& device, const std::string& filepath, VkFormat format, Semaphore* tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+	Texture(Device& device, const tinygltf::Image& gltf_image, VkFormat format, Semaphore* tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
 	// Destructor
 	~Texture();
@@ -1402,15 +1648,323 @@ public:
 	const ImageView& get_image_view() const;
 	const Sampler& get_sampler() const;
 	const Image& get_image() const;
+	const uint32_t get_ID() const;
+	static int get_ID(std::string texture_path);
+	static int get_ID(TexturePath texture_path);
+	static uint32_t get_next_unique_ID();
+	static const int get_unique_IDs_count();
+	static Texture* get_texture_by_ID(uint32_t global_texID);
 
+	const TexturePath& register_path(const std::string& filepath);
 private:
 	Device* device = nullptr;
 	std::unique_ptr<Image> image = nullptr;
 	std::unique_ptr<ImageView> image_view = nullptr;
 	std::unique_ptr<Sampler> sampler = nullptr;
+	uint32_t unique_ID = 0; // unique GLOBAL texture ID
+	static uint32_t next_unique_ID;
+	static std::unordered_map<TexturePath, uint32_t> tex_list; // map for checking if a texture has already been loaded
+	static std::unordered_map<uint32_t, Texture*> texture_ID_map; // map for retrieving texture pointers by their unique ID
+	TexturePath texture_path;
+};
 
-	// Internal helper for Vulkan resource creation
-	void create_image_and_view(const std::string& relative_filepath, VkFormat format, Semaphore* tl_semaphore);
+// initialize static members
+uint32_t Texture::next_unique_ID = 0;
+std::unordered_map<TexturePath, uint32_t> Texture::tex_list = {};
+std::unordered_map<uint32_t, Texture*> Texture::texture_ID_map = {};
+
+// +=================================+   
+// | SubMesh                         |
+// +=================================+
+struct SubMesh {
+	uint32_t parent_mesh_local_material_index = 0;
+	uint32_t scene_local_material_index = 0;
+	uint32_t global_material_index = 0;
+	uint32_t first_index;
+	uint32_t index_count;
+	uint32_t vertex_count;
+	uint32_t vertex_offset;
+};
+
+// +=================================+   
+// | Mesh                            |
+// +=================================+
+class Mesh {
+	friend class Scene;
+public:
+	// constructor
+	Mesh() = delete;
+
+	// parametric constructor
+	Mesh(Device& device, const std::string& relative_path, Semaphore* semaphore = nullptr, bool default_to_pbr = false, bool generate_mikktspace_tangents = true);
+
+	// destructor
+	~Mesh();
+
+	// getters for buffers
+	const Buffer<Vertex>& get_vertex_buffer() const { return *this->vertex_buffer; }
+	const Buffer<uint32_t>& get_index_buffer() const;
+	const Buffer<Material>& get_material_buffer() const;
+	Buffer<LightGPU>& get_lights_buffer(Semaphore* timeline_semaphore);
+
+	// getters for counts
+	uint32_t get_index_count() const;
+	uint32_t get_vertex_count() const;
+	uint32_t get_lights_count() const;
+	uint32_t get_material_count() const;
+	uint32_t get_texture_count() const;
+
+	// getters for textures
+	const std::vector<std::unique_ptr<Texture>>& get_textures() const;
+
+	// other getters
+	VkIndexType get_index_type() const;
+	std::vector<SubMesh>& get_submeshes();
+	std::vector<LightGPU>& get_lights();
+	std::vector<Material>& get_materials();
+	std::string& get_base_dir();
+	uint32_t get_unique_ID() const;
+
+private:
+	void load_obj(const std::filesystem::path& full_path, Semaphore* timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents);
+	void load_gltf(const std::filesystem::path& full_path, Semaphore* timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents);
+	Device& device;
+	std::vector<Vertex> vertices;
+	std::vector<uint32_t> indices;
+	std::vector<Material> materials;
+	std::vector<LightGPU> lights_gpu;
+	std::vector<SubMesh> submeshes;
+
+	std::unique_ptr<Buffer<Vertex>> vertex_buffer = nullptr;
+	std::unique_ptr<Buffer<uint32_t>> index_buffer = nullptr;
+	std::unique_ptr<Buffer<Material>> material_buffer = nullptr;
+	std::unique_ptr<Buffer<LightGPU>> light_buffer = nullptr;
+
+	// unique textures for this mesh
+	std::vector<std::unique_ptr<Texture>> textures;
+
+	// images for default textures
+	static std::vector<std::unique_ptr<DefaultImage>> default_tex_images;
+
+	// counters
+	uint32_t index_count = 0;
+	uint32_t vertex_count = 0;
+	uint32_t material_count = 0;
+	uint32_t lights_count = 0;
+	uint32_t texture_count = 0;
+
+	VkIndexType index_type;
+	std::string base_dir = "";
+	uint32_t unique_ID = 0;
+	static uint32_t next_unique_mesh_id;
+};
+
+// initialize static members
+uint32_t Mesh::next_unique_mesh_id = 0;
+std::vector<std::unique_ptr<DefaultImage>> Mesh::default_tex_images;
+
+
+// +=================================+   
+// | Entity                          |
+// +=================================+
+class Entity {
+public:
+	// deleted default constructor
+	Entity() = delete;
+
+	// parametric constructor
+	Entity(Mesh* mesh, glm::vec3 position = { 0.0f, 0.0f, 0.0f }, bool visible = true);
+
+	// destructor
+	~Entity() = default;
+
+	// Calculates the model matrix, applying the transformations in the correct order: scale, rotate, then translate.
+	glm::mat4 get_model_matrix();
+
+	// Public setter methods for transformations.
+	glm::vec3& set_position(const glm::vec3& position);
+	glm::vec3& set_rotation(const glm::vec3& rotation);
+	glm::vec3& set_scale(const glm::vec3& scale);
+
+	glm::vec3& translate(const glm::vec3& position_delta);
+	glm::vec3& rotate(const glm::vec3& rotation_delta);
+	glm::vec3& scale_add(const glm::vec3& scale_delta);
+	glm::vec3& scale_factor(const glm::vec3& scale_multiplier);
+
+	// Public getters
+	Mesh& get_mesh() const;
+	const glm::vec3& get_position() const;
+	const glm::vec3& get_rotation() const;
+	const glm::vec3& get_scale() const;
+	bool is_visible() const;
+	int get_unique_ID() const;
+
+	void set_visible(bool is_visible = true);
+
+private:
+	// Transformation properties.
+	glm::vec3 position = glm::vec3(0.0f);
+	glm::vec3 rotation = glm::vec3(0.0f);
+	glm::vec3 scale = glm::vec3(1.0f);
+
+	int unique_ID = -1;
+	static int next_unique_ID;
+	Mesh* mesh;
+	bool visible = true;
+};
+
+// initialize static member
+int Entity::next_unique_ID = 0;
+
+
+// +=================================+   
+// | Camera                          |
+// +=================================+
+
+// An abstract camera class that processes input and calculates the corresponding Euler Angles, Vectors, and Matrices for use in rendering.
+class Camera {
+public:
+	// Constructor with vectors
+	Camera(glm::vec3 camera_position = glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3 camera_up = glm::vec3(0.0f, 1.0f, 0.0f), float camera_yaw = CAMERA_DEFAULT_YAW, float camera_pitch = CAMERA_DEFAULT_PITCH);
+
+	// Constructor with scalar values
+	Camera(float pos_x, float pos_y, float pos_z, float up_x, float up_y, float up_z, float camera_yaw = CAMERA_DEFAULT_YAW, float camera_pitch = CAMERA_DEFAULT_PITCH);
+
+	// Getters
+	int get_unique_ID() const;
+	glm::mat4 get_view_matrix();
+	glm::mat4 get_projection_matrix();
+	glm::vec3 get_position() const;
+
+	// Setters for camera attributes
+	glm::vec3 set_position(const glm::vec3& new_position);
+	glm::vec3 translate(const glm::vec3& delta);
+	void set_world_up(const glm::vec3& new_world_up);
+	void set_yaw(float new_yaw);
+	void set_pitch(float new_pitch);
+	void set_movement_speed(float new_speed);
+	void set_mouse_sensitivity(float new_sensitivity);
+	void set_fov(float new_fov);
+	void set_aspect_ratio(float new_aspect_ratio);
+	void set_aspect_ratio(VkExtent2D extent);
+	void set_near_plane(float new_near_plane);
+	void set_far_plane(float new_far_plane);
+
+	// Processes input
+	void process_keyboard(CameraMovement direction, float delta_time);
+	void process_mouse_movement(float x_offset, float y_offset, bool constrain_pitch = true);
+	void process_mouse_scroll(float y_offset);
+
+private:
+	int unique_ID = -1;
+	static int next_unique_ID;
+	// Camera Attributes
+	glm::vec3 position = CAMERA_DEFAULT_POSITION;
+	glm::vec3 front;
+	glm::vec3 right;
+	glm::vec3 up = CAMERA_DEFAULT_UP;
+	glm::vec3 world_up = DEFAULT_WORLD_UP;
+
+	// Euler Angles
+	float yaw = CAMERA_DEFAULT_YAW;
+	float pitch = CAMERA_DEFAULT_PITCH;
+
+	// Camera options
+	float movement_speed = CAMERA_DEFAULT_SPEED;
+	float mouse_sensitivity = CAMERA_DEFAULT_SENSITIVITY;
+	float fov = CAMERA_DEFAULT_FOV;
+
+	// Projection options
+	float aspect_ratio = CAMERA_DEFAULT_FAR_PLANE;
+	float near_plane = CAMERA_DEFAULT_NEAR_PLANE;
+	float far_plane = CAMERA_DEFAULT_FAR_PLANE;
+};
+
+// initialize static member
+int Camera::next_unique_ID = 0;
+
+// +=================================+   
+// | Scene                           |
+// +=================================+
+class Scene {
+public:
+	// ========================================================================
+	// PUBLIC INTERFACE (Constructors, Destructors, Getters, Setters, etc.)
+	// ========================================================================
+
+	Scene();
+	~Scene();
+
+	// Resource Management
+	uint32_t add_entity(Mesh* mesh, glm::vec3 position = { 0.0f, 0.0f, 0.0f }, bool visible = true);
+	uint32_t add_scene_light(LightType type, glm::vec3 position, glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f));
+	uint32_t add_camera(glm::vec3 position = CAMERA_DEFAULT_POSITION, glm::vec3 up = CAMERA_DEFAULT_UP, float yaw = CAMERA_DEFAULT_YAW, float pitch = CAMERA_DEFAULT_PITCH);
+
+	// Removal & Cleanup
+	void remove_entity(uint32_t entity_id);
+	void remove_scene_light(uint32_t light_id);
+	void remove_camera(uint32_t camera_id);
+	void clear();
+
+	// Setters
+	void select_active_camera(uint32_t camera_id);
+	void set_ambient(const glm::vec3& scene_ambient_light_color);
+	void set_exposure(float_t value);
+
+	// Camera Utility
+	void set_aspect_ratio(uint32_t camera_id, float_t aspect_ratio);
+	void set_aspect_ratio(uint32_t camera_id, float_t width, float_t height);
+	void set_aspect_ratio(uint32_t camera_id, VkExtent2D extent);
+
+	// Getters
+	Camera& get_camera(uint32_t camera_id) const;
+	Camera& get_active_camera() const;
+	Light& get_scene_light(uint32_t light_id) const;
+	Entity& get_entity(uint32_t entity_id) const;
+	uint32_t get_visible_entities_count() const;
+	uint32_t get_visible_lights_count() const;
+	std::vector<Entity*> get_visible_entities();
+	std::vector<Texture*>& get_textures();
+	glm::vec3& get_ambient();
+	float_t get_exposure();
+
+	Buffer<Material>& get_unique_materials_buffer(Semaphore* timeline_semaphore) const;
+	const std::vector<Material*>& get_unique_materials() const;
+	Buffer<LightGPU>& get_lights_buffer(Semaphore* timeline_semaphore) const;
+	Buffer<glm::mat4>& get_model_matrices_buffer(Semaphore* tl_semaphore);
+	Buffer<SceneMaterialTexIDs>& get_scene_texIDs_buffer(Semaphore* tl_semaphore);
+
+	std::map<uint32_t, std::unique_ptr<Entity>>& get_entities();
+	std::map<uint32_t, std::unique_ptr<Light>>& get_scene_lights();
+	std::unordered_map<uint32_t, Mesh*>& get_unique_meshes();
+
+private:
+	// ========================================================================
+	// PRIVATE MEMBERS
+	// ========================================================================
+
+	glm::vec3 ambient_light = SCENE_DEFAULT_AMBIENT;
+	float_t exposure = SCENE_DEFAULT_EXPOSURE;
+
+	// GPU Buffers (mutable to allow lazy updates in const getters)
+	mutable std::unique_ptr<Buffer<Material>> unique_materials_buffer = nullptr;
+	mutable std::unique_ptr<Buffer<LightGPU>> lights_buffer = nullptr;
+	mutable std::unique_ptr<Buffer<glm::mat4>> model_matrices_buffer = nullptr;
+	mutable std::unique_ptr<Buffer<SceneMaterialTexIDs>> scene_texIDs_buffer = nullptr;
+
+	// Scene-owned resources, mapped by their unique ID
+	std::map<uint32_t, std::unique_ptr<Camera>> cameras;
+	std::map<uint32_t, std::unique_ptr<Entity>> entities;
+	std::map<uint32_t, std::unique_ptr<Light>> scene_lights;
+
+	// Externally owned resources
+	std::unordered_map<uint32_t, Mesh*> unique_meshes;
+	std::vector<Material*> unique_materials;
+	std::vector<Texture*> unique_textures;
+	std::unordered_map<TexturePath, uint32_t> registered_textures; // map for checking if a texture has already been added to the scene; the uint32_t is the Scene local unique texture ID
+
+	// ID Counters
+	uint32_t active_camera_id = 0;
 };
 
 // +=================================+   
@@ -1421,11 +1975,12 @@ struct DescriptorBindingInfo {
 	VkBuffer buffer = VK_NULL_HANDLE;
 	VkDeviceSize offset = 0;
 	VkDeviceSize range = VK_WHOLE_SIZE;
-	VkImageView image_view = VK_NULL_HANDLE;
-	VkImageLayout image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-	VkSampler sampler = VK_NULL_HANDLE;
+	std::vector<VkImageView> image_views;
+	std::vector<VkImageLayout> image_layouts;
+	std::vector<VkSampler> samplers;
 	VkBufferView buffer_view = VK_NULL_HANDLE;
 	VkDescriptorType descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	uint32_t descriptor_count = 1;
 	bool updated = false; // whether the descriptor set has been updated with the information of this binding info instance
 };
 
@@ -1448,10 +2003,10 @@ public:
 	DescriptorSetLayout& operator=(const DescriptorSetLayout& other) = delete;
 
 	// add binding for a buffer or image
-	uint32_t add_binding(DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL, VkDescriptorBindingFlags binding_flags = 0);
+	uint32_t add_binding(DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL, uint32_t descriptor_count = 1, VkDescriptorBindingFlags binding_flags = 0);
 
 	// add multiple bindings of the same type at once
-	void add_bindings(uint32_t count, DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL);
+	void add_bindings(uint32_t count, DescriptorType type, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL, uint32_t descriptor_count = 1);
 
 	// finalizes the descriptor set layout and creates the descriptor set
 	void finalize();
@@ -1547,6 +2102,8 @@ class DepthBuffer {
 public:
 
 	DepthBuffer(Device& device, VkImageType image_type, VkExtent3D extent, VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	DepthBuffer(Device& device, VkExtent2D extent, VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+
 	~DepthBuffer();
 
 	// Deleted copy constructor / copy assignment operator
@@ -1732,8 +2289,9 @@ public:
 		VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL
 	);
 
-	// binds a sampler
-	void bind_texture(uint32_t binding_index, const Texture& texture, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL);
+	// bind textures as sampler2D
+	void bind_textures(uint32_t binding_index, const Texture& texture, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL);
+	void bind_textures(uint32_t binding_index, const std::vector<Texture*>& textures, VkShaderStageFlagBits shader_stage_flags = VK_SHADER_STAGE_ALL);
 
 	// binds a storage image
 	void bind_storage_image(
@@ -1775,9 +2333,9 @@ struct ColorBlendState {
 		VkBlendFactor src_alpha_blend_factor,
 		VkBlendFactor dst_alpha_blend_factor,
 		VkBlendOp alpha_blend_op,
-		float_t blend_constants[4],
+		glm::vec4 blend_constants = { 1.0f, 1.0f, 1.0f, 1.0f },
 		VkPipelineColorBlendStateCreateFlags flags = 0,
-		VkLogicOp logic_op = VK_LOGIC_OP_CLEAR
+		VkLogicOp logic_op = VK_LOGIC_OP_COPY
 	) : attachment_state(
 		VK_TRUE,	// blendEnable
 		src_color_blend_factor,
@@ -1789,21 +2347,22 @@ struct ColorBlendState {
 		VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT // colorWriteMask
 	),
 		logic_op(logic_op),
+		blend_constants(blend_constants),
 		flags(flags) {
-		for (uint32_t i = 0; i < 4; i++) {
-			this->blend_constants.push_back(blend_constants[i]);
-		}
+		this->alpha_mode = dst_color_blend_factor == VK_BLEND_FACTOR_ZERO && dst_alpha_blend_factor == VK_BLEND_FACTOR_ZERO ? AlphaMode::OPAQUE_MODE : AlphaMode::BLEND_MODE;
 	}
 
 	const VkPipelineColorBlendAttachmentState& get_attachment() const { return attachment_state; };
 	const VkLogicOp get_logic_op() const { return logic_op; };
 	const VkPipelineColorBlendStateCreateFlags get_flags() const { return flags; }
-	const std::vector<float_t>& get_blend_constants() const { return blend_constants; }
+	const glm::vec4& get_blend_constants() const { return blend_constants; }
+	AlphaMode get_alpha_mode() const { return alpha_mode; }
 private:
 	VkLogicOp logic_op;
-	std::vector<float_t> blend_constants;
+	glm::vec4 blend_constants;
 	VkPipelineColorBlendStateCreateFlags flags;
 	VkPipelineColorBlendAttachmentState attachment_state = {};
+	AlphaMode alpha_mode = AlphaMode::OPAQUE_MODE;
 };
 
 // +=================================+
@@ -1858,7 +2417,6 @@ public:
 		uint32_t subpass_index,
 		const GraphicsPipelineLayout& pipeline_layout,
 		const ShaderModule& vertex_shader,
-		const std::vector<VertexDescriptions>& vertex_descriptions,
 		const std::optional<ColorBlendState>& color_blend_state = NULLOPT,
 		const std::optional<ShaderModule>& fragment_shader = NULLOPT,
 		const std::optional<ShaderModule>& hull_shader = NULLOPT,
@@ -2001,7 +2559,7 @@ public:
 	void copy_buffer(const Buffer<T>& src_buffer, Buffer<T>& dst_buffer, uint64_t size_bytes = UINT64_MAX, uint64_t src_offset_bytes = 0, uint64_t dst_offset_bytes = 0);
 
 	template<typename T>
-	void copy_buffer_to_image(const Buffer<T>& src_buffer, Image& dst_image);
+	void copy_buffer_to_image(const Buffer<T>& src_buffer, Image& dst_image, VkDeviceSize src_buffer_offset = 0);
 
 	void add_device_memory_barrier(
 		VkPipelineStageFlags2 source_stage_flags,
@@ -2054,12 +2612,22 @@ public:
 		VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT
 	);
 
+	// transition image layout, overloaded with subresource range
+	void transition_image_layout(
+		Image& image,
+		VkImageLayout old_layout,
+		VkImageLayout new_layout,
+		const VkImageSubresourceRange& range
+	);
+
+	void generate_mipmaps(Image& image);
+
 	// record draw commands
-	void draw(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) const;
+	void draw(uint32_t vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) const;
 	void draw_indexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) const;
 
 	// dynamic viewport
-	void set_viewport(float x_pos, float y_pos, float width, float height, float min_depth = 0.0f, float max_depth = 1.0f);
+	void set_viewport(const VkOffset2D& offset, const VkExtent2D& extent, float min_depth = 0.0f, float max_depth = 1.0f);
 
 	// dynamic scissor
 	void set_scissor(const VkOffset2D& offset, const VkExtent2D& extent);
@@ -2097,6 +2665,28 @@ private:
 // +=================================+   
 // | Task                            |
 // +=================================+
+
+using TempBufferVariant = std::variant<
+	std::unique_ptr<Buffer<char8_t>>,
+	std::unique_ptr<Buffer<float_t>>,
+	std::unique_ptr<Buffer<double_t>>,
+	std::unique_ptr<Buffer<int8_t>>,
+	std::unique_ptr<Buffer<int16_t>>,
+	std::unique_ptr<Buffer<int32_t>>,
+	std::unique_ptr<Buffer<int64_t>>,
+	std::unique_ptr<Buffer<uint8_t>>,
+	std::unique_ptr<Buffer<uint16_t>>,
+	std::unique_ptr<Buffer<uint32_t>>,
+	std::unique_ptr<Buffer<uint64_t>>,
+	std::unique_ptr<Buffer<glm::vec2>>,
+	std::unique_ptr<Buffer<glm::vec3>>,
+	std::unique_ptr<Buffer<glm::vec4>>,
+	std::unique_ptr<Buffer<glm::mat4>>,
+	std::unique_ptr<Buffer<Vertex>>,
+	std::unique_ptr<Buffer<Material>>,
+	std::unique_ptr<Buffer<LightGPU>>,
+	std::unique_ptr<Buffer<SceneMaterialTexIDs>>
+>;
 
 // resources container for a compute or graphics task,
 // managed by the VulkanManager class to ensure the lifetime
@@ -2183,7 +2773,6 @@ public:
 		uint32_t subpass_index,
 		const GraphicsPipelineLayout& pipeline_layout,
 		const ShaderModule& vertex_shader,
-		const std::vector<VertexDescriptions>& vertex_descriptions,
 		const std::optional<ColorBlendState>& color_blend_state = NULLOPT,
 		const std::optional<ShaderModule>& fragment_shader = NULLOPT,
 		const std::optional<ShaderModule>& hull_shader = NULLOPT,
@@ -2273,25 +2862,7 @@ private:
 	std::vector<std::unique_ptr<ComputePipeline>> compute_pipelines;
 	std::vector<std::unique_ptr<GraphicsPipeline>> graphics_pipelines;
 	std::vector<std::unique_ptr<ShaderModule>> shaders;
-	std::vector<std::variant<
-		std::unique_ptr<Buffer<char8_t>>,
-		std::unique_ptr<Buffer<float_t>>,
-		std::unique_ptr<Buffer<double_t>>,
-		std::unique_ptr<Buffer<int8_t>>,
-		std::unique_ptr<Buffer<int16_t>>,
-		std::unique_ptr<Buffer<int32_t>>,
-		std::unique_ptr<Buffer<int64_t>>,
-		std::unique_ptr<Buffer<uint8_t>>,
-		std::unique_ptr<Buffer<uint16_t>>,
-		std::unique_ptr<Buffer<uint32_t>>,
-		std::unique_ptr<Buffer<uint64_t>>,
-		std::unique_ptr<Buffer<glm::vec2>>,
-		std::unique_ptr<Buffer<glm::vec3>>,
-		std::unique_ptr<Buffer<glm::vec4>>,
-		std::unique_ptr<Buffer<glm::mat4>>,
-		std::unique_ptr<Buffer<Vertex>>,
-		std::unique_ptr<Buffer<MaterialStd430>>
-		>> temp_buffers;
+	std::vector<TempBufferVariant> temp_buffers;
 	std::vector<std::unique_ptr<Semaphore>> temp_semaphores;
 	std::vector<VkSemaphore> binary_wait_semaphores;
 	std::vector<VkSemaphore> timeline_wait_semaphores;
@@ -2967,7 +3538,7 @@ Image::Image(
 	VkImageUsageFlags usage,
 	VkMemoryPropertyFlags memory_properties,
 	VkImageLayout initial_layout
-) : logical(device.get_logical()), format(format), extent(extent), layout(initial_layout), vkimage_owned_by_instance(true) {
+) : logical(device.get_logical()), format(format), extent(extent), layout(initial_layout), vkimage_owned_by_instance(true), mip_levels(mip_levels), array_layers(array_layers) {
 
 	VkImageCreateInfo image_info{};
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -3001,6 +3572,7 @@ Image::Image(
 	memory_allocation_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memory_allocation_info.allocationSize = memory_requirements.size;
 	memory_allocation_info.memoryTypeIndex = memory_type_index;
+	this->allocation_size = memory_allocation_info.allocationSize;
 
 	result = vkAllocateMemory(logical, &memory_allocation_info, nullptr, &memory);
 	if (result != VK_SUCCESS) {
@@ -3034,7 +3606,8 @@ Image::Image(Image&& other) noexcept :
 	memory(std::exchange(other.memory, VK_NULL_HANDLE)),
 	format(other.format),
 	extent(other.extent),
-	layout(other.layout) {
+	layout(other.layout),
+	mip_levels(other.mip_levels) {
 }
 
 // move assignment
@@ -3047,6 +3620,7 @@ Image& Image::operator=(Image&& other) noexcept {
 		format = other.format;
 		extent = other.extent;
 		layout = other.layout;
+		mip_levels = other.mip_levels;
 	}
 	return *this;
 }
@@ -3061,6 +3635,9 @@ VkImage Image::get() const { return image; }
 VkFormat Image::get_format() const { return format; }
 VkExtent3D Image::get_extent() const { return extent; }
 VkImageLayout Image::get_layout() const { return layout; }
+uint32_t Image::get_mip_levels() const { return this->mip_levels; }
+uint32_t Image::get_layer_count() const { return this->array_layers; }
+VkDeviceSize Image::get_allocation_size() const { return this->allocation_size; }
 
 VkDeviceMemory Image::get_memory() const {
 	if (!vkimage_owned_by_instance) {
@@ -4032,39 +4609,6 @@ VkCommandPool CommandPool::get() const { return pool; }
 QueueFamily CommandPool::get_usage() const { return usage; }
 
 // +=================================+   
-// | VertexDescriptions              |
-// +=================================+
-
-// constructor
-VertexDescriptions::VertexDescriptions() {}
-
-// destructor
-VertexDescriptions::~VertexDescriptions() {}
-
-void VertexDescriptions::add_attribute(uint32_t location, uint32_t binding, VkFormat format, uint32_t offset) {
-	uint32_t id = static_cast<uint32_t>(attribute_descriptions.size());
-	attribute_descriptions.resize(id + 1);
-	attribute_descriptions[id].binding = binding;
-	attribute_descriptions[id].location = location;
-	attribute_descriptions[id].format = format;
-	attribute_descriptions[id].offset = offset;
-}
-
-// adds a binding to the vertex descriptions and returns the index of the new binding
-uint32_t VertexDescriptions::add_binding(uint32_t stride, VkVertexInputRate input_rate) {
-	uint32_t id = static_cast<uint32_t>(binding_descriptions.size());
-	binding_descriptions.resize(id + 1);
-	binding_descriptions[id].binding = id;
-	binding_descriptions[id].inputRate = input_rate;
-	binding_descriptions[id].stride = stride;
-	return id;
-}
-
-// getters
-const std::vector<VkVertexInputAttributeDescription>& VertexDescriptions::get_attribute_descriptions() const { return attribute_descriptions; }
-const std::vector<VkVertexInputBindingDescription>& VertexDescriptions::get_input_bindings() const { return binding_descriptions; }
-
-// +=================================+   
 // | ShaderModule                    |
 // +=================================+
 
@@ -4190,14 +4734,12 @@ const VkShaderModule& ShaderModule::get() const { return module; }
 
 // default constructor
 PushConstants::PushConstants() {
-	this->size = 0;
 	data = new uint32_t[min_capacity / 4];
 }
 
 // constructor with values as std::vector<T>
 template<typename T>
 PushConstants::PushConstants(const std::vector<T>& values) {
-	this->size = 0;
 	data = new uint32_t[min_capacity / 4];
 	add_values(values);
 }
@@ -4205,7 +4747,6 @@ PushConstants::PushConstants(const std::vector<T>& values) {
 // constructor with values of mixed types as variadic template arguments
 template<typename... Args>
 PushConstants::PushConstants(Args... args) {
-	this->size = 0;
 	data = new uint32_t[min_capacity / 4];
 	(add_values(args), ...); // fold expression to call the add_values method for each argument
 }
@@ -4224,22 +4765,22 @@ template<typename T>
 size_t PushConstants::add_values(T value) {
 
 	// --- std430 ALIGNMENT LOGIC ---
+	size_t aligned_size = get_std430_alignment<T>();
+	size_t padding = (aligned_size - (this->size % aligned_size)) % aligned_size;
+	size_t aligned_offset = this->size + padding;
 
-	// First, we calculate the required alignment for the new data type T based on std430 rules.
-	// For types like glm::vec3, this will be 16 bytes.
-	size_t alignment = get_std430_alignment<T>();
-
-	// Then, we calculate the padding needed to ensure the current offset is a multiple of the required alignment.
-	size_t padding = (alignment - (this->size % alignment)) % alignment;
-	size_t padded_offset = this->size + padding;
-
-	// The new total size will be the padded offset plus the size of the new data.
-	size_t new_size = padded_offset + sizeof(T);
-	size_t old_size = this->size;
+	// The space consumed by T in the block must be at least the required alignment,
+	// especially for types like glm::vec3 (size 12, align 16).
+	size_t size_increase = sizeof(T);
+	if (aligned_size > sizeof(T)) {
+		size_increase = aligned_size;
+	}
+	this->size = aligned_offset + size_increase;
 
 	// Reallocate memory if existing capacity is insufficient.
-	if (this->capacity < new_size) {
-		this->capacity = size_t(std::max(float_t(min_capacity), float_t(4 * ceil(0.25f * new_size * (1.0f + reserve)))));
+	if (this->capacity < this->size) {
+		this->capacity = size_t(std::max((float_t)min_capacity, ceil(this->size * (1.0f + reserve))));
+		this->capacity += 4 - (this->capacity % 4); // ensure capacity is multiple of 4 bytes
 		uint32_t* new_allocation = new uint32_t[this->capacity / 4];
 		if (data != nullptr) {
 			memcpy(new_allocation, data, this->size);
@@ -4249,28 +4790,21 @@ size_t PushConstants::add_values(T value) {
 	}
 
 	// copy value to the end of the data array at the new padded offset
-	memcpy(data + padded_offset / 4, &value, sizeof(T));
-	this->size = new_size;
-	return padded_offset;
+	memcpy((char*)this->data + aligned_offset, &value, sizeof(T));
+	return aligned_offset;
 }
 
 // add a new value at the specified offset position of the push constants range;
 // overwrites the existing value at that position;
 template<typename T>
 void PushConstants::add_values(T value, size_t offset) {
-	// validate offset
-	if (offset > this->size) {
-		Log::error("in method PushConstants::add_values(T value, size_t offset): offset exceeds current push constant range size");
+
+	// check if the new value would exceed the total current size.
+	if (offset + sizeof(T) > this->size) {
+		Log::error("in method PushConstants::add_values(T value, size_t offset): write range exceeds current push constant range size");
 		return;
 	}
-	// Check if the provided offset is correctly aligned for the given type.
-	size_t alignment = get_std430_alignment<T>();
-	if (offset % alignment) {
-		Log::warning("in method PushConstants::add_values(T value, size_t offset): offset is not correctly aligned for this data type. Data will likely be corrupted!");
-	}
-
-	// copy value at the specified offset position
-	memcpy(data + offset / 4, &value, sizeof(T));
+	memcpy((char*)this->data + offset, &value, sizeof(T));
 }
 
 // add multiple new values to the push constants range as a std::initializer_list;
@@ -4278,8 +4812,9 @@ void PushConstants::add_values(T value, size_t offset) {
 template<typename T>
 size_t PushConstants::add_values(std::initializer_list<T> values) {
 	size_t current_offset = this->size;
-	for (const T& i : values) {
-		current_offset = this->add_values(i);
+	for (const T& value : values) {
+		this->add_values(value, current_offset);
+		current_offset += get_std430_alignment<T>();
 	}
 	return current_offset;
 }
@@ -4289,8 +4824,9 @@ size_t PushConstants::add_values(std::initializer_list<T> values) {
 template<typename T>
 size_t PushConstants::add_values(const std::vector<T>& new_data) {
 	size_t current_offset = this->size;
-	for (const T& i : new_data) {
-		current_offset = this->add_values(i);
+	for (const T& value : new_data) {
+		this->add_values(value, current_offset);
+		current_offset += get_std430_alignment<T>();
 	}
 	return current_offset;
 }
@@ -4336,10 +4872,19 @@ constexpr size_t PushConstants::get_std430_alignment() const {
 		return 16;
 	}
 	else {
-		// Default to a 4-byte alignment for unknown types.
-		// This is a warning as it may not be correct for complex types.
-		Log::warning("In method PushConstants::get_std430_alignment(): unknown type. Using 4-byte alignment.");
-		return 4;
+		if (sizeof(T) <= 4)		return 4;
+		else if (sizeof(T) <= 8)		return 8;
+		else if (sizeof(T) <= 16)		return 16;
+		else if (sizeof(T) <= 32)		return 32;
+		else if (sizeof(T) <= 64)		return 64;
+		else if (sizeof(T) <= 128)		return 128;
+		else if (sizeof(T) <= 256)		return 256;
+		else if (sizeof(T) <= 512)		return 512;
+		else if (sizeof(T) <= 1024)		return 1024;
+		else if (sizeof(T) <= 2048)		return 2048;
+		else if (sizeof(T) <= 4096)		return 4096;
+		Log::warning("In method PushConstants::get_std430_alignment(): unknown type. Alignment may fail.");
+		return sizeof(T);
 	}
 }
 
@@ -4366,10 +4911,6 @@ Buffer<T>::Buffer(Device& device, BufferType type, uint32_t elements, VkMemoryPr
 	elements(elements),
 	size_bytes(elements * sizeof(T)) {
 
-	if (sizeof(T) < 4) {
-		Log::warning("in Buffer::Buffer(): data type 'T' has less than 4 bytes, which is not recommended for alignment reasons.");
-	}
-
 	is_host_visible = memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 
 	// translate BufferType enum argument
@@ -4383,6 +4924,9 @@ Buffer<T>::Buffer(Device& device, BufferType type, uint32_t elements, VkMemoryPr
 	case BufferType::TRANSFER_BUFFER: vk_buffer_usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT; break;
 	default: Log::error("in method Buffer::Buffer(): invalid BufferType argument: ", type);
 	}
+
+	// make sure the buffer size is a multiple of 4
+	size_bytes += 4 - (size_bytes % 4);
 
 	// create buffer
 	VkBufferCreateInfo buffer_create_info = {};
@@ -4495,12 +5039,12 @@ Buffer<T>& Buffer<T>::operator=(Buffer<T>&& other) noexcept {
 // destructor
 template<typename T>
 Buffer<T>::~Buffer() {
-	if (memory != VK_NULL_HANDLE && memory != VkDeviceMemory(0xdddddddddddddddd)) {
+	if (memory != VK_NULL_HANDLE && memory) {
 		Log::debug("in Buffer<T> destructor: freeing buffer memory (memory handle: ", memory, ")");
 		vkFreeMemory(logical, memory, nullptr);
 		memory = VK_NULL_HANDLE;
 	}
-	if (buffer != VK_NULL_HANDLE && buffer != VkBuffer(0xdddddddddddddddd)) {
+	if (buffer != VK_NULL_HANDLE && buffer) {
 		Log::debug("in Buffer<T> destructor: destroying buffer (buffer handle: ", buffer, ")");
 		vkDestroyBuffer(logical, buffer, nullptr);
 		buffer = VK_NULL_HANDLE;
@@ -4690,11 +5234,11 @@ T Buffer<T>::read_element(uint32_t element_index) const {
 		Log::error("in method Buffer::get(): element index ", element_index, " is out of bounds (allowed indices: 0-", this->elements - 1, ")");
 	}
 	void* data = nullptr;
-	T element = static_cast<T>(0);
 	VkResult result = vkMapMemory(logical, memory, element_index * sizeof(T), sizeof(T), VkMemoryMapFlags(0), &data);
 	if (result != VK_SUCCESS) {
 		Log::error("in method Buffer<T>::get(uint32_t element_index): failed to map buffer memory (VkResult = ", result, ", ", vkresult_to_string(result), ")");
 	}
+	T element;
 	memcpy(&element, data, sizeof(T));
 	vkUnmapMemory(logical, memory);
 	return element;
@@ -4752,6 +5296,293 @@ template<typename T> VkBuffer Buffer<T>::get() const { return buffer; }
 template<typename T> VkMemoryPropertyFlags Buffer<T>::get_memory_property_flags() const { return memory_property_flags; }
 template<typename T> bool Buffer<T>::host_visible() const { return is_host_visible; }
 
+// +=================================+   
+// | Sampler                         |
+// +=================================+
+
+// Sampler class for texture sampling
+
+// constructor
+Sampler::Sampler(
+	Device& device,
+	VkFilter magFilter,
+	VkFilter minFilter,
+	VkSamplerAddressMode address_mode_U,
+	VkSamplerAddressMode address_mode_V,
+	VkSamplerMipmapMode mipmapMode,
+	uint32_t mip_levels,
+	float_t max_anisotropy_level
+) : logical(device.get_logical()) {
+	sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_create_info.pNext = nullptr;
+	sampler_create_info.magFilter = magFilter;
+	sampler_create_info.minFilter = minFilter;
+	sampler_create_info.addressModeU = address_mode_U;
+	sampler_create_info.addressModeV = address_mode_V;
+	sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // hard-coded default (change if needed)
+	sampler_create_info.anisotropyEnable = max_anisotropy_level > 0.0f;
+	sampler_create_info.maxAnisotropy = max_anisotropy_level;
+	sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+	sampler_create_info.compareEnable = VK_FALSE;
+	sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
+	sampler_create_info.mipmapMode = mipmapMode;
+	sampler_create_info.maxLod = static_cast<float_t>(mip_levels - 1);
+
+	if (vkCreateSampler(logical, &sampler_create_info, nullptr, &sampler) != VK_SUCCESS) {
+		Log::error("failed to create texture sampler!");
+	}
+}
+
+// destructor
+Sampler::~Sampler() {
+	if (sampler != nullptr) {
+		vkDestroySampler(logical, sampler, nullptr);
+		Log::info("destroyed image sampler (handle: ", sampler, ")");
+		sampler = nullptr;
+	}
+}
+
+// getters
+const VkSampler Sampler::get() const { return sampler; }
+const VkSampler* Sampler::get_ptr() const { return &sampler; }
+
+// +=================================+   
+// | Texture                         |
+// +=================================+
+
+// Constructor
+Texture::Texture(Device& device, const std::string& filepath, VkFormat format, Semaphore* tl_semaphore, float_t max_anisotropy_level, VkSamplerAddressMode sampler_address_mode_U, VkSamplerAddressMode sampler_address_mode_V)
+	: device(&device) {
+
+	std::filesystem::path project_root = get_executable_directory() / "..";
+	std::filesystem::path full_filepath = project_root / filepath;
+	std::string full_filepath_str = full_filepath.string();
+
+	int tex_width, tex_height, tex_channels;
+
+	// STB_image loads images upside down for Vulkan, so flip vertically.
+	stbi_set_flip_vertically_on_load(true);
+	stbi_uc* pixels = stbi_load(full_filepath_str.c_str(), &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
+	if (!pixels) { Log::error("failed to load texture image: ", full_filepath, ". Reason: ", stbi_failure_reason()); }
+
+	uint32_t max_dimension = std::max(tex_width, tex_height);
+	uint32_t mip_levels = static_cast<uint32_t>(std::floor(std::log2(max_dimension))) + 1;
+
+	// create sampler
+	sampler = std::make_unique<Sampler>(
+		device,
+		VK_FILTER_LINEAR,					// min filter
+		VK_FILTER_LINEAR,					// max filter
+		sampler_address_mode_U,				// sampler address mode U
+		sampler_address_mode_V,				// sampler address mode V
+		VK_SAMPLER_MIPMAP_MODE_LINEAR,		// sampler minmap mode
+		mip_levels,
+		max_anisotropy_level				// max anisotropy level
+	);
+
+	// create image
+	this->image = std::make_unique<Image>(
+		device,
+		VK_IMAGE_TYPE_2D,
+		format,
+		VkExtent3D(tex_width, tex_height, 1),
+		1u, // mip levels
+		1u, // array layers
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED
+	);
+
+	Log::debug("loaded texture: ", full_filepath, " (", tex_width, "x", tex_height, " pixels)");
+
+	// copy pixel data to device local memory (via staging buffer)
+	VulkanManager& manager = VulkanManager::get_singleton();
+	Task& task = manager.get_graphics_task();
+	CommandBuffer& cb = task.get_command_buffer();
+	uint32_t pixel_count = tex_width * tex_height;
+	size_t pixel_size_bytes = 4; // 4 Bytes/Pixel for STBI_rgb_alpha); TODO: adjust required size for other formats
+	VkDeviceSize image_size = pixel_count * pixel_size_bytes;
+	Buffer<uint32_t>& staging_buffer = task.make_temp_buffer<uint32_t>(pixel_count, TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	void* data;
+	vkMapMemory(device.get_logical(), staging_buffer.get_memory(), 0, image_size, 0, &data);
+	memcpy(data, pixels, static_cast<size_t>(image_size));
+	vkUnmapMemory(device.get_logical(), staging_buffer.get_memory());
+	stbi_image_free(pixels); // Free CPU copy
+	cb.begin_recording();
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+	cb.transition_image_layout(*image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	cb.copy_buffer_to_image(staging_buffer, *image);
+	cb.transition_image_layout(*image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	cb.end_recording();
+	task.timeline_sync(*tl_semaphore);
+	task.submit();
+
+	// create image view
+	image_view = std::make_unique<ImageView>(
+		device,
+		*image,
+		VK_IMAGE_VIEW_TYPE_2D,
+		VK_IMAGE_ASPECT_COLOR_BIT
+	);
+	this->unique_ID = next_unique_ID++;
+	texture_ID_map[unique_ID] = this;
+	this->texture_path = TexturePath(full_filepath_str);
+	Texture::tex_list[this->texture_path] = this->unique_ID;
+	Log::debug("Texture", "Texture resource creation complete.");
+}
+
+// Constructor for creating the resource from a glTF texture
+Texture::Texture(Device& device, const tinygltf::Image& gltf_image, VkFormat format, Semaphore* tl_semaphore, float_t max_anisotropy_level, VkSamplerAddressMode sampler_address_mode_U, VkSamplerAddressMode sampler_address_mode_V)
+	: device(&device) {
+	// 1. Get image dimensions and calculate metadata
+	// Note: gltf_image.image.size() is the UNPADDED raw data size.
+	VkDeviceSize raw_image_size = gltf_image.image.size();
+	uint32_t width = static_cast<uint32_t>(gltf_image.width);
+	uint32_t height = static_cast<uint32_t>(gltf_image.height);
+	uint32_t max_dimension = std::max(width, height);
+	uint32_t mip_levels = static_cast<uint32_t>(std::floor(std::log2(max_dimension))) + 1;
+	const uint32_t required_byte_alignment = 256;
+	const uint32_t pixel_bytes = get_format_bytes_per_pixel(format);
+	uint32_t row_byte_size = width * pixel_bytes;
+	uint32_t padded_row_byte_size = (row_byte_size + required_byte_alignment - 1) / required_byte_alignment * required_byte_alignment;
+	VkDeviceSize padded_staging_size = (VkDeviceSize)padded_row_byte_size * height;
+
+	// create Sampler
+	sampler = std::make_unique<Sampler>(
+		device,
+		VK_FILTER_LINEAR,                       // min filter
+		VK_FILTER_LINEAR,                       // max filter
+		sampler_address_mode_U,					// sampler address mode U
+		sampler_address_mode_V,					// sampler address mode V
+		VK_SAMPLER_MIPMAP_MODE_LINEAR,          // sampler minmap mode
+		mip_levels,
+		max_anisotropy_level					// max anisotropy level									
+	);
+
+	VulkanManager& manager = VulkanManager::get_singleton();
+	Task& task = manager.get_graphics_task();
+	CommandBuffer& cb = task.get_command_buffer();
+
+	// Create Staging Buffer
+	Log::debug("Texture: Creating staging buffer for ", width, "x", height, " texture");
+	Buffer<char8_t>& staging_buffer = task.make_temp_buffer<char8_t>(
+		padded_staging_size,
+		BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	// Create GPU-resident Image
+	Log::debug("Texture", "Creating GPU Image with ", mip_levels, " mip levels.");
+	image = std::make_unique<Image>(
+		device,
+		VK_IMAGE_TYPE_2D,
+		format,
+		VkExtent3D{ width, height, 1 },
+		mip_levels,
+		1, // array_layers
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED
+	);
+
+	// Copy glTF image data to staging buffer row-by-row with padding
+	void* data;
+	vkMapMemory(device.get_logical(), staging_buffer.get_memory(), 0, padded_staging_size, 0, &data);	// Map the whole padded size
+	const char* src_ptr = (const char*)gltf_image.image.data();
+	char* dst_ptr = (char*)data;
+	for (uint32_t y = 0; y < height; ++y) {
+		memcpy(dst_ptr, src_ptr, row_byte_size);	// Copy the actual unpadded row data size
+		src_ptr += row_byte_size;					// Advance the source pointer by the actual row data size
+		dst_ptr += padded_row_byte_size;			// Advance the destination pointer by the PADDED row size
+	}
+	vkUnmapMemory(device.get_logical(), staging_buffer.get_memory());
+
+	// Transition image layout for transfer destination
+	cb.begin_recording();
+	cb.transition_image_layout(*image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+	// Copy buffer to image (level 0)
+	cb.copy_buffer_to_image(staging_buffer, *image);
+
+	// Generate mipmaps and transition to final layout
+	if (mip_levels > 1) {
+		cb.generate_mipmaps(*image);
+	}
+	else {
+		// If no mipmaps, just transition the base level to SHADER_READ_ONLY_OPTIMAL
+		cb.transition_image_layout(*image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	}
+	cb.end_recording();
+	task.timeline_sync(*tl_semaphore);
+	task.submit();
+
+	// 5. Create ImageView (using the calculated mip levels)
+	image_view = std::make_unique<ImageView>(
+		device,
+		*image,
+		VK_IMAGE_VIEW_TYPE_2D,
+		VK_IMAGE_ASPECT_COLOR_BIT,
+		0, // base_mip_level
+		mip_levels,
+		0, // base_array_layer
+		1  // layer_count
+	);
+	this->unique_ID = next_unique_ID++;
+	texture_ID_map[unique_ID] = this;
+	Log::debug("Texture", "Texture resource creation complete.");
+}
+
+// Destructor
+Texture::~Texture() {
+	tex_list.erase(this->texture_path);
+	texture_ID_map.erase(this->unique_ID);
+}
+
+// Getters
+const ImageView& Texture::get_image_view() const { return *image_view; }
+const Sampler& Texture::get_sampler() const { return *sampler; }
+const Image& Texture::get_image() const { return *image; }
+const uint32_t Texture::get_ID() const { return unique_ID; }
+uint32_t Texture::get_next_unique_ID() { return next_unique_ID; }
+const int Texture::get_unique_IDs_count() { return next_unique_ID; }
+
+Texture* Texture::get_texture_by_ID(uint32_t global_texID) {
+	auto it = texture_ID_map.find(global_texID);
+	if (it == texture_ID_map.end()) {
+		return nullptr;
+	}
+	else {
+		return it->second;
+	}
+}
+
+int Texture::get_ID(std::string texture_path) {
+	return get_ID(TexturePath(texture_path));
+}
+
+int Texture::get_ID(TexturePath texture_path) {
+	auto it = tex_list.find(texture_path);
+	if (it == tex_list.end()) {
+		return -1;
+	}
+	else {
+		return it->second;
+	}
+}
+
+const TexturePath& Texture::register_path(const std::string& filepath) {
+	if (this->texture_path.pre_calculated_hash != 0) {
+		Log::warning("in Texture::register_path(): this texture has already been registered (path: ", this->texture_path.path, ", hash: ", this->texture_path.pre_calculated_hash, ")");
+	}
+	this->texture_path = TexturePath(filepath);
+	Texture::tex_list[this->texture_path] = this->unique_ID;
+	return this->texture_path;
+}
+
 
 // +=================================+   
 // | Vertex                          |
@@ -4761,34 +5592,250 @@ template<typename T> bool Buffer<T>::host_visible() const { return is_host_visib
 namespace std {
 	template<> struct hash<Vertex> {
 		size_t operator()(Vertex const& vertex) const {
-			return
-				((hash<glm::vec3>()(vertex.position) ^
-					(hash<glm::vec3>()(vertex.normal) << 1)) >> 1) ^
-				(hash<glm::vec2>()(vertex.tex_coord) << 1);
+			// The seed starts with the hash of the first component.
+			size_t seed = hash<glm::vec3>{}(vertex.position);
+
+			// lambda to perform the hash combination
+			auto combine = [&](const auto& v) {
+				size_t hash_val = std::hash<std::decay_t<decltype(v)>>{}(v);
+				// This formula mixes the bits effectively using the golden ratio constant.
+				seed ^= hash_val + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+				};
+
+			// Apply the combination logic sequentially for the remaining members
+			combine(vertex.normal);
+			combine(vertex.tex_coord);
+
+			return seed;
 		}
 	};
 }
 
 bool Vertex::operator==(const Vertex& other) const {
-	return position == other.position && normal == other.normal && tex_coord == other.tex_coord;
+	// Define the tolerance (epsilon) locally.
+	const float EPSILON = 1e-6;
+
+	// 1. Lambda for comparing two glm::vec3 objects.
+	auto IsNear3 = [&](const glm::vec3& a, const glm::vec3& b) {
+		return std::abs(a.x - b.x) < EPSILON &&
+			std::abs(a.y - b.y) < EPSILON &&
+			std::abs(a.z - b.z) < EPSILON;
+		};
+
+	// 2. Lambda for comparing two glm::vec2 objects.
+	auto IsNear2 = [&](const glm::vec2& a, const glm::vec2& b) {
+		return std::abs(a.x - b.x) < EPSILON &&
+			std::abs(a.y - b.y) < EPSILON;
+		};
+
+	// Perform the component-wise checks for all members
+	return
+		// 3D Comparisons (Position, Normal, Color, Tangent)
+		IsNear3(this->position, other.position) &&
+		IsNear3(this->normal, other.normal) &&
+		IsNear3(this->color, other.color) &&
+		IsNear3(this->tangent, other.tangent) &&
+
+		// 2D Comparison (Tex_Coord)
+		IsNear2(this->tex_coord, other.tex_coord);
 }
 
 // +=================================+   
 // | Mesh                            |
 // +=================================+
 
+// Helper Function for glTF URI Lookup
+// This function takes a tinygltf::Model and a texture index (from the material)
+// and returns the actual image URI string by chaining through the glTF data
+std::string get_gltf_texture_uri(const tinygltf::Model& model, int gltf_texture_index) {
+	if (gltf_texture_index < 0 || gltf_texture_index >= model.textures.size()) {
+		// Handle boundary conditions gracefully
+		return "INVALID_TEXTURE_INDEX";
+	}
+
+	const auto& texture = model.textures[gltf_texture_index];
+	const auto& image = model.images[texture.source];
+
+	// Case 1: External URI is available
+	if (!image.uri.empty()) {
+		// Returns a safe copy of the external URI.
+		return image.uri;
+	}
+
+	// Case 2: Embedded image, but has a name
+	if (!image.name.empty()) {
+		// Generates a new string and returns a safe copy.
+		return "EMBEDDED_IMAGE_" + image.name;
+	}
+
+	// Case 3: No URI and no name
+	// To ensure a STABLE and UNIQUE hash key for this specific unnamed texture,
+	// we use its index within the glTF image array (texture.source).
+	// This ID is guaranteed to be consistent across multiple calls for the same model.
+	return "EMBEDDED_ANONYMOUS_" + std::to_string(texture.source);
+}
+
+// Helper function to extract the transform from a tinygltf::Node
+glm::mat4 get_node_transform(const tinygltf::Node& node) {
+	glm::mat4 matrix(1.0f);
+
+	if (node.matrix.size() == 16) {
+		// Node has an explicit 4x4 matrix
+		matrix = glm::make_mat4(node.matrix.data());
+	}
+	else {
+		// Build matrix from T/R/S components
+		glm::vec3 translation = glm::vec3(0.0f);
+		if (node.translation.size() == 3) {
+			translation = glm::vec3(node.translation[0], node.translation[1], node.translation[2]);
+		}
+
+		glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+		if (node.rotation.size() == 4) {
+			rotation = glm::quat(
+				(float)node.rotation[3], // W component is first in glm::quat constructor
+				(float)node.rotation[0],
+				(float)node.rotation[1],
+				(float)node.rotation[2]
+			);
+		}
+
+		glm::vec3 scale = glm::vec3(1.0f);
+		if (node.scale.size() == 3) {
+			scale = glm::vec3(node.scale[0], node.scale[1], node.scale[2]);
+		}
+
+		glm::mat4 T = glm::translate(glm::mat4(1.0f), translation);
+		glm::mat4 R = glm::mat4_cast(rotation);
+		glm::mat4 S = glm::scale(glm::mat4(1.0f), scale);
+
+		matrix = T * R * S;
+	}
+	return matrix;
+}
+
+// helper function to traverse the scene graph and collect lights, applying parent transforms.
+void traverse_nodes_for_lights(
+	const tinygltf::Model& model,
+	int node_index,
+	const glm::mat4& parent_transform,
+	std::vector<LightGPU>& engine_lights,
+	const std::vector<tinygltf::Light>& gltf_lights)
+{
+	if (node_index < 0 || node_index >= model.nodes.size()) {
+		return;
+	}
+
+	const tinygltf::Node& node = model.nodes[node_index];
+	glm::mat4 local_transform = get_node_transform(node);
+	glm::mat4 current_world_transform = parent_transform * local_transform;
+
+	// 1. Check if this node has a light extension
+	if (node.extensions.count("KHR_lights_punctual")) {
+		// The extension is stored as a JSON object, we need to extract the index.
+		const tinygltf::Value& extension = node.extensions.at("KHR_lights_punctual");
+
+		if (extension.Has("light") && extension.Get("light").IsInt()) {
+			// Using GetNumberAsInt() as a robust way to get integer index
+			int light_index = extension.Get("light").GetNumberAsInt();
+
+			if (light_index >= 0 && light_index < gltf_lights.size()) {
+				const tinygltf::Light& gltf_light = gltf_lights[light_index];
+
+				Light new_light;
+
+				// Set light properties using new public setters
+				if (gltf_light.color.size() == 3) {
+					new_light.set_color(glm::vec3(gltf_light.color[0], gltf_light.color[1], gltf_light.color[2]));
+				}
+				new_light.set_intensity(float_t(gltf_light.intensity));
+
+				// --- POSITION & TYPE HANDLING ---
+				if (gltf_light.type == "directional") {
+					new_light.set_type(LightType::DIRECTIONAL_LIGHT);
+
+					// Directional lights have no position (W=0), use {0, 0, 0}
+					new_light.set_position(glm::vec3(0.0f, 0.0f, 0.0f));
+
+				}
+				else if (gltf_light.type == "point") {
+					new_light.set_type(LightType::POINT_LIGHT);
+
+					// Point lights need position transformed (W=1)
+					glm::vec4 world_pos = current_world_transform * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+					new_light.set_position(glm::vec3(world_pos));
+
+				}
+				else if (gltf_light.type == "spot") {
+					new_light.set_type(LightType::SPOT_LIGHT);
+
+					// Spot lights need position transformed (W=1)
+					glm::vec4 world_pos = current_world_transform * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+					new_light.set_position(glm::vec3(world_pos));
+
+					// Set cone angles. tinygltf::Light::Spot is a struct with public members,
+					// and tinygltf initializes them to their glTF defaults (0.0 and PI/4)
+					// if they are not explicitly present in the glTF file.
+					new_light.set_cone_angle(
+						(float)gltf_light.spot.innerConeAngle,
+						(float)gltf_light.spot.outerConeAngle
+					);
+				}
+
+				// --- DIRECTION HANDLING (for Directional and Spot lights) ---
+				// Direction (a vector, W=0) is the negative Z-axis of the node's transform
+				// (Note: The direction vector is required for both directional and spot lights)
+				glm::vec4 direction_world = current_world_transform * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
+				new_light.set_direction(glm::normalize(glm::vec3(direction_world)));
+
+				engine_lights.push_back(new_light.get_light_gpu());
+			}
+		}
+	}
+
+	// 2. Recurse for children
+	for (int child_index : node.children) {
+		traverse_nodes_for_lights(model, child_index, current_world_transform, engine_lights, gltf_lights);
+	}
+}
+
 // parametric constructor
-Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore* timeline_semaphore) : device(device) {
+Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore* timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents) : device(device), unique_ID(next_unique_mesh_id++) {
 
-	// Dynamically construct the full absolute path to the OBJ file.
-	// This assumes the `obj_filename` argument is a path relative to the executable's directory.
+	// Dynamically construct the full absolute path to the file.
 	std::filesystem::path project_root = get_executable_directory() / "..";
+	std::filesystem::path full_path = project_root / relative_path;
 
-	// Construct the full path to the OBJ file from the project root.
-	std::filesystem::path full_obj_path = project_root / relative_path;
+	this->base_dir = full_path.string();
 
+	if (!std::filesystem::exists(full_path)) {
+		Log::error("Mesh file not found at: ", this->base_dir);
+		exit(1);
+	}
+
+	// Get the file extension and convert it to lowercase for case-insensitive matching
+	std::string extension = full_path.extension().string();
+	std::transform(extension.begin(), extension.end(), extension.begin(),
+		[](unsigned char c) { return (char)std::tolower(c); });
+
+	// Dispatch to the appropriate loader function based on extension
+	if (extension == ".obj") {
+		load_obj(full_path, timeline_semaphore, default_to_pbr, generate_mikktspace_tangents);
+	}
+	else if (extension == ".gltf" || extension == ".glb") {
+		load_gltf(full_path, timeline_semaphore, default_to_pbr, generate_mikktspace_tangents);
+	}
+	else {
+		// Handle unsupported format
+		Log::error("Unsupported mesh file format ", extension.c_str(), " (Supported : .obj, .gltf, .glb)");
+	}
+	Log::debug("... loading Mesh from ", full_path, " (unique ID: ", this->unique_ID, ")");
+}
+
+// private helper method to load a mesh in obj format
+void Mesh::load_obj(const std::filesystem::path& full_path, Semaphore* timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents) {
 	// Get the directory of the OBJ file to use as the material search path.
-	std::string mtl_path = full_obj_path.parent_path().string();
+	std::string mtl_path = full_path.parent_path().string();
 
 	// Load mesh data with tinyobjloader
 	tinyobj::ObjReaderConfig reader_config;
@@ -4796,26 +5843,144 @@ Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore* timeline
 	tinyobj::ObjReader reader;
 
 	// Use the absolute path for parsing the file.
-	if (!reader.ParseFromFile(full_obj_path.string(), reader_config)) {
+	if (!reader.ParseFromFile(full_path.string(), reader_config)) {
 		if (!reader.Error().empty()) {
-			Log::error("TinyObjReader: %s", reader.Error().c_str());
+			Log::error("TinyObjReader: ", reader.Error().c_str());
 		}
-		exit(1);
+		else {
+			Log::error("TinyObjReader: Unknown error occurred while attempting to parse OBJ from file.");
+		}
 	}
 
 	if (!reader.Warning().empty()) {
-		Log::warning("TinyObjReader: %s", reader.Warning().c_str());
+		Log::warning("TinyObjReader: ", reader.Warning().c_str());
 	}
 
-	auto& attrib = reader.GetAttrib();
-	auto& shapes = reader.GetShapes();
-	auto& materials = reader.GetMaterials();
+	auto& attrib_tinyobj = const_cast<tinyobj::attrib_t&>(reader.GetAttrib());
+	auto& shapes_tinyobj = const_cast<std::vector<tinyobj::shape_t>&>(reader.GetShapes());
+	auto& materials_tinyobj = reader.GetMaterials();
 
-	std::unordered_map<Vertex, uint32_t> unique_vertices{};
+	// =========================================================================
+	// COMPUTE NORMALS IF MISSING (Prevents ambient-only lighting)
+	// =========================================================================
+	if (attrib_tinyobj.normals.empty()) {
+		Log::info("OBJ file is missing normals. Calculating face normals (flat shading) to enable lighting.");
+
+		// Iterate over all shapes/faces to compute and inject face normals.
+		for (auto& shape : shapes_tinyobj) {
+			size_t index_offset = 0;
+			for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); ++f) {
+				const size_t num_v = shape.mesh.num_face_vertices[f];
+
+				// SAFETY CHECK: Ensure the required indices exist before accessing.
+				if (index_offset + num_v > shape.mesh.indices.size()) {
+					Log::warning("Index buffer overrun detected! OBJ file structure is inconsistent. Skipping remaining faces in shape.");
+					break;
+				}
+
+				if (num_v != 3) {
+					// Skip non-triangle faces, but update the offset to jump over their indices.
+					index_offset += num_v;
+					continue;
+				}
+
+				// Now we are guaranteed to have a triangle (num_v == 3) and safe access.
+				tinyobj::index_t& idx_face_0 = shape.mesh.indices[index_offset + 0];
+				tinyobj::index_t& idx_face_1 = shape.mesh.indices[index_offset + 1];
+				tinyobj::index_t& idx_face_2 = shape.mesh.indices[index_offset + 2];
+
+				// Get positions (assuming glm::vec3 is available)
+				glm::vec3 v0 = {
+					attrib_tinyobj.vertices[3 * idx_face_0.vertex_index + 0],
+					attrib_tinyobj.vertices[3 * idx_face_0.vertex_index + 1],
+					attrib_tinyobj.vertices[3 * idx_face_0.vertex_index + 2]
+				};
+				glm::vec3 v1 = {
+					attrib_tinyobj.vertices[3 * idx_face_1.vertex_index + 0],
+					attrib_tinyobj.vertices[3 * idx_face_1.vertex_index + 1],
+					attrib_tinyobj.vertices[3 * idx_face_1.vertex_index + 2]
+				};
+				glm::vec3 v2 = {
+					attrib_tinyobj.vertices[3 * idx_face_2.vertex_index + 0],
+					attrib_tinyobj.vertices[3 * idx_face_2.vertex_index + 1],
+					attrib_tinyobj.vertices[3 * idx_face_2.vertex_index + 2]
+				};
+
+				// Calculate face normal: N = normalize((v1 - v0) x (v2 - v0))
+				glm::vec3 edge1 = v1 - v0;
+				glm::vec3 edge2 = v2 - v0;
+				glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
+
+				// Check for degenerate triangles (zero length normal)
+				if (glm::length(normal) < 1e-6) {
+					normal = { 0.0f, 1.0f, 0.0f }; // Fallback to a default upward normal
+				}
+
+				// Store the normal data in attrib_tinyobj.normals
+				size_t new_normal_index = attrib_tinyobj.normals.size() / 3;
+				attrib_tinyobj.normals.push_back(tinyobj::real_t(normal.x));
+				attrib_tinyobj.normals.push_back(tinyobj::real_t(normal.y));
+				attrib_tinyobj.normals.push_back(tinyobj::real_t(normal.z));
+
+				// Update the normal index for ALL three indices of this face to point to the new normal
+				idx_face_0.normal_index = (int)new_normal_index;
+				idx_face_1.normal_index = (int)new_normal_index;
+				idx_face_2.normal_index = (int)new_normal_index;
+
+				// Update offset for the next face
+				index_offset += num_v;
+			}
+		}
+	}
+
+	// =========================================================================
+	// Create images for default textures
+	if (default_tex_images.empty()) {
+		default_tex_images.push_back(std::make_unique<DefaultImage>(DefaultImage({ 255, 255, 255, 255 })));	// white
+		default_tex_images.push_back(std::make_unique<DefaultImage>(DefaultImage({ 0, 0, 0, 255 }))); // black
+		default_tex_images.push_back(std::make_unique<DefaultImage>(DefaultImage({ 127, 127, 255, 255 }))); // flat normal
+		default_tex_images.push_back(std::make_unique<DefaultImage>(DefaultImage({ 0, 127, 0, 255 }))); // neutral metallic roughness
+	}
+
+	// Create default textures
+
+	// PBR Fallback 1: WHITE (1.0, 1.0, 1.0, 1.0)
+	// Used for Occlusion (1.0 = no occlusion) and as a safe Base Color fallback.
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[0]->image, VK_FORMAT_R8G8B8A8_UNORM, timeline_semaphore));
+	this->textures.back()->register_path("default_texture_white_unorm");
+	int default_texture_white_unorm_id = this->textures.back()->get_ID();
+
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[0]->image, VK_FORMAT_R8G8B8A8_SRGB, timeline_semaphore));
+	this->textures.back()->register_path("default_texture_white_srgb");
+	int default_texture_white_srgb_id = this->textures.back()->get_ID();
+
+	// PBR Fallback 2: BLACK (0.0, 0.0, 0.0, 1.0)
+	// Used for Emissive (0.0 = no emission).
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[1]->image, VK_FORMAT_R8G8B8A8_UNORM, timeline_semaphore));
+	this->textures.back()->register_path("default_texture_black_unorm");
+	int default_texture_black_unorm_id = this->textures.back()->get_ID();
+
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[1]->image, VK_FORMAT_R8G8B8A8_SRGB, timeline_semaphore));
+	this->textures.back()->register_path("default_texture_black_srgb");
+	int default_texture_black_srgb_id = this->textures.back()->get_ID();
+
+	// PBR Fallback 3: FLAT NORMAL (0.5, 0.5, 1.0, 1.0)
+	// R=127 (0.5), G=127 (0.5), B=255 (1.0). Represents a flat surface (normal points straight up).
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[2]->image, VK_FORMAT_R8G8B8A8_UNORM, timeline_semaphore));
+	this->textures.back()->register_path("default_texture_normal_unorm");
+	int default_texture_normal_unorm_id = this->textures.back()->get_ID();
+
+	// PBR Fallback 4: NEUTRAL METALLIC/ROUGHNESS (0.0, 0.5, 0.0, 1.0)
+	// R=0 (Non-metal), G=127 (~0.5 Roughness). B and A are ignored/unused.
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[3]->image, VK_FORMAT_R8G8B8A8_UNORM, timeline_semaphore));
+	this->textures.back()->register_path("default_texture_metallic_roughness_unorm");
+	int default_texture_metallic_roughness_unorm_id = this->textures.back()->get_ID();
+
+	// =========================================================================
 
 	// Group faces by material
 	std::map<int, std::vector<tinyobj::index_t>> faces_by_material;
-	for (const auto& shape : shapes) {
+	for (const auto& shape : shapes_tinyobj) {
 		size_t index_offset = 0;
 		for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); ++f) {
 			int material_id = shape.mesh.material_ids[f];
@@ -4839,56 +6004,175 @@ Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore* timeline
 		faces_by_material[0] = all_faces;
 
 		// Populate a default material.
-		Material default_material{};
-		default_material.diffuse = { 1.0f, 1.0f, 1.0f }; // white
-		this->materials.push_back(default_material);
-		this->materials_std430.push_back(MaterialStd430(default_material));
+		this->materials.emplace_back(Material());
+		this->materials.back().base_color = { 0.7f, 0.7f, 0.7f, 1.0f };
+		this->materials.back().ambient = { 0.1f, 0.1f, 0.1f, AlphaMode::BLEND_MODE }; // anbient.w is used for the alphaMode
+		this->materials.back().specular = { 0.1f, 0.1f, 0.1f, 1.0f };
+		this->materials.back().transmittance = { 1.0f, 1.0f, 1.0f, 1.0f };
+		this->materials.back().emission = { 1.0f, 1.0f, 1.0f, 1.0f };
+		this->materials.back().shininess = 32.0f;
+		this->materials.back().roughness = 0.5f;
+		this->materials.back().ior = 0.5f;
+		this->materials.back().illum = default_to_pbr ? 4 : 2;
+		this->materials.back().alpha_cutoff = 0.0f;
+		this->materials.back().texIDs.base_color_tex_id = default_texture_white_srgb_id;
+		this->materials.back().texIDs.normal_tex_id = default_texture_normal_unorm_id;
+		this->materials.back().texIDs.metallic_roughness_tex_id = default_texture_metallic_roughness_unorm_id;
+		this->materials.back().texIDs.occlusion_tex_id = default_texture_white_unorm_id;
+		this->materials.back().texIDs.emissive_tex_id = default_texture_black_srgb_id;
+		this->materials.back().texIDs.alpha_tex_id = default_texture_white_srgb_id;
+	}
+
+	// Populate materials from tinyobjloader results
+	// This must happen BEFORE creating submeshes so the material indices are valid.
+	// If a default material was created above, materials_tinyobj will be empty, and this loop is skipped.
+	for (const auto& mat : materials_tinyobj) {
+		this->materials.emplace_back(Material());
+		this->materials.back().ambient = { mat.ambient[0], mat.ambient[1], mat.ambient[2], AlphaMode::BLEND_MODE };
+		this->materials.back().base_color = { mat.diffuse[0], mat.diffuse[1], mat.diffuse[2], 1.0f };
+		this->materials.back().specular = { mat.specular[0], mat.specular[1], mat.specular[2], 1.0f };
+		this->materials.back().transmittance = { mat.transmittance[0], mat.transmittance[1], mat.transmittance[2], 1.0f };
+		this->materials.back().emission = { mat.emission[0], mat.emission[1], mat.emission[2], 1.0f };
+
+		this->materials.back().dissolve = mat.dissolve;
+		this->materials.back().shininess = mat.shininess;
+		this->materials.back().roughness = (mat.shininess == 0.0f) ? 1.0f : std::min(1.0f, sqrtf(2.0f / (mat.shininess + 2.0f))); // approximation of PBR roughness from Phong shininess, ensuring it's clamped
+		this->materials.back().ior = mat.ior;
+		this->materials.back().illum = default_to_pbr ? 4 : 2;
+		this->materials.back().alpha_cutoff = 0.0f;
+
+		// === Load Textures and Populate MaterialTexIDs ===
+
+		// 1. Process Base Color / Diffuse Map
+		if (!mat.diffuse_texname.empty()) {
+			const std::string& filename = mat.diffuse_texname;
+			std::filesystem::path texture_path = full_path.parent_path() / filename;
+			TexturePath texpath_hashed(texture_path.string());
+			auto it = Texture::tex_list.find(texpath_hashed);
+			if (it != Texture::tex_list.end()) {
+				// Texture already loaded
+				this->materials.back().texIDs.base_color_tex_id = it->second;
+			}
+			else {
+				// Texture not loaded, load it now
+				textures.push_back(std::make_unique<Texture>(
+					device,
+					texture_path.string(), // this constructor automatically adds the TexturePath to tex_list
+					VK_FORMAT_R8G8B8A8_SRGB,
+					timeline_semaphore,
+					16.0f,
+					VK_SAMPLER_ADDRESS_MODE_REPEAT,
+					VK_SAMPLER_ADDRESS_MODE_REPEAT
+				));
+				uint32_t unique_texID = textures.back()->get_ID();
+				this->materials.back().texIDs.base_color_tex_id = unique_texID;
+			}
+		}
+		else {
+			// use default texture as fallback
+			this->materials.back().texIDs.base_color_tex_id = default_texture_white_srgb_id;
+		}
+
+		// 2. Process Normal / Bump Map
+		std::string normal_texname = mat.normal_texname.empty() ? mat.bump_texname : mat.normal_texname;
+		if (!normal_texname.empty()) {
+			const std::string& filename = normal_texname;
+			std::filesystem::path texture_path = full_path.parent_path() / filename;
+			TexturePath texpath_hashed(texture_path.string());
+			auto it = Texture::tex_list.find(texpath_hashed);
+			if (it != Texture::tex_list.end()) {
+				// texture already loaded
+				this->materials.back().texIDs.normal_tex_id = it->second;
+			}
+			else {
+				// texture not loaded, load it now
+				std::filesystem::path texture_path = full_path.parent_path() / filename;
+
+				textures.push_back(std::make_unique<Texture>(
+					device,
+					texture_path.string(),  // this constructor automatically adds the TexturePath to tex_list
+					VK_FORMAT_R8G8B8A8_UNORM, // UNORM format for data maps
+					timeline_semaphore,
+					16.0f,
+					VK_SAMPLER_ADDRESS_MODE_REPEAT,
+					VK_SAMPLER_ADDRESS_MODE_REPEAT
+				));
+				uint32_t unique_texID = textures.back()->get_ID();
+				this->materials.back().texIDs.normal_tex_id = unique_texID;
+			}
+		}
+		else {
+			// use default texture as fallback
+			this->materials.back().texIDs.normal_tex_id = default_texture_normal_unorm_id;
+		}
+
+		// use defaults for other textures
+		this->materials.back().texIDs.metallic_roughness_tex_id = default_texture_metallic_roughness_unorm_id;
+		this->materials.back().texIDs.occlusion_tex_id = default_texture_white_unorm_id;
+		this->materials.back().texIDs.emissive_tex_id = default_texture_black_srgb_id;
+		this->materials.back().texIDs.alpha_tex_id = default_texture_white_srgb_id;
 	}
 
 	// Populate vertices, indices, and submeshes
 	uint32_t current_index_count = 0;
 	uint32_t current_vertex_count = 0;
+	std::unordered_map<Vertex, uint32_t> unique_vertices{};
+
 	for (const auto& pair : faces_by_material) {
 		uint32_t material_index = pair.first;
 		const auto& faces = pair.second;
 
 		SubMesh submesh{};
-		submesh.material_index = material_index;
+		submesh.parent_mesh_local_material_index = material_index;
+		submesh.global_material_index = this->materials[material_index].get_unique_ID();
 		submesh.first_index = current_index_count;
 		submesh.vertex_offset = current_vertex_count;
 
 		uint32_t submesh_index_count = 0;
+		uint32_t submesh_vertex_count = 0;
 		for (const auto& index : faces) {
 			Vertex vertex{};
+
 			vertex.position = {
-				attrib.vertices[3 * index.vertex_index + 0],
-				attrib.vertices[3 * index.vertex_index + 1],
-				attrib.vertices[3 * index.vertex_index + 2]
+				attrib_tinyobj.vertices[3 * index.vertex_index + 0],
+				attrib_tinyobj.vertices[3 * index.vertex_index + 1],
+				attrib_tinyobj.vertices[3 * index.vertex_index + 2]
 			};
-			vertex.normal = {
-				attrib.normals[3 * index.normal_index + 0],
-				attrib.normals[3 * index.normal_index + 1],
-				attrib.normals[3 * index.normal_index + 2]
-			};
-			if (attrib.texcoords.size() > 0) {
-				vertex.tex_coord = {
-					attrib.texcoords[2 * index.texcoord_index + 0],
-					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+
+			if (index.normal_index >= 0 && !attrib_tinyobj.normals.empty()) {
+				vertex.normal = {
+					attrib_tinyobj.normals[3 * index.normal_index + 0],
+					attrib_tinyobj.normals[3 * index.normal_index + 1],
+					attrib_tinyobj.normals[3 * index.normal_index + 2]
 				};
+			} // If missing, vertex.normal remains zeroed out (0, 0, 0)
+
+			if (index.texcoord_index >= 0 && !attrib_tinyobj.texcoords.empty()) {
+				vertex.tex_coord = {
+					attrib_tinyobj.texcoords[2 * index.texcoord_index + 0],
+					attrib_tinyobj.texcoords[2 * index.texcoord_index + 1]
+				};
+			} // If missing, vertex.tex_coord remains zeroed out (0, 0)
+
+			if (!attrib_tinyobj.colors.empty()) {
+				vertex.color = {
+					attrib_tinyobj.colors[3 * index.vertex_index + 0],
+					attrib_tinyobj.colors[3 * index.vertex_index + 1],
+					attrib_tinyobj.colors[3 * index.vertex_index + 2],
+					1.0f // Assign a default alpha value (default color is (0,0,0,0) due to init, so we must override)
+				};
+			}
+			else {
+				// Set a default color if no vertex colors are provided by the file
+				vertex.color = { 1.0f, 1.0f, 1.0f, 1.0f };
 			}
 
-			if (!attrib.colors.empty()) {
-				vertex.color = {
-					attrib.colors[3 * index.vertex_index + 0],
-					attrib.colors[3 * index.vertex_index + 1],
-					attrib.colors[3 * index.vertex_index + 2],
-					1.0f // Assign a default alpha value (the .obj format doesn't natively define an alpha channel for vertex colors)
-				};
-			}
+			vertex.material_index = this->materials[material_index].get_unique_ID();
 
 			if (unique_vertices.count(vertex) == 0) {
 				unique_vertices[vertex] = static_cast<uint32_t>(vertices.size());
 				vertices.push_back(vertex);
+				submesh_vertex_count++;
 			}
 
 			indices.push_back(unique_vertices[vertex]);
@@ -4896,44 +6180,106 @@ Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore* timeline
 		}
 
 		submesh.index_count = submesh_index_count;
+		submesh.vertex_count = submesh_vertex_count;
 		submeshes.push_back(submesh);
 
 		current_index_count += submesh_index_count;
 		current_vertex_count = static_cast<uint32_t>(vertices.size());
 	}
 
-	// Populate materials
-	for (const auto& mat : materials) {
-		Material material{};
-		material.ambient = { mat.ambient[0], mat.ambient[1], mat.ambient[2] };
-		material.diffuse = { mat.diffuse[0], mat.diffuse[1], mat.diffuse[2] };
-		material.specular = { mat.specular[0], mat.specular[1], mat.specular[2] };
-		material.transmittance = { mat.transmittance[0], mat.transmittance[1], mat.transmittance[2] };
-		material.emission = { mat.emission[0], mat.emission[1], mat.emission[2] };
-		material.shininess = mat.shininess;
-		material.ior = mat.ior;
-		material.dissolve = mat.dissolve;
-		material.illum = mat.illum;
-		this->materials.push_back(material);
-		this->materials_std430.push_back(MaterialStd430(material));
-	}
-
 	this->index_count = static_cast<uint32_t>(indices.size());
 	this->vertex_count = static_cast<uint32_t>(vertices.size());
-	this->material_count = static_cast<uint32_t>(materials_std430.size());
+	this->material_count = static_cast<uint32_t>(materials.size());
 	this->index_type = VK_INDEX_TYPE_UINT32;
 
-	// Populate vertex descriptions
-	const uint32_t binding = vertex_descriptions.add_binding(sizeof(Vertex));
-	vertex_descriptions.add_attribute(0, binding, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position));
-	if (!attrib.normals.empty()) {
-		vertex_descriptions.add_attribute(1, binding, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal));
+	// --- TANGENT AND BITANGENT CALCULATION ---
+	std::vector<glm::vec3> temp_tangents(vertices.size(), glm::vec3(0.0f));
+	std::vector<glm::vec3> temp_bitangents(vertices.size(), glm::vec3(0.0f));
+
+	if (generate_mikktspace_tangents) {
+		// Ensure we have texture coordinates and normals before running MikkTSpace
+		bool has_tex_coords = false;
+		for (const auto& v : vertices) {
+			// Use length2 for a quick check against zero
+			if (glm::length2(v.tex_coord) > 1e-6f) {
+				has_tex_coords = true;
+				break;
+			}
+		}
+
+		// MikkTSpace is the standard for calculating TANGENT and BITANGENT vectors.
+		// It must run on the final, indexed, and welded vertex data.
+		if (has_tex_coords) {
+			Log::debug("Calculating tangent space using MikkTSpace...");
+			MeshTangentGenerator::generate_tangents(vertices, indices);
+		}
+		else {
+			Log::warning("Skipping MikkTSpace tangent generation: Mesh is missing texture coordinates (UVs).");
+		}
 	}
-	if (!attrib.texcoords.empty()) {
-		vertex_descriptions.add_attribute(2, binding, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, tex_coord));
-	}
-	if (!attrib.colors.empty()) {
-		vertex_descriptions.add_attribute(3, binding, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, color));
+	else {
+		// manually calculate tangents and bitangents for each triangle
+		for (size_t i = 0; i < indices.size(); i += 3) {
+			uint32_t i0 = indices[i + 0];
+			uint32_t i1 = indices[i + 1];
+			uint32_t i2 = indices[i + 2];
+
+			Vertex& v0 = vertices[i0];
+			Vertex& v1 = vertices[i1];
+			Vertex& v2 = vertices[i2];
+
+			glm::vec3 edge1 = v1.position - v0.position;
+			glm::vec3 edge2 = v2.position - v0.position;
+			glm::vec2 deltaUV1 = v1.tex_coord - v0.tex_coord;
+			glm::vec2 deltaUV2 = v2.tex_coord - v0.tex_coord;
+
+			float_t determinant = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+
+			// Add a check to prevent division by zero for degenerate UVs
+			if (fabs(determinant) < 1e-6f) {
+				// This triangle has no discernible UV area.
+				continue;
+			}
+
+			float_t f = 1.0f / determinant; // Now safe to use
+
+			glm::vec3 tangent;
+			tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+			tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+			tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+
+			glm::vec3 bitangent;
+			bitangent.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
+			bitangent.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
+			bitangent.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
+
+			// Accumulate for each vertex
+			temp_tangents[i0] += tangent;
+			temp_tangents[i1] += tangent;
+			temp_tangents[i2] += tangent;
+
+			temp_bitangents[i0] += bitangent;
+			temp_bitangents[i1] += bitangent;
+			temp_bitangents[i2] += bitangent;
+		}
+
+		// Orthogonalize, normalize, and pack the tangents/handedness for each vertex
+		for (size_t i = 0; i < vertices.size(); ++i) {
+			const glm::vec3& n = vertices[i].normal;
+			const glm::vec3& t = temp_tangents[i];
+			const glm::vec3& b_temp = temp_bitangents[i];
+
+			// 1. Gram-Schmidt orthogonalize the T vector (vec3 part)
+			glm::vec3 orthogonal_tangent_3d = glm::normalize(t - n * glm::dot(n, t));
+
+			// 2. Determine handedness/sign
+			// Check if (N x T_ortho) points in the same direction as the accumulated B_temp.
+			// The result is 1.0f or -1.0f.
+			float_t handedness = glm::dot(glm::cross(n, orthogonal_tangent_3d), b_temp) < 0.0f ? -1.0f : 1.0f;
+
+			// 3. Store the result in the glm::vec4 tangent (T.xyz = vector, T.w = handedness)
+			vertices[i].tangent = glm::vec4(orthogonal_tangent_3d, handedness);
+		}
 	}
 
 	// acquire an idle task
@@ -4944,15 +6290,15 @@ Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore* timeline
 	Log::info("Loading mesh with ", this->vertex_count, " vertices and ", this->index_count, " indices (write to staging buffer, then transfer to device_local memory).");
 	auto& vertex_staging_buffer = task.make_temp_buffer<Vertex>(vertex_count, VERTEX_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	auto& index_staging_buffer = task.make_temp_buffer<uint32_t>(index_count, INDEX_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	auto& material_staging_buffer = task.make_temp_buffer<MaterialStd430>(material_count, STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	auto& material_staging_buffer = task.make_temp_buffer<Material>(material_count, STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	vertex_staging_buffer.write(vertices);
 	index_staging_buffer.write(indices);
-	material_staging_buffer.write(materials_std430);
+	material_staging_buffer.write(this->materials);
 
 	// initialize device_local buffers
 	this->vertex_buffer = std::make_unique<Buffer<Vertex>>(device, VERTEX_BUFFER, vertex_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	this->index_buffer = std::make_unique<Buffer<uint32_t>>(device, INDEX_BUFFER, index_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	this->material_buffer = std::make_unique<Buffer<MaterialStd430>>(device, STORAGE_BUFFER, material_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	this->material_buffer = std::make_unique<Buffer<Material>>(device, STORAGE_BUFFER, material_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// transfer from staging buffers to device_local memory
 	CommandBuffer& cb = task.get_command_buffer();
@@ -4975,24 +6321,994 @@ Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore* timeline
 	task.submit();
 }
 
+// private helper method to load a mesh in gltf format
+void Mesh::load_gltf(const std::filesystem::path& full_path, Semaphore* timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents) {
+	Log::info("Loading glTF/GLB file: ", full_path.string().c_str());
+
+	tinygltf::Model model;
+	tinygltf::TinyGLTF loader;
+	std::string err;
+	std::string warn;
+	bool res;
+
+	// This tells tinygltf to use the stb_image function that forces a 4-channel load.
+	loader.SetImageLoader(tinygltf::LoadImageDataFunction(tinygltf::LoadImageData), nullptr);
+
+	if (full_path.extension() == ".glb") {
+		res = loader.LoadBinaryFromFile(&model, &err, &warn, full_path.string());
+	}
+	else {
+		res = loader.LoadASCIIFromFile(&model, &err, &warn, full_path.string());
+	}
+
+	// check result
+	if (!warn.empty()) {
+		Log::warning("TinyGLTF: ", warn.c_str());
+	}
+	if (!err.empty()) {
+		Log::error("TinyGLTF: ", err.c_str());
+	}
+	if (!res) {
+		Log::error("Failed to load glTF/GLB file: ", full_path.string().c_str());
+	}
+
+	// acquire an idle task
+	VulkanManager& manager = VulkanManager::get_singleton();
+	Task& task = manager.get_graphics_task(__FUNCTION__);
+	float_t anisotropy_level = std::min(16.0f, device.get_properties().limits.maxSamplerAnisotropy);
+
+	// ----------------------------------------------------------------------------------
+	// 1. Process Materials
+	// ----------------------------------------------------------------------------------
+	Log::debug("Processing glTF materials...");
+	this->materials.reserve(model.materials.size());
+
+	// Determine which glTF textures are color (SRGB) vs. non-color (UNORM)
+	// Initialize all to non-color (UNORM) by default.
+	std::vector<bool> texture_is_srgb(model.textures.size(), false);
+
+	for (const auto& gltf_mat : model.materials) {
+		Material material{};
+
+		// GlTF PBR Metallic-Roughness Model
+		material.metallic = gltf_mat.pbrMetallicRoughness.metallicFactor;
+
+		// Base Color (Diffuse) (=primary surface color; RGBA)
+		material.base_color = {
+			(float)gltf_mat.pbrMetallicRoughness.baseColorFactor[0],
+			(float)gltf_mat.pbrMetallicRoughness.baseColorFactor[1],
+			(float)gltf_mat.pbrMetallicRoughness.baseColorFactor[2],
+			(float)gltf_mat.pbrMetallicRoughness.baseColorFactor[3] // opacity / dissolve
+		};
+		material.alpha_cutoff = gltf_mat.alphaCutoff;
+
+		// Emissive Color -> Emission
+		// Note: glTF emissiveFactor is a 3-component vector.
+		material.emission = {
+			(float)gltf_mat.emissiveFactor[0],
+			(float)gltf_mat.emissiveFactor[1],
+			(float)gltf_mat.emissiveFactor[2],
+			1.0f
+		};
+
+		// Roughness (glTF PBR property)
+		material.roughness = (float)gltf_mat.pbrMetallicRoughness.roughnessFactor;
+
+		// PBR doesn't use explicit Ambient/Specular/Shininess/ior/transmittance -> using defaults or deriving them
+		material.ambient = {
+			material.base_color.r * 0.1f,
+			material.base_color.g * 0.1f,
+			material.base_color.b * 0.1f,
+			gltf_mat.alphaMode == "OPAQUE" ? AlphaMode::OPAQUE_MODE : gltf_mat.alphaMode == "MASK" ? AlphaMode::MASK_MODE : AlphaMode::BLEND_MODE // ambient.w is used for the alphaMode
+		};
+		material.specular = { glm::clamp(material.base_color * 2.0f, 0.0f, 1.0f) };
+		material.shininess = std::clamp((float)(1.0f / (material.roughness * material.roughness)), 1.0f, 1000.0f);
+		material.illum = default_to_pbr ? 4 : 2;
+		material.ior = 1.0f;
+		material.transmittance = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+		// Mark textures as SRGB if they are used in a color channel
+		int base_color_tex_idx = gltf_mat.pbrMetallicRoughness.baseColorTexture.index;
+		if (base_color_tex_idx >= 0 && base_color_tex_idx < model.textures.size()) {
+			texture_is_srgb[base_color_tex_idx] = true;
+		}
+		int emissive_tex_idx = gltf_mat.emissiveTexture.index;
+		if (emissive_tex_idx >= 0 && emissive_tex_idx < model.textures.size()) {
+			texture_is_srgb[emissive_tex_idx] = true;
+		}
+
+		this->materials.push_back(std::move(material));
+	}
+
+	// ----------------------------------------------------------------------------------
+	// 1.1 Process All Textures
+	// ----------------------------------------------------------------------------------
+	Log::debug("Processing glTF textures...");
+	this->textures.clear();
+
+	// =========================================================================
+	// Create images for default textures
+	if (default_tex_images.empty()) {
+		default_tex_images.push_back(std::make_unique<DefaultImage>(DefaultImage({ 255, 255, 255, 255 })));	// white
+		default_tex_images.push_back(std::make_unique<DefaultImage>(DefaultImage({ 0, 0, 0, 255 }))); // black
+		default_tex_images.push_back(std::make_unique<DefaultImage>(DefaultImage({ 127, 127, 255, 255 }))); // flat normal
+		default_tex_images.push_back(std::make_unique<DefaultImage>(DefaultImage({ 0, 127, 0, 255 }))); // neutral metallic roughness
+	}
+
+	// Create default textures
+
+	// PBR Fallback 1: WHITE (1.0, 1.0, 1.0, 1.0)
+	// Used for Occlusion (1.0 = no occlusion) and as a safe Base Color fallback.
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[0]->image, VK_FORMAT_R8G8B8A8_UNORM, timeline_semaphore, 16.0f, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	this->textures.back()->register_path("default_texture_white_unorm");
+	int default_texture_white_unorm_id = this->textures.back()->get_ID();
+
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[0]->image, VK_FORMAT_R8G8B8A8_SRGB, timeline_semaphore, 16.0f, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	this->textures.back()->register_path("default_texture_white_srgb");
+	int default_texture_white_srgb_id = this->textures.back()->get_ID();
+
+	// PBR Fallback 2: BLACK (0.0, 0.0, 0.0, 1.0)
+	// Used for Emissive (0.0 = no emission).
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[1]->image, VK_FORMAT_R8G8B8A8_UNORM, timeline_semaphore, 16.0f, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	this->textures.back()->register_path("default_texture_black_unorm");
+	int default_texture_black_unorm_id = this->textures.back()->get_ID();
+
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[1]->image, VK_FORMAT_R8G8B8A8_SRGB, timeline_semaphore, 16.0f, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	this->textures.back()->register_path("default_texture_black_srgb");
+	int default_texture_black_srgb_id = this->textures.back()->get_ID();
+
+	// PBR Fallback 3: FLAT NORMAL (0.5, 0.5, 1.0, 1.0)
+	// R=127 (0.5), G=127 (0.5), B=255 (1.0). Represents a flat surface (normal points straight up).
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[2]->image, VK_FORMAT_R8G8B8A8_UNORM, timeline_semaphore, 16.0f, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	this->textures.back()->register_path("default_texture_normal_unorm");
+	int default_texture_normal_unorm_id = this->textures.back()->get_ID();
+
+	// PBR Fallback 4: NEUTRAL METALLIC/ROUGHNESS (0.0, 0.5, 0.0, 1.0)
+	// R=0 (Non-metal), G=127 (~0.5 Roughness). B and A are ignored/unused.
+	this->textures.push_back(std::make_unique<Texture>(device, default_tex_images[3]->image, VK_FORMAT_R8G8B8A8_UNORM, timeline_semaphore, 16.0f, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	this->textures.back()->register_path("default_texture_metallic_roughness_unorm");
+	int default_texture_metallic_roughness_unorm_id = this->textures.back()->get_ID();
+
+	// =========================================================================
+
+
+	std::vector<uint32_t> global_texIDs(model.textures.size()); // the vector index is the local glTF texture ID, value is the global texture ID
+
+	// Define a lambda function for glTF wrap mode to Vulkan address mode conversion.
+	auto get_vulkan_address_mode = [](int gltf_wrap_mode) -> VkSamplerAddressMode {
+		switch (gltf_wrap_mode) {
+		case 33071: // CLAMP_TO_EDGE
+			return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		case 33648: // MIRRORED_REPEAT
+			return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+		case 10497: // REPEAT (glTF default)
+		default:
+			// handles cases where the sampler might be missing or the value is unknown.
+			// glTF spec defaults to REPEAT (10497) if the sampler index is missing.
+			return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		}
+		};
+
+	for (size_t tex_idx = 0; tex_idx < model.textures.size(); ++tex_idx) {
+		const auto& gltf_tex = model.textures[tex_idx];
+		int image_idx = gltf_tex.source;
+
+		if (image_idx >= 0 && image_idx < model.images.size()) {
+			const auto& image = model.images[image_idx];
+
+			// DYNAMIC SAMPLER MODE DETERMINATION
+			// Start with the glTF default mode (REPEAT) for both U and V
+			int gltf_wrap_s = 10497;
+			int gltf_wrap_t = 10497;
+
+			// Check if the glTF texture refers to a valid sampler index
+			if (gltf_tex.sampler >= 0 && gltf_tex.sampler < model.samplers.size()) {
+				const auto& gltf_sampler = model.samplers[gltf_tex.sampler];
+				gltf_wrap_s = gltf_sampler.wrapS;
+				gltf_wrap_t = gltf_sampler.wrapT;
+			}
+
+			// Convert the glTF integer constants to Vulkan enums using the lambda
+			VkSamplerAddressMode addressModeU = get_vulkan_address_mode(gltf_wrap_s);
+			VkSamplerAddressMode addressModeV = get_vulkan_address_mode(gltf_wrap_t);
+
+			// Use the determined sRGB status for format selection
+			bool is_srgb = texture_is_srgb[tex_idx];
+
+			Log::debug("Loading glTF Texture #", tex_idx, ": Image source index ", image_idx, " (sRGB: ", (is_srgb ? "true" : "false"), ")");
+
+			this->textures.push_back(std::make_unique<Texture>(
+				device,
+				image, // Pass by reference
+				get_texture_format(image.component, is_srgb),
+				timeline_semaphore,
+				anisotropy_level,
+				addressModeU, // Use the dynamically determined U mode (wrapS)
+				addressModeV  // Use the dynamically determined V mode (wrapT)
+			));
+			uint32_t unique_texID = textures.back()->get_ID();
+			global_texIDs[tex_idx] = unique_texID;
+
+			// manually register the texture path to Texture::tex_list for future reference)
+			this->textures.back()->register_path(get_gltf_texture_uri(model, tex_idx));
+		}
+		else {
+			Log::warning("Texture ", tex_idx, " has an invalid image source index (", image_idx, "). Skipping.");
+		}
+	}
+
+	this->texture_count = static_cast<uint32_t>(this->textures.size());
+
+	// ----------------------------------------------------------------------------------
+	// 1.2 Map local glTF texture IDs global Texture IDs
+	// ----------------------------------------------------------------------------------
+	Log::debug("Mapping local glTF texture IDs indices to global texIDs...");
+
+	// --- Helper Lambda for safely extracting texture index from an extension ---
+	auto get_ext_tex_id = [&](
+		const tinygltf::Value& ext_value,
+		const std::string& property_name,
+		uint32_t default_id
+		) -> uint32_t {
+			// Check if the property name exists in the extension value
+			if (ext_value.Has(property_name)) {
+				const tinygltf::Value& tex_info = ext_value.Get(property_name);
+
+				// Ensure it's a valid textureInfo object and has an "index" key
+				if (tex_info.IsObject() && tex_info.Has("index")) {
+					// Retrieve the glTF local texture index
+					int local_id = tex_info.Get("index").Get<int>();
+
+					// Validate and map to the engine's global texture ID
+					if (local_id >= 0 && (uint32_t)local_id < global_texIDs.size()) {
+						return global_texIDs[local_id];
+					}
+				}
+			}
+			return default_id;
+		};
+
+	// Process all materials defined in the glTF file
+	for (uint32_t i = 0; i < model.materials.size(); i++) {
+
+		// =========================================================================
+		// A. CORE glTF 2.0 PBR TEXTURES
+		// =========================================================================
+
+		// Base color / Diffuse
+		uint32_t local_id = model.materials[i].pbrMetallicRoughness.baseColorTexture.index;
+		this->materials[i].texIDs.base_color_tex_id = local_id < 0 ? default_texture_white_srgb_id : global_texIDs[local_id];
+
+		// Normal Map
+		local_id = model.materials[i].normalTexture.index;
+		this->materials[i].texIDs.normal_tex_id = local_id < 0 ? default_texture_normal_unorm_id : global_texIDs[local_id];
+
+		// Metallic/Roughness Map (Packed map in glTF, storing Occlusion, Roughness, Metallic)
+		local_id = model.materials[i].pbrMetallicRoughness.metallicRoughnessTexture.index;
+		this->materials[i].texIDs.metallic_roughness_tex_id = local_id < 0 ? default_texture_metallic_roughness_unorm_id : global_texIDs[local_id];
+
+		// Occlusion Map (Often the R channel of the metallic/roughness texture, but can be separate)
+		local_id = model.materials[i].occlusionTexture.index;
+		this->materials[i].texIDs.occlusion_tex_id = local_id < 0 ? default_texture_white_unorm_id : global_texIDs[local_id];
+
+		// Emission Map
+		local_id = model.materials[i].emissiveTexture.index;
+		this->materials[i].texIDs.emissive_tex_id = local_id < 0 ? default_texture_black_srgb_id : global_texIDs[local_id];
+
+		// =========================================================================
+		// B. COMMON glTF EXTENSIONS (Using Lambda)
+		// =========================================================================
+
+		// --- 1. KHR_materials_clearcoat (For glossy protective layers) ---
+		const std::string CLEARCOAT_EXT = "KHR_materials_clearcoat";
+		if (model.materials[i].extensions.count(CLEARCOAT_EXT)) {
+			const tinygltf::Value& ext = model.materials[i].extensions.at(CLEARCOAT_EXT);
+
+			this->materials[i].texIDs.clearcoat_tex_id =
+				get_ext_tex_id(ext, "clearcoatTexture", default_texture_black_srgb_id);
+
+			this->materials[i].texIDs.clearcoat_roughness_tex_id =
+				get_ext_tex_id(ext, "clearcoatRoughnessTexture", default_texture_black_unorm_id);
+
+			this->materials[i].texIDs.clearcoat_normal_tex_id =
+				get_ext_tex_id(ext, "clearcoatNormalTexture", default_texture_normal_unorm_id);
+		}
+
+		// --- 2. KHR_materials_sheen (For fabrics like velvet) ---
+		const std::string SHEEN_EXT = "KHR_materials_sheen";
+		if (model.materials[i].extensions.count(SHEEN_EXT)) {
+			const tinygltf::Value& ext = model.materials[i].extensions.at(SHEEN_EXT);
+
+			this->materials[i].texIDs.sheen_color_tex_id =
+				get_ext_tex_id(ext, "sheenColorTexture", default_texture_white_srgb_id);
+
+			this->materials[i].texIDs.sheen_roughness_tex_id =
+				get_ext_tex_id(ext, "sheenRoughnessTexture", default_texture_black_unorm_id);
+		}
+
+		// --- 3. KHR_materials_transmission (For transparent/translucent objects) ---
+		const std::string TRANSMISSION_EXT = "KHR_materials_transmission";
+		if (model.materials[i].extensions.count(TRANSMISSION_EXT)) {
+			const tinygltf::Value& ext = model.materials[i].extensions.at(TRANSMISSION_EXT);
+
+			this->materials[i].texIDs.transmission_tex_id =
+				get_ext_tex_id(ext, "transmissionTexture", default_texture_black_srgb_id);
+		}
+
+		// --- 4. KHR_materials_volume (For volumetric effects in glass) ---
+		const std::string VOLUME_EXT = "KHR_materials_volume";
+		if (model.materials[i].extensions.count(VOLUME_EXT)) {
+			const tinygltf::Value& ext = model.materials[i].extensions.at(VOLUME_EXT);
+
+			this->materials[i].texIDs.thickness_tex_id =
+				get_ext_tex_id(ext, "thicknessTexture", default_texture_white_unorm_id);
+		}
+
+		// --- 5. KHR_materials_specular (Newer way to control specular) ---
+		const std::string SPECULAR_EXT = "KHR_materials_specular";
+		if (model.materials[i].extensions.count(SPECULAR_EXT)) {
+			const tinygltf::Value& ext = model.materials[i].extensions.at(SPECULAR_EXT);
+
+			this->materials[i].texIDs.specular_tex_id =
+				get_ext_tex_id(ext, "specularTexture", default_texture_black_unorm_id); // Often just a factor map
+
+			this->materials[i].texIDs.specular_color_tex_id =
+				get_ext_tex_id(ext, "specularColorTexture", default_texture_white_srgb_id);
+		}
+
+		// --- 6. KHR_materials_pbrSpecularGlossiness (Legacy workflow) ---
+		// Requires separate handling for Diffuse and Specular/Glossiness maps
+		const std::string SPECGLOSS_EXT = "KHR_materials_pbrSpecularGlossiness";
+		if (model.materials[i].extensions.count(SPECGLOSS_EXT)) {
+			const tinygltf::Value& ext = model.materials[i].extensions.at(SPECGLOSS_EXT);
+
+			this->materials[i].texIDs.specular_gloss_diffuse_tex_id =
+				get_ext_tex_id(ext, "diffuseTexture", default_texture_white_srgb_id);
+
+			this->materials[i].texIDs.specular_gloss_tex_id =
+				get_ext_tex_id(ext, "specularGlossinessTexture", default_texture_white_unorm_id);
+		}
+	}
+
+	// Ensure at least one material exists (for objects without material properties)
+	if (this->materials.empty()) {
+		Log::info("No materials found in glTF file. Creating a default material.");
+		this->materials.emplace_back(Material());
+		materials.back().base_color = { 0.7f, 0.7f, 0.7f, 1.0f };
+		materials.back().ambient = { 0.1f, 0.1f, 0.1f, AlphaMode::BLEND_MODE };
+		materials.back().specular = { 0.1f, 0.1f, 0.1f, 1.0f };
+		materials.back().transmittance = { 0.0f, 0.0f, 0.0f, 1.0f };
+		materials.back().emission = { 0.0f, 0.0f, 0.0f, 1.0f };
+		materials.back().shininess = 32.0f;
+		materials.back().roughness = 0.5f;
+		materials.back().ior = 0.5f;
+		materials.back().illum = default_to_pbr ? 4 : 2;
+		materials.back().alpha_cutoff = 0.0f;
+
+		materials.back().texIDs.base_color_tex_id = default_texture_white_srgb_id;
+		materials.back().texIDs.normal_tex_id = default_texture_normal_unorm_id;
+		materials.back().texIDs.metallic_roughness_tex_id = default_texture_metallic_roughness_unorm_id;
+		materials.back().texIDs.occlusion_tex_id = default_texture_white_unorm_id;
+		materials.back().texIDs.emissive_tex_id = default_texture_black_srgb_id;
+	}
+
+	this->material_count = static_cast<uint32_t>(this->materials.size());
+
+	// ----------------------------------------------------------------------------------
+	// 2. Process Mesh Data (Primitives, Vertices, and Indices)
+	// ----------------------------------------------------------------------------------
+	Log::info("Processing glTF mesh data...");
+
+	// NOTE: We are converting all indexed data into a single, combined vertex/index buffer.
+
+	// --- DEFINE HELPER LAMBDAS (Defined Once for Efficiency) ---
+
+	// Define a local lambda to handle byte stride calculation
+	auto get_effective_stride = [&](const tinygltf::Accessor& accessor) -> size_t {
+		const tinygltf::BufferView& buffer_view = model.bufferViews[accessor.bufferView];
+
+		// If a byteStride is defined in the BufferView, use it (handles interleaved data)
+		if (buffer_view.byteStride > 0) {
+			return buffer_view.byteStride;
+		}
+
+		// Otherwise, use the tightly packed size (Num components * Component size)
+		return tinygltf::GetNumComponentsInType(accessor.type) * tinygltf::GetComponentSizeInBytes(accessor.componentType);
+		};
+
+	// Safely reads a VEC3 attribute (used for Normals)
+	auto read_normal_data = [&](const tinygltf::Accessor& accessor, const uint8_t* buffer_data) -> glm::vec3 {
+		if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
+			const float* ptr = reinterpret_cast<const float*>(buffer_data);
+			return { ptr[0], ptr[1], ptr[2] };
+		}
+		else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+			// Normalized USHORT VEC3: [0, 65535] -> [-1.0, 1.0] for signed vectors
+			const uint16_t* ptr = reinterpret_cast<const uint16_t*>(buffer_data);
+			return {
+				(float(ptr[0]) / 32767.0f) - 1.0f,
+				(float(ptr[1]) / 32767.0f) - 1.0f,
+				(float(ptr[2]) / 32767.0f) - 1.0f
+			};
+		}
+		else {
+			Log::error("Unsupported component type for Normal attribute: %d", accessor.componentType);
+			return { 0.0f, 1.0f, 0.0f }; // Safe default
+		}
+		};
+
+	// Safely reads a VEC4 attribute (used for Tangents)
+	auto read_tangent_data = [&](const tinygltf::Accessor& accessor, const uint8_t* buffer_data) -> glm::vec4 {
+		if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
+			const float* ptr = reinterpret_cast<const float*>(buffer_data);
+			return { ptr[0], ptr[1], ptr[2], ptr[3] };
+		}
+		else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+			// Normalized USHORT VEC4: [0, 65535] -> [-1.0, 1.0]
+			const uint16_t* ptr = reinterpret_cast<const uint16_t*>(buffer_data);
+			return {
+				(float(ptr[0]) / 32767.0f) - 1.0f,
+				(float(ptr[1]) / 32767.0f) - 1.0f,
+				(float(ptr[2]) / 32767.0f) - 1.0f,
+				(float(ptr[3]) / 32767.0f) - 1.0f // Handedness (w)
+			};
+		}
+		else {
+			Log::warning("Unsupported component type for Tangent attribute: %d", accessor.componentType);
+			return { 0.0f, 0.0f, 0.0f, 1.0f }; // Safe default
+		}
+		};
+
+	// Safely reads a VEC2 attribute (used for Texcoords)
+	auto read_texcoord_data = [&](const tinygltf::Accessor& accessor, const uint8_t* buffer_data_ptr) -> glm::vec2 {
+		glm::vec2 tex_coord = { 0.0f, 0.0f };
+
+		// TexCoords MUST be VEC2 (type == 5123)
+		if (accessor.type != TINYGLTF_TYPE_VEC2) {
+			Log::warning("TexCoord accessor is not VEC2. Treating as {0, 0}.");
+			return tex_coord;
+		}
+
+		switch (accessor.componentType) {
+		case TINYGLTF_COMPONENT_TYPE_FLOAT: {
+			const float* f_ptr = reinterpret_cast<const float*>(buffer_data_ptr);
+			tex_coord = { f_ptr[0], f_ptr[1] };
+			break;
+		}
+		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
+			const uint8_t* ub_ptr = reinterpret_cast<const uint8_t*>(buffer_data_ptr);
+			if (accessor.normalized) {
+				// Read 8-bit value and convert to float [0, 1]
+				tex_coord = {
+					(float)ub_ptr[0] / 255.0f,
+					(float)ub_ptr[1] / 255.0f
+				};
+			}
+			else {
+				// Read 8-bit value directly (less common for UVs)
+				tex_coord = { (float)ub_ptr[0], (float)ub_ptr[1] };
+			}
+			break;
+		}
+		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
+			const uint16_t* us_ptr = reinterpret_cast<const uint16_t*>(buffer_data_ptr);
+			if (accessor.normalized) {
+				// Read 16-bit value and convert to float [0, 1]
+				// Max value for uint16 is 65535
+				tex_coord = {
+					(float)us_ptr[0] / 65535.0f,
+					(float)us_ptr[1] / 65535.0f
+				};
+			}
+			else {
+				// Read 16-bit value directly (less common for UVs)
+				tex_coord = { (float)us_ptr[0], (float)us_ptr[1] };
+			}
+			break;
+		}
+		default:
+			Log::warning("Unsupported component type for TEXCOORD_0: ", accessor.componentType);
+			break;
+		}
+
+		return tex_coord;
+		};
+
+	// ------------------------------------------------------------------
+
+	uint32_t current_index_count = 0;
+
+	// We iterate over all glTF meshes and their primitives
+	for (const auto& gltf_mesh : model.meshes) {
+		for (const auto& primitive : gltf_mesh.primitives) {
+			if (primitive.mode != TINYGLTF_MODE_TRIANGLES) {
+				Log::warning("Primitive mode is not TRIANGLES, skipping...");
+				continue;
+			}
+
+			// Create a submesh for this primitive
+			SubMesh submesh{};
+			submesh.parent_mesh_local_material_index = (primitive.material == -1) ? 0 : (uint32_t)primitive.material;
+			submesh.global_material_index = this->materials[submesh.parent_mesh_local_material_index].get_unique_ID();
+			submesh.first_index = current_index_count;
+			submesh.vertex_offset = static_cast<uint32_t>(this->vertices.size());
+
+			// ------------------------------------------------------------------
+			// A. Get Vertex Attribute Data (Position, Normal, TexCoord, Color)
+			// ------------------------------------------------------------------
+
+			// Map of attribute name to accessor index (POSITION, NORMAL, TEXCOORD_0, COLOR, TANGENT)
+			const auto& attributes = primitive.attributes;
+
+			if (attributes.find("POSITION") == attributes.end()) {
+				Log::warning("In Mesh::load_gltf(): While processing vertex attributes: Primitive is missing POSITION attribute, cannot load.");
+				continue;
+			}
+
+			int pos_idx = attributes.at("POSITION");
+			int norm_idx = (attributes.count("NORMAL")) ? attributes.at("NORMAL") : -1;
+			int uv_idx = (attributes.count("TEXCOORD_0")) ? attributes.at("TEXCOORD_0") : -1;
+			int color_idx = (attributes.count("COLOR_0")) ? attributes.at("COLOR_0") : -1;
+			int tan_idx = (attributes.count("TANGENT")) ? attributes.at("TANGENT") : -1;
+
+			// Determine if conditional de-indexing is required for this primitive
+			bool needs_tangent_gen_for_primitive = generate_mikktspace_tangents && (tan_idx == -1);
+
+			const tinygltf::Accessor& pos_accessor = model.accessors[pos_idx];
+			size_t vertex_count = pos_accessor.count;
+
+			// Temporary buffer for the unique vertices of the primitive.
+			// This is needed so we can duplicate them later if de-indexing is required.
+			std::vector<Vertex> unique_primitive_vertices;
+			unique_primitive_vertices.reserve(vertex_count);
+
+			// Extract vertices from accessors and store them in the mesh's vertex buffer
+			for (size_t i = 0; i < vertex_count; ++i) {
+				Vertex vertex{};
+
+				// --- POSITION (VEC3) ---
+				const tinygltf::BufferView& pos_buffer_view = model.bufferViews[pos_accessor.bufferView];
+				const size_t pos_stride = get_effective_stride(pos_accessor);
+				const size_t pos_total_offset = pos_buffer_view.byteOffset + pos_accessor.byteOffset + i * pos_stride;
+
+				// Positions are typically float.
+				const float* pos_ptr = reinterpret_cast<const float*>(&model.buffers[pos_buffer_view.buffer].data[pos_total_offset]);
+
+				// Read the glTF position
+				glm::vec3 position_y_up = { pos_ptr[0], pos_ptr[1], pos_ptr[2] };
+
+				// ----------------------------------------------------------------------
+				// APPLY HOST-SIDE COORDINATE SYTEM TRANSFORMATION (Y-UP to Z-UP)
+				// (x, y, z) -> (x, z, -y)
+				// ----------------------------------------------------------------------
+				const float original_y = position_y_up.y;
+				position_y_up.y = position_y_up.z;	// New Y is old Z
+				position_y_up.z = -original_y;		// New Z is negated old Y
+
+				vertex.position = position_y_up;	// Store the Z-up position
+
+				// --- NORMAL (VEC3) - USING read_normal_data LAMBDA ---
+				if (norm_idx > -1) {
+					const tinygltf::Accessor& norm_accessor = model.accessors[norm_idx];
+					const tinygltf::BufferView& norm_buffer_view = model.bufferViews[norm_accessor.bufferView];
+					const size_t norm_stride = get_effective_stride(norm_accessor);
+					const size_t norm_total_offset = norm_buffer_view.byteOffset + norm_accessor.byteOffset + i * norm_stride;
+					const uint8_t* norm_buffer_data = &model.buffers[norm_buffer_view.buffer].data[norm_total_offset];
+
+					glm::vec3 normal_y_up = read_normal_data(norm_accessor, norm_buffer_data);
+
+					// ----------------------------------------------------------------------
+					// APPLY HOST-SIDE COORDINATE SYTEM TRANSFORMATION (Y-UP to Z-UP)
+					// (x, y, z) -> (x, z, -y)
+					// ----------------------------------------------------------------------
+					const float original_y = normal_y_up.y;
+					normal_y_up.y = normal_y_up.z;	// New Y is old Z
+					normal_y_up.z = -original_y;    // New Z is negated old Y
+
+					vertex.normal = glm::normalize(normal_y_up);
+				}
+				else {
+					vertex.normal = { 0.0f, 1.0f, 0.0f }; // Default normal
+				}
+
+				// --- TEXCOORD_0 (VEC2) - USING read_texcoord_data LAMBDA ---
+				if (uv_idx > -1) {
+					const tinygltf::Accessor& uv_accessor = model.accessors[uv_idx];
+					const tinygltf::BufferView& uv_buffer_view = model.bufferViews[uv_accessor.bufferView];
+					const size_t uv_stride = get_effective_stride(uv_accessor);
+					const size_t uv_total_offset = uv_buffer_view.byteOffset + uv_accessor.byteOffset + i * uv_stride;
+					const uint8_t* uv_buffer_data = &model.buffers[uv_buffer_view.buffer].data[uv_total_offset];
+
+					/*--- DEBUG LOGS-- -
+					if (i == 0) { // Log details for the first vertex only
+						Log::force("UV Accessor Component Type: ", uv_accessor.componentType);
+						Log::force("UV Accessor Type: ", uv_accessor.type);
+						Log::force("UV Accessor Normalized: ", uv_accessor.normalized);
+						Log::force("UV Buffer View Index: ", uv_accessor.bufferView);
+						Log::force("UV Data Byte Offset: ", uv_total_offset);
+					}
+					*/
+
+					vertex.tex_coord = read_texcoord_data(uv_accessor, uv_buffer_data);
+				}
+				else {
+					vertex.tex_coord = { 0.0f, 0.0f };
+				}
+
+				// --- COLOR_0 (VEC4/VEC3 FLOAT) ---
+				if (color_idx > -1) {
+					const tinygltf::Accessor& color_accessor = model.accessors[color_idx];
+					const tinygltf::BufferView& color_buffer_view = model.bufferViews[color_accessor.bufferView];
+
+					// Note / TODO: We should ideally also handle component types other than FLOAT here for colors
+					if (color_accessor.type == TINYGLTF_TYPE_VEC4 && color_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
+						const size_t color_stride = get_effective_stride(color_accessor);
+						const size_t color_total_offset = color_buffer_view.byteOffset + color_accessor.byteOffset + i * color_stride;
+
+						const float* color_ptr = reinterpret_cast<const float*>(&model.buffers[color_buffer_view.buffer].data[color_total_offset]);
+						vertex.color = { color_ptr[0], color_ptr[1], color_ptr[2], color_ptr[3] };
+					}
+					else if (color_accessor.type == TINYGLTF_TYPE_VEC3 && color_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
+						const size_t color_stride = get_effective_stride(color_accessor);
+						const size_t color_total_offset = color_buffer_view.byteOffset + color_accessor.byteOffset + i * color_stride;
+
+						const float* color_ptr = reinterpret_cast<const float*>(&model.buffers[color_buffer_view.buffer].data[color_total_offset]);
+						vertex.color = { color_ptr[0], color_ptr[1], color_ptr[2], 1.0f };
+					}
+					else {
+						vertex.color = { 1.0f, 1.0f, 1.0f, 1.0f }; // Default color if type is unsupported
+					}
+				}
+				else {
+					vertex.color = { 1.0f, 1.0f, 1.0f, 1.0f }; // Default white color
+				}
+
+				// --- TANGENT (VEC4) - USING read_tangent_data LAMBDA ---
+				// ONLY load glTF tangents if we are NOT overriding with MikkTSpace
+				if (!generate_mikktspace_tangents) {
+					if (tan_idx > -1) {
+						const tinygltf::Accessor& tan_accessor = model.accessors[tan_idx];
+						const tinygltf::BufferView& tan_buffer_view = model.bufferViews[tan_accessor.bufferView];
+						const size_t tan_stride = get_effective_stride(tan_accessor);
+						const size_t tan_total_offset = tan_buffer_view.byteOffset + tan_accessor.byteOffset + i * tan_stride;
+						const uint8_t* tan_buffer_data = &model.buffers[tan_buffer_view.buffer].data[tan_total_offset];
+
+						// Use the lambda to read and normalize the data based on componentType
+						vertex.tangent = read_tangent_data(tan_accessor, tan_buffer_data);
+
+						// ----------------------------------------------------------------------
+						// HOST-SIDE COORDINATE TRANSFORMATION (Y-up to Z-up)
+						// Transform the XYZ part of the tangent vector: (x, y, z) -> (x, z, -y)
+						// ----------------------------------------------------------------------
+						const float original_y = vertex.tangent.y;
+						vertex.tangent.y = vertex.tangent.z; // New Y is old Z
+						vertex.tangent.z = -original_y;      // New Z is negated old Y
+
+						// Flip the handedness (W component) due to the coordinate system rotation.
+						// This is necessary to maintain the correct TBN basis orientation.
+						vertex.tangent.w = -vertex.tangent.w;
+
+						// NO explicit re-normalization here. The vertex shader will transform this,
+						// and the fragment shader will perform the final normalization.
+					}
+					else {
+						// Default tangent for models without tangent data
+						vertex.tangent = { 0.0f, 0.0f, 0.0f, 1.0f };
+					}
+				}
+				else {
+					// If MikkTSpace is active, initialize tangents to a safe value.
+					vertex.tangent = { 0.0f, 0.0f, 0.0f, 1.0f };
+				}
+
+				// --- MATERIAL INDEX (UINT32_T) ---
+				vertex.material_index = submesh.global_material_index;
+
+				// If de-indexing is required, we temporarily store the unique vertex
+				// in the local vector. Otherwise, we push directly to the main buffer.
+				if (needs_tangent_gen_for_primitive) {
+					unique_primitive_vertices.push_back(vertex);
+				}
+				else {
+					this->vertices.push_back(vertex);
+				}
+			}
+
+			// If de-indexing is required, we must perform the duplication step now.
+			if (needs_tangent_gen_for_primitive) {
+				// Even if it was an unindexed primitive (no `indices` block), if MikkTSpace is active and tangents were missing,
+				// the vertices are already correctly loaded into `unique_primitive_vertices` and will be pushed to `this->vertices` below.
+
+				// If the primitive is UNINDEXED (or indices > -1 fails)
+				if (primitive.indices == -1) {
+					Log::debug("No indices and no TANGENTs found. Using unique vertex list for MikkTSpace generation.");
+					// Push unique vertices to main buffer. The index_count for submesh will be 0.
+					this->vertices.insert(this->vertices.end(), unique_primitive_vertices.begin(), unique_primitive_vertices.end());
+					submesh.index_count = 0;
+					submesh.vertex_count = static_cast<uint32_t>(vertex_count);
+				}
+			}
+			else {
+				// If not generating tangents OR tangents exist, the unique vertices were already pushed to this->vertices in the loop above.
+				// We just need to set the submesh's unique vertex count.
+				submesh.vertex_count = static_cast<uint32_t>(vertex_count);
+			}
+
+			// ------------------------------------------------------------------
+			// B. Get Index Data
+			// ------------------------------------------------------------------
+			if (primitive.indices > -1) {
+				const tinygltf::Accessor& index_accessor = model.accessors[primitive.indices];
+				const tinygltf::BufferView& index_buffer_view = model.bufferViews[index_accessor.bufferView];
+				const tinygltf::Buffer& index_buffer = model.buffers[index_buffer_view.buffer];
+
+				size_t component_size = tinygltf::GetComponentSizeInBytes(index_accessor.componentType);
+				const uint8_t* buffer_data = index_buffer.data.data() + index_buffer_view.byteOffset + index_accessor.byteOffset;
+
+				uint32_t primitive_index_count = 0;
+
+				if (needs_tangent_gen_for_primitive) {
+					// --- DE-INDEXING LOGIC ---
+					Log::debug("De-indexing indexed primitive for MikkTSpace generation (no TANGENT data).");
+
+					// The unique vertices for this primitive were stored in unique_primitive_vertices.
+					// We discard the original block of unique vertices loaded in Section A 
+					// and replace them with a duplicated, de-indexed set.
+
+					// 1. Remove the unique vertices from the main buffer.
+					// (They are at submesh.vertex_offset and span 'vertex_count' elements,
+					// but we only pushed them to the end *if* they were not de-indexed, 
+					// which is not the case here. So the temporary storage was correct.)
+
+					// Since we didn't push to this->vertices in the loop above for the de-indexed case,
+					// the current submesh.vertex_offset is still the correct start of the new data.
+
+					uint32_t deindexed_vertex_count = 0;
+
+					for (size_t i = 0; i < index_accessor.count; ++i) {
+						uint32_t local_index = 0;
+						// Read the index value based on the component type
+						if (component_size == 1) {
+							local_index = static_cast<uint32_t>(*reinterpret_cast<const uint8_t*>(buffer_data + i * component_size));
+						}
+						else if (component_size == 2) {
+							local_index = static_cast<uint32_t>(*reinterpret_cast<const uint16_t*>(buffer_data + i * component_size));
+						}
+						else if (component_size == 4) {
+							local_index = *reinterpret_cast<const uint32_t*>(buffer_data + i * component_size);
+						}
+
+						// Duplicate the vertex based on the index and push it to the main vertex buffer
+						if (local_index < unique_primitive_vertices.size()) {
+							this->vertices.push_back(unique_primitive_vertices[local_index]);
+							deindexed_vertex_count++;
+						}
+						else {
+							Log::error("Index out of bounds during de-indexing. Index: %u / Unique Count: %u", local_index, unique_primitive_vertices.size());
+						}
+					}
+
+
+					// After de-indexing, create a sequential index buffer;
+					// this isn't required for non-indexed draw calls,
+					// but it adds safety because CommandBuffer::draw_indexed() will still work
+					uint32_t base_vertex = submesh.vertex_offset;
+					for (uint32_t i = 0; i < deindexed_vertex_count; ++i) {
+						this->indices.push_back(base_vertex + i);
+					}
+
+					// Update submesh counts to reflect the non-indexed data
+					submesh.index_count = deindexed_vertex_count;
+					submesh.first_index = current_index_count;
+					current_index_count += deindexed_vertex_count;
+					submesh.vertex_count = deindexed_vertex_count;
+
+				}
+				else {
+					// --- NORMAL INDEXING LOGIC (No de-indexing needed) ---
+					Log::debug("Indexing primitive.");
+
+					for (size_t i = 0; i < index_accessor.count; ++i) {
+						uint32_t index = 0;
+						// Read the index value based on the component type
+						if (component_size == 1) {
+							index = static_cast<uint32_t>(*reinterpret_cast<const uint8_t*>(buffer_data + i * component_size));
+						}
+						else if (component_size == 2) {
+							index = static_cast<uint32_t>(*reinterpret_cast<const uint16_t*>(buffer_data + i * component_size));
+						}
+						else if (component_size == 4) {
+							index = *reinterpret_cast<const uint32_t*>(buffer_data + i * component_size);
+						}
+
+						// We need to add the current vertex offset because we're merging all vertices into one buffer.
+						this->indices.push_back(submesh.vertex_offset + index);
+						primitive_index_count++;
+					}
+
+					submesh.index_count = primitive_index_count;
+					current_index_count += primitive_index_count;
+				}
+			}
+			else {
+				// Primitive is not indexed in glTF. The unique vertices were either loaded directly 
+				// in the loop above (if !needs_tangent_gen_for_primitive) or are in unique_primitive_vertices (if needs_tangent_gen_for_primitive).
+
+				// If needs_tangent_gen_for_primitive is true, we must now move the unique vertices 
+				// from the temporary buffer to the main buffer, as this primitive is already de-indexed.
+				if (needs_tangent_gen_for_primitive) {
+					Log::debug("No indices, but MikkTSpace requested. Copying unique vertices to buffer.");
+					this->vertices.insert(this->vertices.end(), unique_primitive_vertices.begin(), unique_primitive_vertices.end());
+				}
+
+				// Set the counts correctly for an unindexed primitive (index_count = 0)
+				submesh.index_count = 0;
+				submesh.vertex_count = static_cast<uint32_t>(vertex_count);
+				// current_index_count remains unchanged (0 indices added)
+			}
+
+			// Submeshes is now complete for this primitive.
+			this->submeshes.push_back(submesh);
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Generate MikkTSpace tangents (optional)
+	// ------------------------------------------------------------------
+	if (generate_mikktspace_tangents) {
+		MeshTangentGenerator::generate_tangents(vertices, indices);
+	}
+
+	/*
+	// DEBUG LOGGING OF VERTEX DATA
+	for (uint32_t i = 0; i < vertices.size(); i++) {
+		Log::force("Vertex [", i, "]",
+			" tangent = {", vertices[i].tangent[0], ", ", vertices[i].tangent[1], ", ", vertices[i].tangent[2], ", ", vertices[i].tangent[3], "}",
+			" color = {", vertices[i].color[0], ", ", vertices[i].color[1], ", ", vertices[i].color[2], ", ", vertices[i].color[3], "}",
+			" position = {", vertices[i].position[0], ", ", vertices[i].position[1], ", ", vertices[i].position[2], "}",
+			" tex_coord = {", vertices[i].tex_coord[0], ", ", vertices[i].tex_coord[1], "}",
+			" normal = ", vertices[i].normal[0], ", ", vertices[i].normal[1], ", ", vertices[i].normal[2], "}",
+			" (global) material_index = ", vertices[i].material_index
+		);
+	}
+	*/
+
+
+
+	// add extensions
+	for (auto& extension : model.extensionsUsed) {
+
+		// lights
+		if (extension == "KHR_lights_punctual" && model.extensions.count("KHR_lights_punctual")) {
+			const tinygltf::Value& lights_extension_value = model.extensions.at("KHR_lights_punctual");
+
+			if (lights_extension_value.Has("lights") && lights_extension_value.Get("lights").IsArray()) {
+				// TinyGLTF has already parsed the light definitions into model.lights
+				const std::vector<tinygltf::Light>& gltf_lights = model.lights;
+
+				// 1. Get the current scene's root nodes
+				const tinygltf::Scene& scene = (model.scenes.size() > 0)
+					? model.scenes[model.defaultScene > -1 ? model.defaultScene : 0]
+					: tinygltf::Scene{}; // Fallback
+
+				this->lights_gpu.clear();
+				glm::mat4 identity_transform(1.0f);
+
+				// 2. Traverse the scene graph to find nodes referencing these lights
+				for (int node_index : scene.nodes) {
+					traverse_nodes_for_lights(model, node_index, identity_transform, this->lights_gpu, gltf_lights);
+				}
+
+				Log::debug("Found ", this->lights_gpu.size(), " lights in the glTF file.");
+			}
+		}
+	}
+
+	// Final vertex/index counts
+	this->index_count = static_cast<uint32_t>(indices.size());
+	this->vertex_count = static_cast<uint32_t>(vertices.size());
+	this->index_type = VK_INDEX_TYPE_UINT32; // glTF indices are converted to uint32_t above
+	this->lights_count = static_cast<uint32_t>(lights_gpu.size());
+
+	// ----------------------------------------------------------------------------------
+	// 3. Vulkan Buffer Creation and Transfer
+	// ----------------------------------------------------------------------------------
+
+	// write vertex, index, material, and light data to staging buffers 
+	Log::info("Transferring mesh data to GPU memory (Vertices: %u, Indices: %u, Lights: %u).", this->vertex_count, this->index_count, this->lights_count);
+	auto& vertex_staging_buffer = task.make_temp_buffer<Vertex>(vertex_count, VERTEX_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	auto& index_staging_buffer = task.make_temp_buffer<uint32_t>(index_count, INDEX_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	auto& material_staging_buffer = task.make_temp_buffer<Material>(material_count, STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	auto& light_staging_buffer = task.make_temp_buffer<LightGPU>(lights_count, STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	vertex_staging_buffer.write(vertices);
+	index_staging_buffer.write(indices);
+	material_staging_buffer.write(materials);
+	light_staging_buffer.write(lights_gpu);
+
+	// initialize device_local buffers
+	this->vertex_buffer = std::make_unique<Buffer<Vertex>>(device, VERTEX_BUFFER, vertex_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	this->index_buffer = std::make_unique<Buffer<uint32_t>>(device, INDEX_BUFFER, index_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	this->material_buffer = std::make_unique<Buffer<Material>>(device, STORAGE_BUFFER, material_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	this->light_buffer = std::make_unique<Buffer<LightGPU>>(device, STORAGE_BUFFER, lights_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// transfer from staging buffers to device_local memory
+	CommandBuffer& cb = task.get_command_buffer();
+	cb.begin_recording();
+	cb.add_buffer_memory_barrier(vertex_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(index_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(material_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.add_buffer_memory_barrier(light_staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+
+	cb.copy_buffer(vertex_staging_buffer, *vertex_buffer);
+	cb.copy_buffer(index_staging_buffer, *index_buffer);
+	cb.copy_buffer(material_staging_buffer, *material_buffer);
+	cb.copy_buffer(light_staging_buffer, *light_buffer);
+
+	cb.end_recording();
+
+	// Timeline semaphore handling
+	if (timeline_semaphore) {
+		if (timeline_semaphore->get_type() == VK_SEMAPHORE_TYPE_TIMELINE) {
+			task.timeline_sync(*timeline_semaphore);
+		}
+		else {
+			Log::warning("In Mesh constructor: invalid semaphore argument. Must be a timeline semaphore! Semaphore will not be used.");
+		}
+	}
+	task.submit();
+}
+
 // destructor
 Mesh::~Mesh() {}
 
 // getters
-const Buffer<Vertex>& Mesh::get_vertex_buffer() const { return *this->vertex_buffer; }
 const Buffer<uint32_t>& Mesh::get_index_buffer() const { return *this->index_buffer; }
-const Buffer<MaterialStd430>& Mesh::get_material_buffer() const { return *this->material_buffer; }
+const Buffer<Material>& Mesh::get_material_buffer() const { return *this->material_buffer; }
 uint32_t Mesh::get_index_count() const { return this->index_count; }
 uint32_t Mesh::get_vertex_count() const { return this->vertex_count; }
-const VertexDescriptions& Mesh::get_vertex_descriptions() const { return vertex_descriptions; }
+uint32_t Mesh::get_lights_count() const { return this->lights_count; }
+uint32_t Mesh::get_material_count() const { return this->material_count; }
+uint32_t Mesh::get_texture_count() const { return this->texture_count; }
+const std::vector<std::unique_ptr<Texture>>& Mesh::get_textures() const { return this->textures; };
 VkIndexType Mesh::get_index_type() const { return index_type; }
-const std::vector<SubMesh>& Mesh::get_submeshes() const { return submeshes; }
+std::vector<SubMesh>& Mesh::get_submeshes() { return submeshes; }
+std::vector<LightGPU>& Mesh::get_lights() { return this->lights_gpu; };
+std::string& Mesh::get_base_dir() { return this->base_dir; };
+uint32_t Mesh::get_unique_ID() const { return this->unique_ID; }
+
+Buffer<LightGPU>& Mesh::get_lights_buffer(Semaphore* timeline_semaphore) {
+	if (this->light_buffer != nullptr) { return *this->light_buffer; } // early exit if the buffer already exists
+	static VulkanManager& manager = VulkanManager::get_singleton();
+	Task& task = manager.get_graphics_task();
+	CommandBuffer& cb = task.get_command_buffer();
+	uint32_t num_lights = this->get_lights_count();
+	if (num_lights == 0) { Log::error("invalid call to Mesh::get_lights_buffer(): lights count is zero."); }
+	this->light_buffer = std::make_unique<Buffer<LightGPU>>(manager.get_device(), BufferType::STORAGE_BUFFER, num_lights, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<LightGPU>& staging_buffer = task.make_temp_buffer<LightGPU>(num_lights, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	this->lights_gpu.reserve(num_lights);
+	for (auto light : this->lights_gpu) {
+		this->lights_gpu.emplace_back(light);
+	}
+	staging_buffer.write(this->lights_gpu);
+	cb.begin_recording();
+	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+	cb.copy_buffer(staging_buffer, *this->light_buffer);
+	cb.end_recording();
+	task.timeline_sync(*timeline_semaphore);
+	task.submit();
+	return *this->light_buffer;
+}
+
+std::vector<Material>& Mesh::get_materials() {
+	return this->materials;
+}
 
 // +=================================+   
 // | Entity                          |
 // +=================================+
 // parametric constructor
-Entity::Entity(Mesh& mesh) : mesh(&mesh) {};
+Entity::Entity(Mesh* mesh, glm::vec3 position, bool visible) : mesh(mesh), position(position), visible(visible), unique_ID(next_unique_ID++) {};
 
 // Calculates the model matrix, applying the transformations in the correct order: scale, rotate, then translate.
 glm::mat4 Entity::get_model_matrix() {
@@ -5006,31 +7322,30 @@ glm::mat4 Entity::get_model_matrix() {
 }
 
 // Public setter methods for transformations.
-void Entity::set_position(const glm::vec3& position) { this->position = position; }
-void Entity::set_rotation(const glm::vec3& rotation) { this->rotation = rotation; }
-void Entity::set_scale(const glm::vec3& scale) { this->scale = scale; }
+glm::vec3& Entity::set_position(const glm::vec3& position) { this->position = position; return this->position; }
+glm::vec3& Entity::set_rotation(const glm::vec3& rotation) { this->rotation = rotation; return this->rotation; }
+glm::vec3& Entity::set_scale(const glm::vec3& scale) { this->scale = scale; return this->scale; }
 
-void Entity::translate(const glm::vec3& position_delta) { this->position += position_delta; }
-void Entity::rotate(const glm::vec3& rotation_delta) { this->rotation += rotation_delta; }
-void Entity::scale_add(const glm::vec3& scale_delta) { this->scale += scale_delta; }
-void Entity::scale_factor(const glm::vec3& scale_multiplier) { this->scale *= scale_multiplier; }
+glm::vec3& Entity::translate(const glm::vec3& position_delta) { this->position += position_delta; return this->position; }
+glm::vec3& Entity::rotate(const glm::vec3& rotation_delta) { this->rotation += rotation_delta; return this->rotation; }
+glm::vec3& Entity::scale_add(const glm::vec3& scale_delta) { this->scale += scale_delta; return this->scale; }
+glm::vec3& Entity::scale_factor(const glm::vec3& scale_multiplier) { this->scale *= scale_multiplier; return this->scale; }
 
-// Public getter method for the mesh.
+// Public getters
 Mesh& Entity::get_mesh() const { return *mesh; }
+const glm::vec3& Entity::get_position() const { return this->position; }
+const glm::vec3& Entity::get_rotation() const { return this->rotation; }
+const glm::vec3& Entity::get_scale() const { return this->scale; }
+bool Entity::is_visible() const { return this->visible; }
+int Entity::get_unique_ID() const { return unique_ID; }
+void Entity::set_visible(bool is_visible) { this->visible = is_visible; }
 
 // +=================================+   
 // | Camera                          |
 // +=================================+
 
 // Constructor with vectors
-Camera::Camera(glm::vec3 camera_position, glm::vec3 camera_up, float camera_yaw, float camera_pitch) :
-	front(glm::vec3(0.0f, 0.0f, -1.0f)),
-	movement_speed(CAMERA_SPEED),
-	mouse_sensitivity(CAMERA_SENSITIVITY),
-	fov(CAMERA_FOV),
-	aspect_ratio(4.0f / 3.0f),
-	near_plane(0.1f),
-	far_plane(100.0f) {
+Camera::Camera(glm::vec3 camera_position, glm::vec3 camera_up, float camera_yaw, float camera_pitch) : unique_ID(next_unique_ID++) {
 	position = camera_position;
 	world_up = camera_up;
 	yaw = camera_yaw;
@@ -5038,21 +7353,19 @@ Camera::Camera(glm::vec3 camera_position, glm::vec3 camera_up, float camera_yaw,
 }
 
 // Constructor with scalar values
-Camera::Camera(float pos_x, float pos_y, float pos_z, float up_x, float up_y, float up_z, float camera_yaw, float camera_pitch) :
-	front(glm::vec3(0.0f, 0.0f, -1.0f)),
-	movement_speed(CAMERA_SPEED),
-	mouse_sensitivity(CAMERA_SENSITIVITY),
-	fov(CAMERA_FOV),
-	aspect_ratio(4.0f / 3.0f),
-	near_plane(0.1f),
-	far_plane(100.0f) {
+Camera::Camera(float pos_x, float pos_y, float pos_z, float up_x, float up_y, float up_z, float camera_yaw, float camera_pitch) : unique_ID(next_unique_ID++) {
 	position = glm::vec3(pos_x, pos_y, pos_z);
 	world_up = glm::vec3(up_x, up_y, up_z);
 	yaw = camera_yaw;
 	pitch = camera_pitch;
 }
 
+int Camera::get_unique_ID() const {
+	return unique_ID;
+}
+
 // Returns the view matrix calculated using Euler Angles and the LookAt Matrix
+// (for free-look (FPS style) camera)
 glm::mat4 Camera::get_view_matrix() {
 	// update the front vector
 	glm::vec3 new_front;
@@ -5090,29 +7403,29 @@ glm::vec3 Camera::get_position() const {
 
 // Sets the camera's position.
 glm::vec3 Camera::set_position(const glm::vec3& new_position) {
-	position = new_position;
+	this->position = new_position;
 	return position;
 }
 
 // translate the camera's position by the specified delta
 glm::vec3 Camera::translate(const glm::vec3& delta) {
-	position += delta;
+	this->position += delta;
 	return position;
 }
 
 // Sets the world up vector.
 void Camera::set_world_up(const glm::vec3& new_world_up) {
-	world_up = new_world_up;
+	this->world_up = new_world_up;
 }
 
 // Sets the yaw angle.
 void Camera::set_yaw(float new_yaw) {
-	yaw = new_yaw;
+	this->yaw = new_yaw;
 }
 
 // Sets the pitch angle.
 void Camera::set_pitch(float new_pitch) {
-	pitch = new_pitch;
+	this->pitch = new_pitch;
 	// Make sure that when pitch is out of bounds, screen doesn't get flipped
 	if (pitch > 89.0f) {
 		pitch = 89.0f;
@@ -5124,38 +7437,42 @@ void Camera::set_pitch(float new_pitch) {
 
 // Sets the movement speed.
 void Camera::set_movement_speed(float new_speed) {
-	movement_speed = new_speed;
+	this->movement_speed = new_speed;
 }
 
 // Sets the mouse sensitivity.
 void Camera::set_mouse_sensitivity(float new_sensitivity) {
-	mouse_sensitivity = new_sensitivity;
+	this->mouse_sensitivity = new_sensitivity;
 }
 
 // Sets the field of view.
 void Camera::set_fov(float new_fov) {
-	fov = new_fov;
-	if (fov < 1.0f) {
-		fov = 1.0f;
+	this->fov = new_fov;
+	if (this->fov < 1.0f) {
+		this->fov = 1.0f;
 	}
-	if (fov > 45.0f) {
-		fov = 45.0f;
+	if (this->fov > 45.0f) {
+		this->fov = 45.0f;
 	}
 }
 
 // Sets the aspect ratio.
 void Camera::set_aspect_ratio(float new_aspect_ratio) {
-	aspect_ratio = new_aspect_ratio;
+	this->aspect_ratio = new_aspect_ratio;
+}
+
+void Camera::set_aspect_ratio(VkExtent2D extent) {
+	aspect_ratio = float_t(extent.width) / extent.height;
 }
 
 // Sets the near plane distance.
 void Camera::set_near_plane(float new_near_plane) {
-	near_plane = new_near_plane;
+	this->near_plane = new_near_plane;
 }
 
 // Sets the far plane distance.
 void Camera::set_far_plane(float new_far_plane) {
-	far_plane = new_far_plane;
+	this->far_plane = new_far_plane;
 }
 
 // Processes input received from any keyboard-like input system.
@@ -5201,183 +7518,489 @@ void Camera::process_mouse_scroll(float y_offset) {
 // | Light                           |
 // +=================================+
 
-Light::Light(glm::vec4 position, glm::vec3 color)
-	: position(position), color(color) {
+// parametric constructor for a simple directional light
+Light::Light(LightType type, glm::vec3 position, glm::vec3 color, bool visible)
+	: type(type), position(position), color(color), visible(visible), unique_ID(next_unique_ID++) {
 }
 
 void Light::translate(const glm::vec3& translation) {
-	// Only translate if it's a positional light (w=1.0f)
-	if (position.w > 0.5f) {
-		position.x += translation.x;
-		position.y += translation.y;
-		position.z += translation.z;
-	}
-}
-
-// setters
-void Light::set_position(const glm::vec4& new_position) { position = new_position; }
-void Light::set_color(const glm::vec3& new_color) { color = new_color; }
-
-// getters
-const glm::vec4& Light::get_position() const { return position; }
-const glm::vec3& Light::get_color() const { return color; }
-
-// +=================================+   
-// | Light                           |
-// +=================================+
-
-View::View(glm::vec4 position) : position(position) {}
-
-void View::translate(const glm::vec3& translation) {
 	position.x += translation.x;
 	position.y += translation.y;
 	position.z += translation.z;
 }
 
-void View::set_position(const glm::vec4& new_position) { position = new_position; }
-
-const glm::vec4& View::get_position() const { return position; }
-
-// +=================================+   
-// | Sampler                         |
-// +=================================+
-
-// Sampler class for texture sampling
-
-// constructor
-Sampler::Sampler(
-	Device& device,
-	VkFilter magFilter,
-	VkFilter minFilter,
-	VkSamplerAddressMode addressMode,
-	VkSamplerMipmapMode mipmapMode,
-	float_t max_anisotropy_level
-) : logical(device.get_logical()) {
-	sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-	sampler_create_info.pNext = nullptr;
-	sampler_create_info.magFilter = magFilter;
-	sampler_create_info.minFilter = minFilter;
-	sampler_create_info.addressModeU = addressMode;
-	sampler_create_info.addressModeV = addressMode;
-	sampler_create_info.addressModeW = addressMode;
-	sampler_create_info.anisotropyEnable = max_anisotropy_level > 0.0f;
-	sampler_create_info.maxAnisotropy = max_anisotropy_level;
-	sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-	sampler_create_info.unnormalizedCoordinates = VK_FALSE;
-	sampler_create_info.compareEnable = VK_FALSE;
-	sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
-	sampler_create_info.mipmapMode = mipmapMode;
-
-	if (vkCreateSampler(logical, &sampler_create_info, nullptr, &sampler) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create texture sampler!");
-	}
-}
-
-// destructor
-Sampler::~Sampler() {
-	if (sampler != nullptr) {
-		vkDestroySampler(logical, sampler, nullptr);
-		Log::info("destroyed image sampler (handle: ", sampler, ")");
-		sampler = nullptr;
-	}
-}
+// setters
+void Light::set_position(const glm::vec3& new_position) { position = new_position; }
+void Light::set_color(const glm::vec3& new_color) { color = new_color; }
+void Light::set_intensity(float_t value) { this->intensity = value; };
+void Light::set_type(LightType type) { this->type = type; };
+void Light::set_inner_cone_angle(float_t angle) { this->inner_cone_angle = angle; };
+void Light::set_outer_cone_angle(float_t angle) { this->outer_cone_angle = angle; };
+void Light::set_cone_angle(float_t inner_angle, float_t outer_angle) { this->inner_cone_angle = inner_angle; this->outer_cone_angle = outer_angle; };
+void Light::set_direction(const glm::vec3& new_direction) { this->direction = new_direction; };
+void Light::set_range(const float_t value) { this->range = value; };
+void Light::set_visible(bool is_visible) { this->visible = is_visible; }
 
 // getters
-const VkSampler Sampler::get() const { return sampler; }
-const VkSampler* Sampler::get_ptr() const { return &sampler; }
+const glm::vec3& Light::get_position() const { return position; }
+const glm::vec3& Light::get_color() const { return color; }
+const glm::vec3& Light::get_direction() const { return this->direction; };
+float_t Light::get_intensity() const { return this->intensity; };
+LightType Light::get_type() const { return this->type; };
+float_t Light::get_range() const { return this->range; };
+bool Light::is_visible() const { return this->visible; };
+int Light::get_unique_ID() const { return unique_ID; }
 
-// +=================================+   
-// | Texture                         |
-// +=================================+
-
-// Constructor
-Texture::Texture(Device& device, const std::string& filepath, VkFormat format, Semaphore* tl_semaphore)
-	: device(&device) {
-
-	// Initialize Sampler with default settings
-	sampler = std::make_unique<Sampler>(
-		device,
-		VK_FILTER_LINEAR,					// min filter
-		VK_FILTER_LINEAR,					// max filter
-		VK_SAMPLER_ADDRESS_MODE_REPEAT,		// sampler address mode
-		VK_SAMPLER_MIPMAP_MODE_LINEAR,		// sampler minmap mode
-		16.0f								// max anisotropy level
-	);
-
-	// Create Vulkan Image and ImageView
-	create_image_and_view(filepath, format, tl_semaphore);
+LightGPU Light::get_light_gpu() const {
+	LightGPU result;
+	result.position = glm::vec4(this->position, this->range);
+	result.direction = glm::vec4(this->direction, static_cast<float>(this->type));
+	result.color = glm::vec4(this->color, this->intensity);
+	result.spot = glm::vec4(this->inner_cone_angle, this->outer_cone_angle, 0.0f, 0.0f);
+	return result;
 }
 
-// Destructor
-Texture::~Texture() {}
-
-// Helper function to load raw data, create staging buffer, and upload to GPU image
-void Texture::create_image_and_view(const std::string& relative_filepath, VkFormat format, Semaphore* tl_semaphore) {
-
-	std::filesystem::path project_root = get_executable_directory() / "..";
-	std::filesystem::path full_filepath = project_root / relative_filepath;
-	std::string full_filepath_str = full_filepath.string();
-
-	int tex_width, tex_height, tex_channels;
-
-	// STB_image loads images upside down for Vulkan, so flip vertically.
-	stbi_set_flip_vertically_on_load(true);
-	stbi_uc* pixels = stbi_load(full_filepath_str.c_str(), &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
-
-	if (!pixels) { Log::error("failed to load texture image: ", full_filepath, ". Reason: ", stbi_failure_reason()); }
-
-	this->image = std::make_unique<Image>(
-		*device,
-		VK_IMAGE_TYPE_2D,
-		format,
-		VkExtent3D(tex_width, tex_height, 1),
-		1u, // mip levels
-		1u, // array layers
-		VK_SAMPLE_COUNT_1_BIT,
-		VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		VK_IMAGE_LAYOUT_UNDEFINED
+// +=================================+   
+// | Scene                           |
+// +=================================+
+Scene::Scene() {
+	// create a default camera for camera_id 0 (this is also the default active camera)
+	auto default_camera = std::make_unique<Camera>(
+		CAMERA_DEFAULT_POSITION,
+		CAMERA_DEFAULT_UP,
+		CAMERA_DEFAULT_YAW,
+		CAMERA_DEFAULT_PITCH
 	);
+	int camera_id = default_camera->get_unique_ID();
+	cameras.emplace(camera_id, std::move(default_camera));
 
-	Log::debug("loaded texture: ", full_filepath, " (", tex_width, "x", tex_height, " pixels)");
+	this->select_active_camera(camera_id);
+}
 
-	// copy pixel data to device local memory (via staging buffer)
+Scene::~Scene() {}
+
+uint32_t Scene::add_entity(Mesh* mesh, glm::vec3 position, bool visible) {
+	if (!mesh) {
+		Log::warning("Scene::add_entity(): cannot add entity with null mesh pointer.");
+		return 0; // Return invalid ID
+	}
+
+	// Create and store the new Entity instance
+	auto new_entity = std::make_unique<Entity>(mesh, position, visible);
+	int entity_id = new_entity->get_unique_ID();
+	entities.emplace(entity_id, std::move(new_entity));
+
+	// Check if the Mesh's resources are already tracked by the scene
+	uint32_t mesh_id = mesh->get_unique_ID();
+	auto [it, inserted] = unique_meshes.emplace(mesh_id, mesh);
+
+	if (inserted) {
+		// This is a new unique mesh. Process its materials and textures.
+		std::vector<Material>& mesh_materials = mesh->get_materials();
+
+		for (uint32_t i = 0; i < mesh_materials.size(); i++) {
+			Material* mesh_material = &mesh_materials[i];
+
+			// The scnene local material index is the size of the master vector *before* the push
+			uint32_t scene_material_index = static_cast<uint32_t>(unique_materials.size());
+
+			// assign the scene local material index to the submeshes that use this material
+			for (auto& submesh : mesh->get_submeshes()) {
+				if (submesh.parent_mesh_local_material_index == i) {
+					submesh.scene_local_material_index = scene_material_index;
+				}
+			}
+
+			// Store a raw pointer to this unique material.
+			unique_materials.push_back(mesh_material);
+		}
+
+		// process textures for this mesh
+		for (uint32_t i = 0; i < mesh->textures.size(); i++) {
+			Texture* current_texture = mesh->textures[i].get();
+
+			// Check if the TexturePath is already known to the Scene
+			auto it = this->registered_textures.find(current_texture->texture_path);
+
+			// If the texture is NOT registered in the Scene yet:
+			if (it == this->registered_textures.end()) {
+				uint32_t scene_local_index = static_cast<uint32_t>(this->unique_textures.size());
+				this->unique_textures.push_back(current_texture);
+				this->registered_textures[current_texture->texture_path] = scene_local_index;
+			}
+			// If it is found, do nothing
+		}
+	}
+
+	// 4. Return the new entity ID
+	return entity_id;
+}
+
+uint32_t Scene::add_scene_light(LightType type, glm::vec3 position, glm::vec3 color) {
+	auto new_light = std::make_unique<Light>(type, position, color);
+	int light_id = new_light->get_unique_ID();
+	scene_lights.emplace(light_id, std::move(new_light));
+	return light_id;
+}
+
+uint32_t Scene::add_camera(glm::vec3 camera_position, glm::vec3 camera_up, float camera_yaw, float camera_pitch) {
+	auto new_camera = std::make_unique<Camera>(camera_position, camera_up, camera_yaw, camera_pitch);
+	int camera_id = new_camera->get_unique_ID();
+	cameras.emplace(camera_id, std::move(new_camera));
+	return camera_id;
+}
+
+void Scene::remove_entity(uint32_t entity_id) {
+	if (entities.erase(entity_id) == 0) {
+		Log::warning("in Scene::remove_entity(): attempted to remove non-existent entity with ID ", entity_id);;
+	}
+}
+
+void Scene::remove_scene_light(uint32_t light_id) {
+	if (scene_lights.erase(light_id) == 0) {
+		Log::warning("in Scene::remove_light(): attempted to remove non-existent light with ID ", light_id);
+	}
+}
+
+void Scene::remove_camera(uint32_t camera_id) {
+	if (camera_id == active_camera_id) {
+		Log::warning("in Scene::remove_camera(): cannot remove the active camera (ID ", camera_id, ")");
+		return;
+	}
+
+	if (cameras.erase(camera_id) == 0) {
+		Log::warning("in Scene::remove_camera(): attempted to remove non-existent camera with ID ", camera_id);
+	}
+}
+
+void Scene::clear() {
+	entities.clear();
+	scene_lights.clear();
+	unique_meshes.clear();
+	unique_materials.clear();
+	unique_textures.clear();
+	registered_textures.clear();
+
+	// Manually clear all cameras except for the active camera
+	std::erase_if(cameras, [this](const auto& pair) {
+		return pair.first != active_camera_id;
+		});
+}
+
+void Scene::select_active_camera(uint32_t camera_id) {
+	if (cameras.count(camera_id)) {
+		active_camera_id = camera_id;
+	}
+	else {
+		Log::warning("in Scene::select_active_camera(): out_of_range (cannot select active camera: ID ", camera_id, " does not exist.");
+	}
+}
+
+void Scene::set_ambient(const glm::vec3& scene_ambient_light_color) {
+	this->ambient_light = scene_ambient_light_color;
+}
+
+void Scene::set_exposure(float_t value) {
+	this->exposure = value;
+}
+
+void Scene::set_aspect_ratio(uint32_t camera_id, float_t aspect_ratio) {
+	auto it = cameras.find(camera_id);
+	if (it == cameras.end()) {
+		Log::warning("in Scene::set_aspect_ratio(): cannot set aspect ratio. Camera with ID ", camera_id, " not found.");
+		return;
+	}
+	it->second->set_aspect_ratio(aspect_ratio);
+
+}
+void Scene::set_aspect_ratio(uint32_t camera_id, float_t width, float_t height) {
+	auto it = cameras.find(camera_id);
+	if (it == cameras.end()) {
+		Log::warning("in Scene::set_aspect_ratio(): cannot set aspect ratio. Camera with ID ", camera_id, " not found.");
+		return;
+	}
+
+	// Check for division by zero
+	if (height == 0) {
+		Log::warning("in Scene::set_aspect_ratio(): height is zero.");
+		return;
+	}
+
+	it->second->set_aspect_ratio(width / height);
+}
+
+void Scene::set_aspect_ratio(uint32_t camera_id, VkExtent2D extent) {
+	this->set_aspect_ratio(camera_id, extent.width, extent.height);
+}
+
+Camera& Scene::get_camera(uint32_t camera_id) const {
+	auto it = cameras.find(camera_id);
+	if (it == cameras.end()) {
+		Log::warning("in Scene::get_camera(): attempted to access Camera with invalid ID: ", camera_id, ". Resource not found. Returning the default Camera instead.");
+		auto active = cameras.find(active_camera_id);
+		return *active->second;
+	}
+	return *it->second;
+}
+
+Camera& Scene::get_active_camera() const {
+	auto it = cameras.find(active_camera_id);
+	return *it->second;
+}
+
+Light& Scene::get_scene_light(uint32_t light_id) const {
+	auto it = scene_lights.find(light_id);
+	if (it == scene_lights.end()) {
+		Log::error("in Scene::get_light(): attempted to access Light with invalid ID: ", light_id, ". Resource not found.");
+	}
+	return *it->second;
+}
+
+Entity& Scene::get_entity(uint32_t entity_id) const {
+	auto it = entities.find(entity_id);
+	if (it == entities.end()) {
+		Log::error("in Scene::get_entity(): attempted to access Entity with invalid ID: ", entity_id, ". Resource not found.");
+	}
+	return *it->second;
+}
+
+uint32_t Scene::get_visible_entities_count() const {
+	return static_cast<uint32_t>(std::count_if(entities.begin(), entities.end(),
+		[](const auto& pair) { return pair.second->is_visible(); }
+	));
+}
+
+uint32_t Scene::get_visible_lights_count() const {
+	uint32_t num_lights = 0;
+
+	// count visible scene lights
+	for (auto& scene_light : this->scene_lights) {
+		if (scene_light.second->is_visible()) {
+			num_lights++;
+		}
+	}
+
+	// count visible entity lights
+	for (auto& entity : this->entities) {
+		if (entity.second->is_visible()) {
+			num_lights += entity.second->get_mesh().get_lights_count();
+		}
+	}
+
+	return num_lights;
+}
+
+std::vector<Entity*> Scene::get_visible_entities() {
+	std::vector<Entity*> visible_entities_vec;
+	for (auto& entity : this->entities) {
+		if (entity.second->is_visible()) {
+			visible_entities_vec.push_back(entity.second.get());
+		}
+	}
+	return visible_entities_vec;
+}
+
+std::vector<Texture*>& Scene::get_textures() {
+	return this->unique_textures;
+}
+
+glm::vec3& Scene::get_ambient() {
+	return this->ambient_light;
+}
+
+float_t Scene::get_exposure() {
+	return this->exposure;
+}
+
+std::map<uint32_t, std::unique_ptr<Entity>>& Scene::get_entities() {
+	return entities;
+}
+
+Buffer<Material>& Scene::get_unique_materials_buffer(Semaphore* timeline_semaphore) const {
 	VulkanManager& manager = VulkanManager::get_singleton();
 	Task& task = manager.get_graphics_task();
 	CommandBuffer& cb = task.get_command_buffer();
-	uint32_t pixel_count = tex_width * tex_height;
-	size_t pixel_size_bytes = 4; // 4 Bytes/Pixel for STBI_rgb_alpha); TODO: adjust required size for other formats
-	VkDeviceSize image_size = pixel_count * pixel_size_bytes;
-	Buffer<uint32_t>& staging_buffer = task.make_temp_buffer<uint32_t>(pixel_count, TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	void* data;
-	vkMapMemory(device->get_logical(), staging_buffer.get_memory(), 0, image_size, 0, &data);
-	memcpy(data, pixels, static_cast<size_t>(image_size));
-	vkUnmapMemory(device->get_logical(), staging_buffer.get_memory());
-	stbi_image_free(pixels); // Free CPU copy
+	uint32_t num_materials = static_cast<uint32_t>(this->unique_materials.size());
+	Buffer<Material>& staging_buffer = task.make_temp_buffer<Material>(num_materials, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	this->unique_materials_buffer = std::make_unique<Buffer<Material>>(manager.get_device(), BufferType::STORAGE_BUFFER, num_materials, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	for (uint32_t i = 0; i < num_materials; i++) {
+		staging_buffer.write({ this->unique_materials[i] }, i);
+	}
+
+	// copy from staging buffer to device local buffer
 	cb.begin_recording();
-	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
-	cb.transition_image_layout(*image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-	cb.copy_buffer_to_image(staging_buffer, *image);
-	cb.transition_image_layout(*image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	cb.copy_buffer(staging_buffer, *this->unique_materials_buffer);
+	cb.end_recording();
+	task.timeline_sync(*timeline_semaphore);
+	task.submit();
+	return *this->unique_materials_buffer;
+}
+
+const std::vector<Material*>& Scene::get_unique_materials() const {
+	return this->unique_materials;
+}
+
+Buffer<LightGPU>& Scene::get_lights_buffer(Semaphore* timeline_semaphore) const {
+	VulkanManager& manager = VulkanManager::get_singleton();
+	Task& task = manager.get_graphics_task();
+	CommandBuffer& cb = task.get_command_buffer();
+	uint32_t num_lights = 0;
+
+	// count visible scene lights
+	for (auto& scene_light : this->scene_lights) {
+		if (scene_light.second->is_visible()) {
+			num_lights++;
+		}
+	}
+
+	// count visible entity lights
+	for (auto& entity : entities) {
+		if (entity.second->is_visible()) {
+			num_lights += entity.second->get_mesh().get_lights_count();
+		}
+	}
+
+	if (num_lights == 0) {
+		Log::warning("in Scene::get_lights_buffer(): no visible lights found in the scene. Returning a buffer for a dummy light.");
+		this->lights_buffer = std::make_unique<Buffer<LightGPU>>(manager.get_device(), BufferType::STORAGE_BUFFER, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		return *this->lights_buffer;
+	}
+
+	Buffer<LightGPU>& staging_buffer = task.make_temp_buffer<LightGPU>(num_lights, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	this->lights_buffer = std::make_unique<Buffer<LightGPU>>(manager.get_device(), BufferType::STORAGE_BUFFER, num_lights, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// write scene lights
+	uint32_t offset_elements = 0;
+	for (auto& scene_light : this->scene_lights) {
+		if (scene_light.second->is_visible()) {
+			staging_buffer.write({ scene_light.second->get_light_gpu() }, offset_elements);
+			offset_elements++;
+		}
+	}
+
+	// write entity lights
+	for (auto& entity : entities) {
+		if (entity.second->is_visible()) {
+			for (uint32_t i = 0; i < entity.second->get_mesh().get_lights_count(); i++) {
+				staging_buffer.write({ entity.second->get_mesh().get_lights()[i] }, offset_elements);
+				offset_elements++;
+			}
+		}
+	}
+
+	// copy from staging buffer to device local buffer
+	cb.begin_recording();
+	cb.copy_buffer(staging_buffer, *this->lights_buffer);
+	cb.end_recording();
+	task.timeline_sync(*timeline_semaphore);
+	task.submit();
+
+	return *this->lights_buffer;
+}
+
+Buffer<glm::mat4>& Scene::get_model_matrices_buffer(Semaphore* tl_semaphore) {
+	VulkanManager& manager = VulkanManager::get_singleton();
+	Task& task = manager.get_graphics_task();
+	CommandBuffer& cb = task.get_command_buffer();
+	uint32_t num_entities = this->get_visible_entities_count();
+	Buffer<glm::mat4>& staging_buffer = task.make_temp_buffer<glm::mat4>(num_entities, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	this->model_matrices_buffer = std::make_unique<Buffer<glm::mat4>>(manager.get_device(), BufferType::STORAGE_BUFFER, num_entities, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	std::vector<glm::mat4> model_matrices_vec;
+	model_matrices_vec.reserve(num_entities);
+	for (auto& entity : this->entities) {
+		if (entity.second->is_visible()) {
+			model_matrices_vec.push_back(entity.second->get_model_matrix());
+		}
+	}
+	staging_buffer.write(model_matrices_vec);
+	cb.begin_recording();
+	cb.copy_buffer(staging_buffer, *this->model_matrices_buffer);
 	cb.end_recording();
 	task.timeline_sync(*tl_semaphore);
 	task.submit();
-
-	// create image view
-	image_view = std::make_unique<ImageView>(
-		*device,
-		*image,
-		VK_IMAGE_VIEW_TYPE_2D,
-		VK_IMAGE_ASPECT_COLOR_BIT
-	);
-	// vkQueueWaitIdle(manager.get_device().get_graphics_queue());
+	return *this->model_matrices_buffer;
 }
 
-// Getters
-const ImageView& Texture::get_image_view() const { return *image_view; }
-const Sampler& Texture::get_sampler() const { return *sampler; }
-const Image& Texture::get_image() const { return *image; }
+
+// Translates all Global Texture IDs in the Scene's unique materials into
+// Scene-Local Texture Indices and returns the result as a GPU SSBO
+Buffer<SceneMaterialTexIDs>& Scene::get_scene_texIDs_buffer(Semaphore* tl_semaphore) {
+
+	// Prepare the CPU-side data array (one struct per unique material)
+	uint32_t unique_materials_count = static_cast<uint32_t>(this->unique_materials.size());
+	std::vector<SceneMaterialTexIDs> scene_texIDs_vec(unique_materials_count);
+
+	// Define the translation lambda: Global ID -> TexturePath -> Scene-Local Index
+	auto translate_ID = [&](int32_t global_id) -> int32_t {
+		if (global_id < 0) {
+			return -1; // No texture
+		}
+
+		// Look up the Texture* using the Global ID via the concrete implementation
+		Texture* texture_ptr = Texture::get_texture_by_ID(static_cast<uint32_t>(global_id));
+
+		if (!texture_ptr) {
+			Log::warning("Scene::get_scene_texIDs_buffer(): Global ID ", global_id, " not found in global texture list via method Texture::get_texture_by_ID().");
+			return -1;
+		}
+
+		// Use the TexturePath member variable to find the Scene-Local Index
+		auto it = registered_textures.find(texture_ptr->texture_path);
+
+		if (it != registered_textures.end()) {
+			return static_cast<int32_t>(it->second);
+		}
+
+		// Fallback warning
+		Log::warning("Scene::get_scene_texIDs_buffer: Texture path '", texture_ptr->texture_path.path, "' was loaded globally but not registered in scene map.");
+		return -1;
+		};
+
+
+	// Iterate over all unique materials and perform the translation
+	for (size_t i = 0; i < unique_materials.size(); ++i) {
+		// Get the Global IDs from the Mesh's Material
+		const MaterialTexIDs& global_texIDs = unique_materials[i]->texIDs;
+
+		// Patching all the texture slots using the lambda
+		scene_texIDs_vec[i].ambient_tex_id = translate_ID(global_texIDs.ambient_tex_id);
+		scene_texIDs_vec[i].base_color_tex_id = translate_ID(global_texIDs.base_color_tex_id);
+		scene_texIDs_vec[i].specular_tex_id = translate_ID(global_texIDs.specular_tex_id);
+		scene_texIDs_vec[i].specular_color_tex_id = translate_ID(global_texIDs.specular_color_tex_id);
+		scene_texIDs_vec[i].displacement_tex_id = translate_ID(global_texIDs.displacement_tex_id);
+		scene_texIDs_vec[i].alpha_tex_id = translate_ID(global_texIDs.alpha_tex_id);
+		scene_texIDs_vec[i].reflection_tex_id = translate_ID(global_texIDs.reflection_tex_id);
+		scene_texIDs_vec[i].metallic_roughness_tex_id = translate_ID(global_texIDs.metallic_roughness_tex_id);
+		scene_texIDs_vec[i].normal_tex_id = translate_ID(global_texIDs.normal_tex_id);
+		scene_texIDs_vec[i].occlusion_tex_id = translate_ID(global_texIDs.occlusion_tex_id);
+		scene_texIDs_vec[i].emissive_tex_id = translate_ID(global_texIDs.emissive_tex_id);
+	}
+
+	// write the result to GPU Buffer
+	VulkanManager& manager = VulkanManager::get_singleton();
+	Task& task = manager.get_graphics_task();
+	CommandBuffer& cb = task.get_command_buffer();
+	auto& staging_buffer = task.make_temp_buffer<SceneMaterialTexIDs>(unique_materials_count, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	if (!this->scene_texIDs_buffer) {
+		this->scene_texIDs_buffer = std::make_unique<Buffer<SceneMaterialTexIDs>>(manager.get_device(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	}
+	staging_buffer.write(scene_texIDs_vec);
+	cb.begin_recording();
+	cb.copy_buffer(staging_buffer, *this->scene_texIDs_buffer);
+	cb.end_recording();
+	task.timeline_sync(*tl_semaphore);
+	task.submit();
+	return *this->scene_texIDs_buffer;
+}
+
+std::map<uint32_t, std::unique_ptr<Light>>& Scene::get_scene_lights() {
+	return scene_lights;
+}
+
+std::unordered_map<uint32_t, Mesh*>& Scene::get_unique_meshes() {
+	return this->unique_meshes;
+}
+
 
 // +=================================+   
 // | DescriptorSetLayout             |
@@ -5397,13 +8020,13 @@ DescriptorSetLayout::~DescriptorSetLayout() {
 }
 
 // add binding for a buffer or image
-uint32_t DescriptorSetLayout::add_binding(DescriptorType type, VkShaderStageFlagBits shader_stage_flags, VkDescriptorBindingFlags binding_flags) {
+uint32_t DescriptorSetLayout::add_binding(DescriptorType type, VkShaderStageFlagBits shader_stage_flags, uint32_t descriptor_count, VkDescriptorBindingFlags binding_flags) {
 	this->binding_flags.push_back(binding_flags);
 	VkDescriptorSetLayoutBinding binding = {};
 	uint32_t binding_index = static_cast<uint32_t>(layout_bindings.size());
 	binding.binding = binding_index;
 	binding.descriptorType = get_descriptor_type(type);
-	binding.descriptorCount = 1;
+	binding.descriptorCount = descriptor_count;
 	binding.stageFlags = shader_stage_flags;
 	binding.pImmutableSamplers = nullptr;
 	layout_bindings.push_back(binding);
@@ -5411,9 +8034,9 @@ uint32_t DescriptorSetLayout::add_binding(DescriptorType type, VkShaderStageFlag
 }
 
 // add multiple bindings of the same type at once
-void DescriptorSetLayout::add_bindings(uint32_t count, DescriptorType type, VkShaderStageFlagBits shader_stage_flags) {
+void DescriptorSetLayout::add_bindings(uint32_t count, DescriptorType type, VkShaderStageFlagBits shader_stage_flags, uint32_t descriptor_count) {
 	for (uint32_t i = 0; i < count; i++) {
-		add_binding(type, shader_stage_flags);
+		add_binding(type, shader_stage_flags, descriptor_count);
 	}
 }
 
@@ -5612,7 +8235,7 @@ DepthBuffer::DepthBuffer(Device& device, VkImageType image_type, VkExtent3D exte
 	this->format = device.find_supported_format(DEPTH_FORMAT_CANDIDATES, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
 	// create the Image object
-	image = std::make_unique<Image>(
+	this->image = std::make_unique<Image>(
 		device,
 		image_type,
 		format,
@@ -5626,14 +8249,40 @@ DepthBuffer::DepthBuffer(Device& device, VkImageType image_type, VkExtent3D exte
 	);
 
 	// get the memory handle from the image
-	memory = image->get_memory();
+	this->memory = image->get_memory();
 
 	VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D; // default
 	if (image_type == VkImageType::VK_IMAGE_TYPE_1D) { view_type = VK_IMAGE_VIEW_TYPE_1D; }
 	else if (image_type == VkImageType::VK_IMAGE_TYPE_3D) { view_type = VK_IMAGE_VIEW_TYPE_3D; }
 
 	// create the ImageView
-	image_view = std::make_unique<ImageView>(device, *image, view_type, VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1);
+	this->image_view = std::make_unique<ImageView>(device, *image, view_type, VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1);
+}
+
+// simplified constructor for 2D depth buffers
+DepthBuffer::DepthBuffer(Device& device, VkExtent2D extent, VkImageUsageFlags usage) : logical(device.get_logical()) {
+	// Find the best supported format for depth/stencil attachments.
+	this->format = device.find_supported_format(DEPTH_FORMAT_CANDIDATES, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+
+	// create the Image object
+	this->image = std::make_unique<Image>(
+		device,
+		VK_IMAGE_TYPE_2D,
+		format,
+		VkExtent3D(extent.width, extent.height, 1.0f),
+		1,
+		1,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_IMAGE_TILING_OPTIMAL,
+		usage,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	// get the memory handle from the image
+	this->memory = image->get_memory();
+
+	// create the ImageView
+	this->image_view = std::make_unique<ImageView>(device, *image, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1);
 }
 
 // Destructor: Cleans up the raw Vulkan handle. The image and image view
@@ -6252,15 +8901,15 @@ void DescriptorSet::bind_image(uint32_t binding_index, const ImageView& image_vi
 		Log::warning("in method DescriptorSet::bind_image() for binding index ", binding_index, ": descriptor type mismatch with layout");
 	}
 	binding_info[binding_index].binding_index = binding_index;
-	binding_info[binding_index].image_view = image_view.get();
-	binding_info[binding_index].image_layout = image_layout;
-	binding_info[binding_index].sampler = sampler.get();
+	binding_info[binding_index].image_views.push_back(image_view.get());
+	binding_info[binding_index].image_layouts.push_back(image_layout);
+	binding_info[binding_index].samplers.push_back(sampler.get());
 	binding_info[binding_index].descriptor_type = get_descriptor_type(type);
 	binding_info[binding_index].updated = false;
 }
 
-// binds a sampler
-void DescriptorSet::bind_texture(uint32_t binding_index, const Texture& texture, VkShaderStageFlagBits shader_stage_flags) {
+// binds a single texture sampler2D
+void DescriptorSet::bind_textures(uint32_t binding_index, const Texture& texture, VkShaderStageFlagBits shader_stage_flags) {
 	uint32_t bindings_count = layout.get_bindings_count();
 	if (binding_index >= bindings_count) {
 		Log::error("in method DescriptorSet::bind_sampler(): argument for the binding index is invalid; value is ", binding_index, " but the descriptor set layout only has ", bindings_count, " bindings (indices 0-", bindings_count - 1, ").");
@@ -6270,9 +8919,29 @@ void DescriptorSet::bind_texture(uint32_t binding_index, const Texture& texture,
 		Log::warning("in method DescriptorSet::bind_sampler() for binding index ", binding_index, ": descriptor type mismatch with layout; layout type is ", layout.get_binding(binding_index).descriptorType, ", expected VK_DESCRIPTOR_TYPE_SAMPLER or VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER.");
 	}
 	binding_info[binding_index].binding_index = binding_index;
-	binding_info[binding_index].image_view = texture.get_image_view().get();
-	binding_info[binding_index].image_layout = texture.get_image().get_layout();
-	binding_info[binding_index].sampler = texture.get_sampler().get();
+	binding_info[binding_index].image_views.push_back(texture.get_image_view().get());
+	binding_info[binding_index].image_layouts.push_back(texture.get_image().get_layout());
+	binding_info[binding_index].samplers.push_back(texture.get_sampler().get());
+	binding_info[binding_index].descriptor_type = layout.get_binding(binding_index).descriptorType;
+	binding_info[binding_index].updated = false;
+}
+
+// binds multiple texture samplers (array of samplers)
+void DescriptorSet::bind_textures(uint32_t binding_index, const std::vector<Texture*>& textures, VkShaderStageFlagBits shader_stage_flags) {
+	uint32_t bindings_count = layout.get_bindings_count();
+	if (binding_index >= bindings_count) {
+		Log::error("in method DescriptorSet::bind_samplers(): argument for the binding index is invalid; value is ", binding_index, " but the descriptor set layout only has ", bindings_count, " bindings (indices 0-", bindings_count - 1, ").");
+	}
+	if (layout.get_binding(binding_index).descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER && layout.get_binding(binding_index).descriptorType != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+		Log::warning("in method DescriptorSet::bind_samplers() for binding index ", binding_index, ": descriptor type mismatch with layout; layout type is ", layout.get_binding(binding_index).descriptorType, ", expected VK_DESCRIPTOR_TYPE_SAMPLER or VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER.");
+	}
+	binding_info[binding_index].binding_index = binding_index;
+	binding_info[binding_index].descriptor_count = static_cast<uint32_t>(textures.size());
+	for (uint32_t i = 0; i < binding_info[binding_index].descriptor_count; i++) {
+		binding_info[binding_index].image_views.push_back(textures[i]->get_image_view().get());
+		binding_info[binding_index].image_layouts.push_back(textures[i]->get_image().get_layout());
+		binding_info[binding_index].samplers.push_back(textures[i]->get_sampler().get());
+	}
 	binding_info[binding_index].descriptor_type = layout.get_binding(binding_index).descriptorType;
 	binding_info[binding_index].updated = false;
 }
@@ -6288,8 +8957,9 @@ void DescriptorSet::bind_storage_image(uint32_t binding_index, const ImageView& 
 		Log::warning("in method DescriptorSet::bind_storage_image() for binding index ", binding_index, ": descriptor type mismatch with layout; layout type is ", layout.get_binding(binding_index).descriptorType, ", expected VK_DESCRIPTOR_TYPE_STORAGE_IMAGE.");
 	}
 	binding_info[binding_index].binding_index = binding_index;
-	binding_info[binding_index].image_view = image_view.get();
-	binding_info[binding_index].image_layout = image_layout;
+	binding_info[binding_index].image_views.push_back(image_view.get());
+	binding_info[binding_index].image_layouts.push_back(image_layout);
+	binding_info[binding_index].samplers = {}; // no sampler for storage images
 	binding_info[binding_index].descriptor_type = layout.get_binding(binding_index).descriptorType;
 	binding_info[binding_index].updated = false;
 }
@@ -6328,24 +8998,33 @@ void DescriptorSet::write() {
 		// only write any new or replaced bindings
 		if (!binding_info[i].updated) {
 
+			// Get the current size of the image/buffer storage before adding new entries.
+			// This size will be the starting index (offset) for the new array of infos.
+			size_t current_image_storage_size = image_infos_storage.size();
+			size_t current_buffer_storage_size = buffer_infos_storage.size();
+
 			VkWriteDescriptorSet descriptor_write{};
 			descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			descriptor_write.dstSet = set;
 			descriptor_write.dstBinding = binding_info[i].binding_index;
 			descriptor_write.dstArrayElement = 0;
-			descriptor_write.descriptorCount = 1;
+			descriptor_write.descriptorCount = binding_info[i].descriptor_count;
 			descriptor_write.descriptorType = layout.get_binding(i).descriptorType;
 
 			// process image bindings
-			if (binding_info[i].image_view != VK_NULL_HANDLE) {
-				VkDescriptorImageInfo image_info = {};
-				image_info.sampler = binding_info[i].sampler;
-				image_info.imageView = binding_info[i].image_view;
-				image_info.imageLayout = binding_info[i].image_layout;
-				image_infos_storage.push_back(image_info);
+			if (binding_info[i].image_views.size() > 0) {
+
+				// Iterate over all images in the array
+				for (size_t j = 0; j < binding_info[i].descriptor_count; ++j) {
+					VkDescriptorImageInfo image_info = {};
+					if (binding_info[i].samplers.size() > j) { image_info.sampler = binding_info[i].samplers[j]; }
+					if (binding_info[i].image_views.size() > j) { image_info.imageView = binding_info[i].image_views[j]; }
+					if (binding_info[i].image_layouts.size() > j) { image_info.imageLayout = binding_info[i].image_layouts[j]; }
+					image_infos_storage.push_back(image_info);
+				}
 
 				descriptor_write.pNext = nullptr;
-				descriptor_write.pImageInfo = &image_infos_storage.back();
+				descriptor_write.pImageInfo = image_infos_storage.data() + current_image_storage_size;
 				descriptor_write.pBufferInfo = nullptr;
 				descriptor_write.pTexelBufferView = nullptr;
 				descriptor_writes.push_back(descriptor_write);
@@ -6360,7 +9039,7 @@ void DescriptorSet::write() {
 				buffer_infos_storage.push_back(buffer_info);
 
 				descriptor_write.pNext = nullptr;
-				descriptor_write.pBufferInfo = &buffer_infos_storage.back();
+				descriptor_write.pBufferInfo = buffer_infos_storage.data() + current_buffer_storage_size;
 				descriptor_write.pImageInfo = nullptr;
 				descriptor_writes.push_back(descriptor_write);
 			}
@@ -6557,7 +9236,6 @@ GraphicsPipeline::GraphicsPipeline(
 	uint32_t subpass_index,
 	const GraphicsPipelineLayout& pipeline_layout,
 	const ShaderModule& vertex_shader,
-	const std::vector<VertexDescriptions>& vertex_descriptions,
 	const std::optional<ColorBlendState>& color_blend_state,
 	const std::optional<ShaderModule>& fragment_shader,
 	const std::optional<ShaderModule>& hull_shader,
@@ -6617,23 +9295,51 @@ GraphicsPipeline::GraphicsPipeline(
 		shader_stage_create_info.push_back(fragment_shader_info);
 	}
 
-	// Setup vertex input state
-	std::vector<VkVertexInputBindingDescription> vertex_binding_descriptions;
-	std::vector<VkVertexInputAttributeDescription> vertex_attribute_descriptions;
-	for (uint32_t i = 0; i < vertex_descriptions.size(); i++) {
-		for (uint32_t j = 0; j < vertex_descriptions[i].get_input_bindings().size(); j++) {
-			vertex_binding_descriptions.push_back(vertex_descriptions[i].get_input_bindings()[j]);
-		}
-		for (uint32_t j = 0; j < vertex_descriptions[i].get_attribute_descriptions().size(); j++) {
-			vertex_attribute_descriptions.push_back(vertex_descriptions[i].get_attribute_descriptions()[j]);
-		}
-	}
+	// Setup vertex input state (MUST MATCH THE LAYOUT OF THE VERTEXT STRUCT EXACTLY !!)
+	VkVertexInputBindingDescription vertex_binding_description;
+	vertex_binding_description.binding = 0;
+	vertex_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	vertex_binding_description.stride = sizeof(Vertex);
+
+	std::vector<VkVertexInputAttributeDescription> attribute_descriptions(6);
+
+	attribute_descriptions[0].binding = 0;
+	attribute_descriptions[0].location = 0;
+	attribute_descriptions[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	attribute_descriptions[0].offset = offsetof(Vertex, color);
+
+	attribute_descriptions[1].binding = 0;
+	attribute_descriptions[1].location = 1;
+	attribute_descriptions[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	attribute_descriptions[1].offset = offsetof(Vertex, tangent);
+
+	attribute_descriptions[2].binding = 0;
+	attribute_descriptions[2].location = 2;
+	attribute_descriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+	attribute_descriptions[2].offset = offsetof(Vertex, position);
+
+	attribute_descriptions[3].binding = 0;
+	attribute_descriptions[3].location = 3;
+	attribute_descriptions[3].format = VK_FORMAT_R32G32B32_SFLOAT;
+	attribute_descriptions[3].offset = offsetof(Vertex, normal);
+
+	attribute_descriptions[4].binding = 0;
+	attribute_descriptions[4].location = 4;
+	attribute_descriptions[4].format = VK_FORMAT_R32G32_SFLOAT;
+	attribute_descriptions[4].offset = offsetof(Vertex, tex_coord);
+
+	attribute_descriptions[5].binding = 0;
+	attribute_descriptions[5].location = 5;
+	attribute_descriptions[5].format = VK_FORMAT_R32_UINT;
+	attribute_descriptions[5].offset = offsetof(Vertex, material_index);
+
+
 	VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {};
 	vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertex_input_state_create_info.vertexBindingDescriptionCount = static_cast<uint32_t>(vertex_binding_descriptions.size());
-	vertex_input_state_create_info.pVertexBindingDescriptions = vertex_binding_descriptions.data();
-	vertex_input_state_create_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_attribute_descriptions.size());
-	vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_attribute_descriptions.data();
+	vertex_input_state_create_info.vertexBindingDescriptionCount = 1;
+	vertex_input_state_create_info.pVertexBindingDescriptions = &vertex_binding_description;
+	vertex_input_state_create_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(attribute_descriptions.size());
+	vertex_input_state_create_info.pVertexAttributeDescriptions = attribute_descriptions.data();
 
 
 	// setup input assembly state
@@ -6663,6 +9369,11 @@ GraphicsPipeline::GraphicsPipeline(
 	viewport_state_create_info.scissorCount = 1;
 
 	// setup rasterization state
+	VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT; // set as default
+	// disable culling for transparency passes
+	if (color_blend_state.has_value() && color_blend_state.value().get_alpha_mode() != AlphaMode::OPAQUE_MODE) {
+		cull_mode = VK_CULL_MODE_NONE;
+	}
 	VkPipelineRasterizationStateCreateInfo rasterization_state_create_info = {};
 	rasterization_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 	rasterization_state_create_info.pNext = nullptr;
@@ -6670,7 +9381,7 @@ GraphicsPipeline::GraphicsPipeline(
 	rasterization_state_create_info.depthClampEnable = VK_FALSE;
 	rasterization_state_create_info.rasterizerDiscardEnable = VK_FALSE;
 	rasterization_state_create_info.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterization_state_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterization_state_create_info.cullMode = cull_mode;
 	rasterization_state_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterization_state_create_info.depthBiasEnable = VK_FALSE;
 	rasterization_state_create_info.lineWidth = 1.0f;
@@ -6686,13 +9397,13 @@ GraphicsPipeline::GraphicsPipeline(
 	if (color_blend_state.has_value()) {
 		color_blend_state_create_info.attachmentCount = 1;
 		color_blend_state_create_info.pAttachments = &color_blend_state.value().get_attachment();
-		color_blend_state_create_info.blendConstants[0] = color_blend_state.value().get_blend_constants()[0];
-		color_blend_state_create_info.blendConstants[1] = color_blend_state.value().get_blend_constants()[1];
-		color_blend_state_create_info.blendConstants[2] = color_blend_state.value().get_blend_constants()[2];
-		color_blend_state_create_info.blendConstants[3] = color_blend_state.value().get_blend_constants()[3];
+		color_blend_state_create_info.blendConstants[0] = color_blend_state.value().get_blend_constants().r;
+		color_blend_state_create_info.blendConstants[1] = color_blend_state.value().get_blend_constants().g;
+		color_blend_state_create_info.blendConstants[2] = color_blend_state.value().get_blend_constants().b;
+		color_blend_state_create_info.blendConstants[3] = color_blend_state.value().get_blend_constants().a;
 		color_blend_state_create_info.flags = color_blend_state.value().get_flags();
 		color_blend_state_create_info.logicOp = color_blend_state.value().get_logic_op();
-		color_blend_state_create_info.logicOpEnable = color_blend_state.value().get_logic_op() == VK_LOGIC_OP_CLEAR ? VK_FALSE : VK_TRUE;
+		color_blend_state_create_info.logicOpEnable = color_blend_state.value().get_logic_op() == VK_LOGIC_OP_COPY ? VK_FALSE : VK_TRUE;
 		color_blend_state_create_info.pNext = nullptr;
 	}
 	else {
@@ -6703,7 +9414,7 @@ GraphicsPipeline::GraphicsPipeline(
 		color_blend_state_create_info.blendConstants[2] = 1.0f;
 		color_blend_state_create_info.blendConstants[3] = 1.0f;
 		color_blend_state_create_info.flags = 0;
-		color_blend_state_create_info.logicOp = VK_LOGIC_OP_CLEAR;
+		color_blend_state_create_info.logicOp = VK_LOGIC_OP_COPY;
 		color_blend_state_create_info.logicOpEnable = VK_FALSE;
 		color_blend_state_create_info.pNext = nullptr;
 	}
@@ -6711,11 +9422,17 @@ GraphicsPipeline::GraphicsPipeline(
 	// setup depth-stencil state
 	VkPipelineDepthStencilStateCreateInfo depth_stencil_state_create_info = {};
 	if (renderpass.has_depth_stencil()) {
+		VkBool32 depth_write_enable = VK_TRUE;
+		if (color_blend_state.has_value()) {
+			if (color_blend_state.value().get_alpha_mode() == AlphaMode::BLEND_MODE) {
+				depth_write_enable = VK_FALSE;
+			}
+		}
 		depth_stencil_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		depth_stencil_state_create_info.pNext = nullptr;
 		depth_stencil_state_create_info.flags = 0; // Use a simpler approach without EXT flags
 		depth_stencil_state_create_info.depthTestEnable = VK_TRUE;
-		depth_stencil_state_create_info.depthWriteEnable = VK_TRUE;
+		depth_stencil_state_create_info.depthWriteEnable = depth_write_enable;
 		depth_stencil_state_create_info.depthCompareOp = VK_COMPARE_OP_LESS;
 		depth_stencil_state_create_info.stencilTestEnable = VK_TRUE;
 		pipeline_create_info.pDepthStencilState = &depth_stencil_state_create_info;
@@ -7158,20 +9875,41 @@ void CommandBuffer::copy_buffer(const Buffer<T>& src_buffer, Buffer<T>& dst_buff
 }
 
 template<typename T>
-void CommandBuffer::copy_buffer_to_image(const Buffer<T>& src_buffer, Image& dst_image) {
-	// 1. Define the copy region using VkBufferImageCopy
+void CommandBuffer::copy_buffer_to_image(const Buffer<T>& src_buffer, Image& dst_image, VkDeviceSize src_buffer_offset) {
+
+	uint32_t bytes_per_pixel = get_format_bytes_per_pixel(dst_image.get_format());
+	if (bytes_per_pixel == 0) {
+		Log::warning("invalid or unsupported format of dst_image in CommandBuffer::copy_buffer_to_image.");
+		return;
+	}
+
+	// define required byte alignment (use the maximum safe alignment (256 bytes) to satisfy hardware requirements)
+	const uint32_t required_byte_alignment = 256;
+
+	// calculate padded row length (in pixels)
+	VkExtent3D extent = dst_image.get_extent();
+	uint32_t row_byte_size = extent.width * bytes_per_pixel;
+
+	// Calculate the padded byte size of one row (aligned to required_byte_alignment)
+	uint32_t padded_row_byte_size = (row_byte_size + required_byte_alignment - 1) / required_byte_alignment * required_byte_alignment;
+
+	// bufferRowLength must be specified in PIXELS, not bytes.
+	uint32_t padded_row_length_pixels = padded_row_byte_size / bytes_per_pixel;
+
+	// Define the copy region using VkBufferImageCopy
 	// This struct links the linear buffer data to the 3D structure of the image.
 	VkBufferImageCopy region{};
-	region.bufferOffset = 0;
+	region.bufferOffset = src_buffer_offset;
+	region.bufferRowLength = padded_row_length_pixels;
+	region.bufferImageHeight = 0; // 0: indicating the full height is used
 
-	// Set up the image subresource details (assuming a single 2D image)
+	// Set up the image subresource details (assuming a single 2D image, mip level 0)
 	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	region.imageSubresource.mipLevel = 0;
 	region.imageSubresource.baseArrayLayer = 0;
 	region.imageSubresource.layerCount = 1;
 
 	// Set up the image extent (size)
-	VkExtent3D extent = dst_image.get_extent();
 	region.imageExtent = extent;
 	region.imageOffset = { 0, 0, 0 };
 
@@ -7181,7 +9919,7 @@ void CommandBuffer::copy_buffer_to_image(const Buffer<T>& src_buffer, Image& dst
 		buffer,
 		src_buffer.get(),		// VkBuffer
 		dst_image.get(),		// VkImage
-		dst_image.get_layout(),
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		1,						// region_count
 		&region
 	);
@@ -7388,22 +10126,265 @@ void CommandBuffer::transition_image_layout(
 	transition_image_layout(image, new_layout, aspect_mask, src_stage, src_access, dst_stage, dst_access);
 }
 
-void CommandBuffer::draw(uint32_t index_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance) const {
-	Log::debug("CommandBuffer::draw(): ", index_count, " indices, ", instance_count, " instances, first vertex: ", first_vertex, ", first instance: ", first_instance);
-	vkCmdDraw(buffer, index_count, instance_count, first_vertex, first_instance);
+// transition image layout; overload with subresource range and explicit argument for the previous image layout (required for mipmaps)
+void CommandBuffer::transition_image_layout(
+	Image& image,
+	VkImageLayout old_layout,
+	VkImageLayout new_layout,
+	const VkImageSubresourceRange& range) {
+
+	if (new_layout == old_layout) { return; }
+
+	VkPipelineStageFlags2 src_stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+	VkAccessFlags2 src_access = VK_ACCESS_2_NONE;
+	VkPipelineStageFlags2 dst_stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+	VkAccessFlags2 dst_access = VK_ACCESS_2_NONE;
+
+	// Transition Rules for Blitting
+	if (new_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+		// Source for Blit: Transition to TRANSFER_SRC_OPTIMAL
+		// Wait for previous writes (DST_OPTIMAL from initial copy or previous blit destination, or SHADER_READ_ONLY_OPTIMAL from previous loop end)
+		src_stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+		if (old_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+			src_stage |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT; // Wait if coming from a shader read
+		}
+		src_access = VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT;
+
+		// Prepare for transfer read (blitting source)
+		dst_stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+		dst_access = VK_ACCESS_2_TRANSFER_READ_BIT;
+	}
+	else if (new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		// Destination for Blit: Transition to TRANSFER_DST_OPTIMAL
+		// Wait for all previous commands (optional, but safe for subresources)
+		src_stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		src_access = VK_ACCESS_2_MEMORY_WRITE_BIT;
+
+		// Prepare for transfer write (blitting destination)
+		dst_stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+		dst_access = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+	}
+	else if (new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		// Final Use: Transition to SHADER_READ_ONLY_OPTIMAL
+		// Wait for previous read (SRC_OPTIMAL) or write (DST_OPTIMAL)
+		src_stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+		src_access = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+		// Prepare for fragment shader read
+		dst_stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+		dst_access = VK_ACCESS_2_SHADER_READ_BIT;
+	}
+	else {
+		// Conservative fallback (shouldn't be hit with correct logic)
+		src_stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		src_access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+		dst_stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		dst_access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+	}
+
+	// Call the existing image barrier method
+	add_image_memory_barrier(
+		image.get(),
+		range,
+		src_stage,
+		src_access,
+		dst_stage,
+		dst_access,
+		old_layout,
+		new_layout
+	);
+}
+
+void CommandBuffer::generate_mipmaps(Image& image) {
+	// Check physical device support
+	VkFormatProperties format_properties;
+	vkGetPhysicalDeviceFormatProperties(device->get_physical(), image.get_format(), &format_properties);
+	if (!(format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+		Log::warning("CommandBuffer", "Image format does not support linear blitting for mipmap generation!");
+		return;
+	}
+
+	const uint32_t mip_levels = image.get_mip_levels();
+	if (mip_levels <= 1) { return; }
+
+	// --- 1. DETERMINE ASPECT MASK BASED ON IMAGE FORMAT ---
+	VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
+	VkFormat format = image.get_format();
+
+	if (format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D24_UNORM_S8_UINT) {
+		// Handle depth/stencil formats
+		aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (format == VK_FORMAT_D24_UNORM_S8_UINT) {
+			aspect_mask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		}
+	} // Otherwise, it remains VK_IMAGE_ASPECT_COLOR_BIT
+
+	const uint32_t layer_count = image.get_layer_count();
+
+	VkImageBlit blit = {};
+	VkImageSubresourceRange subresource_range = {};
+
+	// Set up the constant subresource range for single mip level operations
+	subresource_range.aspectMask = aspect_mask;
+	subresource_range.levelCount = 1;
+	subresource_range.baseArrayLayer = 0;
+	subresource_range.layerCount = layer_count;
+
+	// --- STEP 0: INITIAL TRANSITION FOR MIP LEVEL 0 (The first source) ---
+	// Mip 0 is currently in VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL (from copy).
+	// Transition it to TRANSFER_SRC_OPTIMAL to be ready for the first blit read.
+	subresource_range.baseMipLevel = 0;
+	add_image_memory_barrier(
+		image.get(),
+		subresource_range,
+		VK_PIPELINE_STAGE_2_TRANSFER_BIT,        // Source Stage: Wait for the preceding copy/transfer write to finish
+		VK_ACCESS_2_TRANSFER_WRITE_BIT,          // Source Access: Wait for the transfer write
+		VK_PIPELINE_STAGE_2_TRANSFER_BIT,        // Target Stage: Prepare for blit read (next command)
+		VK_ACCESS_2_TRANSFER_READ_BIT,           // Target Access: Enable blit read
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,    // Old Layout
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL     // New Layout
+	);
+	record_barriers();
+
+	// Start with the initial dimensions
+	int32_t mip_width = static_cast<int32_t>(image.get_extent().width);
+	int32_t mip_height = static_cast<int32_t>(image.get_extent().height);
+
+	// Loop through each mip level (i is the source, i+1 is the destination)
+	for (uint32_t i = 0; i < mip_levels - 1; i++) {
+
+		// --- STEP A: TRANSITION DESTINATION (LEVEL i+1) TO TRANSFER_DST_OPTIMAL ---
+		subresource_range.baseMipLevel = i + 1;
+		add_image_memory_barrier(
+			image.get(),
+			subresource_range,
+			VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,     // Source Stage: No dependency needed (transitioning from UNDEFINED)
+			0,                                       // Source Access: None
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT,        // Target Stage: Prepare for blit write
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,          // Target Access: Enable blit write
+			VK_IMAGE_LAYOUT_UNDEFINED,               // Old Layout (or whatever the current layout is for i+1)
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL     // New Layout
+		);
+		record_barriers();
+
+		// --- STEP B: EXECUTE BLIT COMMAND (Read from i, Write to i+1) ---
+		// Source (i) is guaranteed to be in TRANSFER_SRC_OPTIMAL (from Step 0 or Step D in previous loop).
+		// Destination (i+1) is guaranteed to be in TRANSFER_DST_OPTIMAL (from Step A).
+		blit.srcSubresource.aspectMask = aspect_mask;
+		blit.srcSubresource.mipLevel = i;
+		blit.srcSubresource.baseArrayLayer = 0;
+		blit.srcSubresource.layerCount = layer_count;
+		blit.srcOffsets[0] = { 0, 0, 0 };
+		blit.srcOffsets[1] = { mip_width, mip_height, 1 };
+
+		int32_t dst_width = std::max(1, mip_width / 2);
+		int32_t dst_height = std::max(1, mip_height / 2);
+
+		blit.dstSubresource.aspectMask = aspect_mask;
+		blit.dstSubresource.mipLevel = i + 1;
+		blit.dstSubresource.baseArrayLayer = 0;
+		blit.dstSubresource.layerCount = layer_count;
+		blit.dstOffsets[0] = { 0, 0, 0 };
+		blit.dstOffsets[1] = { dst_width, dst_height, 1 };
+
+		vkCmdBlitImage(
+			this->buffer,
+			image.get(),
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			image.get(),
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1,
+			&blit,
+			VK_FILTER_LINEAR
+		);
+
+		// --- STEP C & D: POST-BLIT TRANSITIONS (Queue C and D together) ---
+
+		// C: Transition SOURCE (LEVEL i) to SHADER_READ_ONLY_OPTIMAL
+		// Finalize the source mip level (i) after blit read is complete.
+		subresource_range.baseMipLevel = i;
+		// levelCount is still 1
+		add_image_memory_barrier(
+			image.get(),
+			subresource_range,
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT,               // Source Stage: Wait for the blit read to complete
+			VK_ACCESS_2_TRANSFER_READ_BIT,                  // Source Access: Wait for the blit read
+			VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,        // Target Stage: Prepare for fragment shader access
+			VK_ACCESS_2_SHADER_READ_BIT,                    // Target Access: Enable shader read
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,           // Old Layout
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,       // New Layout
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED
+		);
+
+		// D: Transition DESTINATION (LEVEL i+1) TO TRANSFER_SRC_OPTIMAL
+		// Prepare the new mip level (i+1) to be the source for the next iteration.
+		// This is skipped for the very last mip level (i = mip_levels - 2, e.g., i=10).
+		if (i < mip_levels - 2) {
+			subresource_range.baseMipLevel = i + 1;
+			// levelCount is still 1
+			add_image_memory_barrier(
+				image.get(),
+				subresource_range,
+				VK_PIPELINE_STAGE_2_TRANSFER_BIT,           // Source Stage: Wait for the blit write to complete
+				VK_ACCESS_2_TRANSFER_WRITE_BIT,             // Source Access: Wait for the blit write
+				VK_PIPELINE_STAGE_2_TRANSFER_BIT,           // Target Stage: Prepare for next blit read
+				VK_ACCESS_2_TRANSFER_READ_BIT,              // Target Access: Enable next blit read
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,       // Old Layout
+				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,       // New Layout
+				VK_QUEUE_FAMILY_IGNORED,
+				VK_QUEUE_FAMILY_IGNORED
+			);
+		}
+
+		record_barriers();
+
+		// Update dimensions for the next loop iteration
+		mip_width = dst_width;
+		mip_height = dst_height;
+	}
+
+	// --- STEP E: FINAL TRANSITION FOR THE LAST MIP LEVEL (mip_levels - 1) ---
+	// The very last mip level was the destination in the final blit (i = mip_levels - 2),
+	// and was left in TRANSFER_DST_OPTIMAL (because Step D skipped it). We must finalize it now.
+	subresource_range.baseMipLevel = mip_levels - 1;
+	add_image_memory_barrier(
+		image.get(),
+		subresource_range,
+		VK_PIPELINE_STAGE_2_TRANSFER_BIT,                   // Source Stage: Wait for the final blit write to complete
+		VK_ACCESS_2_TRANSFER_WRITE_BIT,                     // Source Access: Wait for the final blit write
+		VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,            // Target Stage: Prepare for fragment shader access
+		VK_ACCESS_2_SHADER_READ_BIT,                        // Target Access: Enable shader read
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,               // Old Layout
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL            // New Layout
+	);
+	record_barriers();
+
+	// --- STEP F: UPDATE GLOBAL IMAGE LAYOUT STATE ---
+	image.set_layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+void CommandBuffer::draw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance) const {
+	Log::debug("CommandBuffer::draw(): ", vertex_count, " indices, ", instance_count, " instances, first vertex: ", first_vertex, ", first instance: ", first_instance);
+	vkCmdDraw(buffer, vertex_count, instance_count, first_vertex, first_instance);
 }
 
 
 void CommandBuffer::draw_indexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance) const {
 	Log::debug("CommandBuffer::draw_indexed(): ", index_count, " indices, ", instance_count, " instances, vertex offset: ", vertex_offset, ", first instance: ", first_instance);
-	vkCmdDrawIndexed(buffer, index_count, instance_count, first_index, vertex_offset, first_instance);
+	if (index_count == 0) {
+		Log::warning("in CommandBuffer::draw_index(): index_count argument is zero --> nothing to draw ! Consider using non-indexed draw call instead (=CommandBuffer::draw())");
+	}
+	else {
+		vkCmdDrawIndexed(buffer, index_count, instance_count, first_index, vertex_offset, first_instance);
+	}
 }
 
 // dynamic viewport
-void CommandBuffer::set_viewport(float x_pos, float y_pos, float width, float height, float min_depth, float max_depth) {
+void CommandBuffer::set_viewport(const VkOffset2D& offset, const VkExtent2D& extent, float min_depth, float max_depth) {
 	Log::debug("CommandBuffer: setting dynamic viewport");
 	if (this->viewport) { this->viewport.reset(); }
-	this->viewport = std::make_unique<VkViewport>(x_pos, y_pos, width, height, min_depth, max_depth);
+	this->viewport = std::make_unique<VkViewport>(offset.x, offset.y, extent.width, extent.height, min_depth, max_depth);
 	vkCmdSetViewport(this->buffer, 0, 1, this->viewport.get());
 }
 
@@ -7571,11 +10552,13 @@ Task::Task(Task&& other) noexcept :
 // returns a reference to the new Buffer<T> object
 template<typename T>
 Buffer<T>& Task::make_temp_buffer(uint32_t elements, BufferType usage, VkMemoryPropertyFlags memory_property_flags) {
-
+	using SpecificUniquePtr = std::unique_ptr<Buffer<T>>;
+	constexpr size_t Index = std::variant_size_v<TempBufferVariant> -1;
 	Log::debug("Task::add_temp_buffer(): creating temporary buffer (owned by task ", this, ") of type ", typeid(T).name(), " with ", elements, " elements(", elements * sizeof(T), " bytes) for calling function ", calling_function);
-	std::unique_ptr<Buffer<T>> new_buffer_ptr = std::make_unique<Buffer<T>>(*device, usage, elements, memory_property_flags);
+	SpecificUniquePtr new_buffer_ptr = std::make_unique<Buffer<T>>(*device, usage, elements, memory_property_flags);
 	Buffer<T>& new_buffer_ref = *new_buffer_ptr;
-	this->temp_buffers.push_back(std::move(new_buffer_ptr));
+	TempBufferVariant variant_to_insert(std::in_place_type<SpecificUniquePtr>, std::move(new_buffer_ptr));
+	this->temp_buffers.push_back(std::move(variant_to_insert));
 	return new_buffer_ref;
 }
 
@@ -7696,7 +10679,6 @@ GraphicsPipeline& Task::make_pipeline(
 	uint32_t subpass_index,
 	const GraphicsPipelineLayout& pipeline_layout,
 	const ShaderModule& vertex_shader,
-	const std::vector<VertexDescriptions>& vertex_descriptions,
 	const std::optional<ColorBlendState>& color_blend_state,
 	const std::optional<ShaderModule>& fragment_shader,
 	const std::optional<ShaderModule>& hull_shader,
@@ -7712,7 +10694,6 @@ GraphicsPipeline& Task::make_pipeline(
 		subpass_index,
 		pipeline_layout,
 		vertex_shader,
-		vertex_descriptions,
 		color_blend_state,
 		fragment_shader,
 		hull_shader,
@@ -7797,8 +10778,12 @@ void Task::timeline_sync(Semaphore& semaphore, uint64_t wait_value, uint64_t sig
 // then this counter gets incremented (atomically) by one and is used for the signaled state at the end of execution;
 // returns the new signal value
 uint64_t Task::timeline_sync(Semaphore& semaphore) {
+	if (&semaphore == nullptr) {
+		return 0;
+		Log::warning("In Task::timeline_sync():: semaphore is invalid.");
+	}
 	if (semaphore.get_type() != VK_SEMAPHORE_TYPE_TIMELINE) {
-		Log::warning("method Task::add_combined_semaphore() (semaphore handle: ", semaphore.get(), ") for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
+		Log::warning("method Task::timeline_sync() (semaphore handle: ", semaphore.get(), ") for task ", this, " has failed : this overload expects a timeline semaphore(VK_SEMAPHORE_TYPE_TIMELINE).");
 	}
 	uint64_t old_counter_var = semaphore.get_counter_var();
 	this->wait_timeline_semaphore(semaphore, old_counter_var);

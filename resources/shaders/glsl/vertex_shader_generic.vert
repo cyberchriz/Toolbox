@@ -1,48 +1,64 @@
 #version 450
+
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_scalar_block_layout : require
 
-// Input vertex attributes from the Mesh class (must match the order: position, normal, tex_coord, color).
-layout(location = 0) in vec3 in_position;
-layout(location = 1) in vec3 in_normal;
-layout(location = 2) in vec2 in_tex_coord;
-layout(location = 3) in vec3 in_color;
+// Input vertex attributes from the Mesh class.
+layout(location = 0) in vec4 in_color;
+layout(location = 1) in vec4 in_tangent;
+layout(location = 2) in vec3 in_position;
+layout(location = 3) in vec3 in_normal;
+layout(location = 4) in vec2 in_tex_coord;
+layout(location = 5) in uint in_material_index;
 
-// Output to the fragment shader. The locations must match.
-layout(location = 0) out vec3 f_position;
-layout(location = 1) out vec3 f_normal;
-layout(location = 2) out vec3 f_color;
-layout(location = 3) out vec3 f_view_dir;
-layout(location = 4) out vec2 f_tex_coord;
+// Output to the fragment shader.
+layout(location = 0) out vec4 v_color;
+layout(location = 1) out vec4 v_tangent;
+layout(location = 2) out vec3 v_position;
+layout(location = 3) out vec3 v_normal;
+layout(location = 4) out vec3 v_view_dir;
+layout(location = 5) out vec2 v_tex_coord;
+layout(location = 6) flat out uint v_material_index;
 
-// Push constants for dynamic data like camera and model matrices.
+
+// Define storage buffer for model matrices (Binding 3, as defined in the descriptor set)
+layout(binding = 3, set = 0, std430) readonly buffer model_matrices_buffer { 
+    mat4 model_matrices[];
+};
+
+// Push constants for dynamic data.
 layout(push_constant) uniform push_constants {
-    mat4 model;
-    mat4 view;
-    mat4 projection;
-    vec4 camera_position;
-    vec4 light_position;
-    vec4 light_color;
-    uint material_index;
+    mat4    view;                // Camera's view transform
+    mat4    projection;
+    vec4    camera_position;     // World Space Camera Position
+    uint    lights_count;
+    vec3    ambient_scene_color;
+    float   exposure;
 };
 
 void main() {
-    // Transform the vertex position by the model, view, and projection matrices
+    // Retrieve the Model Matrix specific to this instance using gl_InstanceIndex
+    mat4 model = model_matrices[gl_InstanceIndex];
+
+    // Transform the vertex position to Clip Space and pass the vertex's world space position to the fragment shader
     vec4 world_pos = model * vec4(in_position, 1.0);
     gl_Position = projection * view * world_pos;
+    v_position = vec3(world_pos);
 
-    // Pass the vertex's position in world space to the fragment shader
-    f_position = vec3(world_pos);
+    // --- TBN BASIS TRANSFORMATION ---
+    // Normal Matrix: Inverse Transpose of the Model Matrix's 3x3 component.
+    mat3 normal_matrix = transpose(inverse(mat3(model)));
 
-    // Transform the normal by the model matrix to get it into world space (using a mat3 to avoid any translation components)
-    f_normal = mat3(model) * in_normal;
+    // 1. Transform the Normal vector
+    // This value will be interpolated and then normalized in the fragment shader.
+    v_normal = normal_matrix * in_normal;
+    
+    // 2. Transform the Tangent vector's direction (xyz) 
+    v_tangent.xyz = normal_matrix * in_tangent.xyz;
+    v_tangent.w = in_tangent.w;
 
-    // Pass the vertex color directly.
-    f_color = in_color;
-
-    // Calculate the view direction for specular lighting.
-    f_view_dir = vec3(camera_position) - f_position;
-
-    // Pass the vertex UV coordinates to the fragment shader.
-    // VULKAN FIX: Flip the V-coordinate (Y-axis) to align with image loading conventions (top-left origin).
-    f_tex_coord = vec2(in_tex_coord.x, 1.0 - in_tex_coord.y);
+    // --- OTHER INTERFACE PASS-THROUGH TO NEXT STAGE (FRAGMENT SHADER) ---
+    v_color = in_color;
+    v_material_index = in_material_index;
+    v_tex_coord = in_tex_coord;
 }
