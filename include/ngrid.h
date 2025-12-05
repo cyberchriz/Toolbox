@@ -807,7 +807,7 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 
 		// write shape to a temporary staging buffer, then copy it to the shape buffer on the device
 		Task& task = manager->get_compute_task(__FUNCTION__);
-		Buffer<uint32_t>& staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		Buffer<uint32_t>& staging_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		staging_buffer.write(this->shape, this->dimensions, 0, 0);
 		CommandBuffer& cb = task.get_command_buffer();
 		cb.begin_recording();
@@ -963,7 +963,7 @@ NGrid& NGrid::set(const std::initializer_list<uint32_t> index, const float_t val
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// write value to a temporary staging buffer (transient resource, owned by the task)
-	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	staging_buffer.write_element(0, value);
 
 	// copy from staging buffer to data buffer
@@ -987,7 +987,7 @@ NGrid& NGrid::set(const std::vector<uint32_t>& index, const float_t value) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// write value to a temporary staging buffer (transient resource, owned by the task)
-	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	staging_buffer.write_element(0, value);
 
 	// copy from staging buffer to data buffer
@@ -1043,7 +1043,7 @@ NGrid& NGrid::set(const std::vector<float_t>& data, uint32_t copied_elements, ui
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// write value to a temporary staging buffer (transient resource, owned by the task)
-	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(num_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_buffer<float_t>(num_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	staging_buffer.write(data, num_elements, source_offset_elements, 0);
 
 	// copy from staging buffer to data buffer
@@ -1083,7 +1083,7 @@ NGrid& NGrid::set(const float_t* data, uint32_t copied_elements, uint32_t source
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// write value to a temporary staging buffer (transient resource, owned by the task)
-	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(copied_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_buffer<float_t>(copied_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	staging_buffer.write(data, copied_elements, source_offset_elements, 0);
 
 	// copy from staging buffer to data buffer
@@ -1196,12 +1196,12 @@ NGrid& NGrid::set(const NGrid& other, const std::vector<uint32_t>& target_origin
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// create a buffer for the offset (transient resource, owned by the task)
-	Buffer<uint32_t>& offset_staging = task.make_temp_buffer<uint32_t>(offset_dim, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& offset_staging = task.make_buffer<uint32_t>(offset_dim, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	offset_staging.write(target_origin_offset);
-	Buffer<uint32_t>& offset = task.make_temp_buffer<uint32_t>(offset_dim, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& offset = task.make_buffer<uint32_t>(offset_dim, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// define push_constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions
@@ -1269,7 +1269,7 @@ NGrid& NGrid::set(const NGrid& other, const std::initializer_list<uint32_t>& tar
 // acquiring multiple (or all) elements at once is preferable whenever possible)
 float_t NGrid::get(const uint32_t flat_index) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
 	cb.add_buffer_memory_barrier(this->get_buffer(), VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
@@ -1299,7 +1299,7 @@ std::vector<float> NGrid::get() const {
 // this overload uses parameters "read_elements" and "source_offset_elements" to allow copying only a subset of the data
 std::vector<float> NGrid::get(const uint32_t read_elements, const uint32_t source_offset_elements) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& staging_buffer = task.make_temp_buffer<float_t>(read_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& staging_buffer = task.make_buffer<float_t>(read_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
 	static uint64_t float_size = sizeof(float);
@@ -1415,12 +1415,12 @@ NGrid NGrid::subgrid(const std::vector<uint32_t>& source_offset, const std::vect
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// create a temporary staging buffer for the source offset (transient resource, owned by the task)
-	Buffer<uint32_t>& offset_staging = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& offset_staging = task.make_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	offset_staging.write(source_offset);
-	Buffer<uint32_t>& source_offset_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& source_offset_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		subgrid.get_elements(),
 		this->elements
@@ -1487,7 +1487,7 @@ NGrid& NGrid::fill(const float_t value) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -1538,7 +1538,7 @@ NGrid& NGrid::fill_zero() {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -1588,7 +1588,7 @@ NGrid& NGrid::fill_identity() {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		this->dimensions
 	);
@@ -1641,7 +1641,7 @@ NGrid& NGrid::fill_random_gaussian(const float_t mu, const float_t sigma) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		rnd::seed32(),
 		mu,
@@ -1694,7 +1694,7 @@ NGrid& NGrid::fill_random_uniform(const float_t min, const float_t max) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		rnd::seed32(),
 		min,
@@ -1752,7 +1752,7 @@ NGrid& NGrid::fill_random_uniform_int(const int32_t min, const int32_t max) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		rnd::seed32(),
 		min,
@@ -1816,7 +1816,7 @@ NGrid& NGrid::fill_random_binary(float_t ratio) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		rnd::seed32(),
 		valid_ratio
@@ -1874,7 +1874,7 @@ NGrid& NGrid::fill_random_sign(const float_t ratio) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		rnd::seed32(),
 		valid_ratio
@@ -1929,7 +1929,7 @@ NGrid& NGrid::fill_range(const float_t start, const float_t step) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		this->dimensions,
 		start,
@@ -1989,7 +1989,7 @@ NGrid& NGrid::fill_dropout(const float_t ratio) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		valid_ratio,
 		rnd::seed32()
@@ -2037,7 +2037,7 @@ NGrid& NGrid::fill_index() {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -2091,7 +2091,7 @@ NGrid& NGrid::weightinit_tanh_normal(const uint32_t fan_in, const uint32_t fan_o
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		fan_in,
 		fan_out,
@@ -2140,7 +2140,7 @@ NGrid& NGrid::weightinit_tanh_uniform(const uint32_t fan_in, const uint32_t fan_
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		fan_in,
 		fan_out,
@@ -2189,7 +2189,7 @@ NGrid& NGrid::weightinit_sigmoid(const uint32_t fan_in, const uint32_t fan_out) 
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		fan_in,
 		fan_out,
@@ -2239,7 +2239,7 @@ NGrid& NGrid::weightinit_relu(const uint32_t fan_in) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		fan_in,
 		rnd::seed32()
@@ -2288,7 +2288,7 @@ NGrid& NGrid::weightinit_elu(const uint32_t fan_in) {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		fan_in,
 		rnd::seed32()
@@ -2354,11 +2354,11 @@ float_t NGrid::min() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -2367,7 +2367,7 @@ float_t NGrid::min() const {
 		Task& task = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants (transient resource, owned by the task)
-		PushConstants& constants = task.add_constants(
+		PushConstants& constants = task.make_constants(
 			elements_A
 		);
 
@@ -2458,11 +2458,11 @@ float_t NGrid::max() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -2471,7 +2471,7 @@ float_t NGrid::max() const {
 		Task& task = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants (transient resource, owned by the task)
-		PushConstants& constants = task.add_constants(
+		PushConstants& constants = task.make_constants(
 			elements_A
 		);
 
@@ -2562,11 +2562,11 @@ float_t NGrid::maxabs() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -2575,7 +2575,7 @@ float_t NGrid::maxabs() const {
 		Task& task = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants (transient resource, owned by the task)
-		PushConstants& constants = task.add_constants(
+		PushConstants& constants = task.make_constants(
 			elements_A
 		);
 
@@ -2813,11 +2813,11 @@ float_t NGrid::sum() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -2826,7 +2826,7 @@ float_t NGrid::sum() const {
 		Task& task = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants (transient resource, owned by the task)
-		PushConstants& constants = task.add_constants(
+		PushConstants& constants = task.make_constants(
 			elements_A
 		);
 
@@ -2905,7 +2905,7 @@ NGrid NGrid::operator+(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -2956,7 +2956,7 @@ NGrid NGrid::operator+(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
@@ -3059,7 +3059,7 @@ NGrid NGrid::operator-(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
@@ -3166,11 +3166,11 @@ float_t NGrid::product() const {
 
 	// create temporary buffers on "main_task" (this task only holds the resources; it has no command buffer)
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
-	Buffer<float_t>& buffer_A = main_task.make_temp_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& buffer_B = main_task.make_temp_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_A = main_task.make_buffer<float_t>(this->elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& buffer_B = main_task.make_buffer<float_t>(num_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	Buffer<float_t>* input_buffer = &buffer_A;			// =initialization; buffers A and B will take part in a repeated ping-pong swap later in the main loop
 	Buffer<float_t>* local_results_buffer = &buffer_B;  // "  "  " 
-	Buffer<float_t>& final_result_staging_buffer = main_task.make_temp_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<float_t>& final_result_staging_buffer = main_task.make_buffer<float_t>(1, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	uint32_t iteration = 0;
 
@@ -3179,7 +3179,7 @@ float_t NGrid::product() const {
 		Task& task = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants (transient resource, owned by the task)
-		PushConstants& constants = task.add_constants(
+		PushConstants& constants = task.make_constants(
 			elements_A
 		);
 
@@ -3258,7 +3258,7 @@ NGrid NGrid::operator*(const float_t factor) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		factor
 	);
@@ -3348,7 +3348,7 @@ NGrid NGrid::matrix_product(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		first_rows,
 		first_cols,
@@ -3430,7 +3430,7 @@ NGrid NGrid::Hadamard_product(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
@@ -3528,7 +3528,7 @@ NGrid NGrid::Hadamard_division(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
@@ -3607,7 +3607,7 @@ NGrid NGrid::operator%(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -3663,7 +3663,7 @@ NGrid NGrid::pow(const float_t exponent) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		exponent
 	);
@@ -3762,7 +3762,7 @@ NGrid NGrid::pow(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
@@ -3830,7 +3830,7 @@ NGrid NGrid::log(const float_t base) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		base
 	);
@@ -3880,7 +3880,7 @@ NGrid NGrid::exp() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -3935,7 +3935,7 @@ NGrid NGrid::round(uint32_t precision) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		precision
 	);
@@ -3987,7 +3987,7 @@ NGrid NGrid::floor() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -4038,7 +4038,7 @@ NGrid NGrid::ceil() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -4089,7 +4089,7 @@ NGrid NGrid::abs() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -4144,7 +4144,7 @@ NGrid NGrid::min(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -4196,7 +4196,7 @@ NGrid NGrid::max(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -4249,7 +4249,7 @@ NGrid NGrid::min(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
@@ -4310,7 +4310,7 @@ NGrid NGrid::max(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		this->elements,
@@ -4377,7 +4377,7 @@ NGrid NGrid::cos(const AngularUnit source_angle_unit) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		factor
 	);
@@ -4431,7 +4431,7 @@ NGrid NGrid::sin(const AngularUnit source_angle_unit) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		factor
 	);
@@ -4485,7 +4485,7 @@ NGrid NGrid::tan(const AngularUnit source_angle_unit) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		factor
 	);
@@ -4539,7 +4539,7 @@ NGrid NGrid::acos(const AngularUnit result_angle_unit) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		factor
 	);
@@ -4593,7 +4593,7 @@ NGrid NGrid::asin(const AngularUnit result_angle_unit) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		factor
 	);
@@ -4647,7 +4647,7 @@ NGrid NGrid::atan(const AngularUnit result_angle_unit) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		factor
 	);
@@ -4698,7 +4698,7 @@ NGrid NGrid::cosh() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -4748,7 +4748,7 @@ NGrid NGrid::sinh() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -4798,7 +4798,7 @@ NGrid NGrid::tanh() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -4848,7 +4848,7 @@ NGrid NGrid::acosh() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -4898,7 +4898,7 @@ NGrid NGrid::asinh() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -4948,7 +4948,7 @@ NGrid NGrid::atanh() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -5005,7 +5005,7 @@ NGrid NGrid::replace(const float_t old_value, const float_t new_value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		old_value,
 		new_value
@@ -5078,7 +5078,7 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const NGrid& replacing_map) 
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -5153,7 +5153,7 @@ NGrid NGrid::replace_if(const NGrid& condition_map, const float_t replacing_valu
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		replacing_value
 	);
@@ -5212,7 +5212,7 @@ NGrid NGrid::sign() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -5262,7 +5262,7 @@ NGrid NGrid::isinf() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -5311,7 +5311,7 @@ NGrid NGrid::isnan() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -5370,7 +5370,7 @@ NGrid NGrid::scale_minmax(const float_t range_from, const float_t range_to) cons
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		range_from,
 		range_to,
@@ -5431,7 +5431,7 @@ NGrid NGrid::scale_mean() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		result.scaling_mean,
 		result.scaling_max - result.scaling_min // = range
@@ -5491,7 +5491,7 @@ NGrid NGrid::scale_zscore(const float_t z_score) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		result.scaling_mean,
 		result.scaling_stdev,
@@ -5644,7 +5644,7 @@ NGrid NGrid::sigmoid() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -5694,7 +5694,7 @@ NGrid NGrid::sigmoid_drv() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -5744,7 +5744,7 @@ NGrid NGrid::elu(const float_t alpha) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		alpha
 	);
@@ -5797,7 +5797,7 @@ NGrid NGrid::elu_drv(const float_t alpha) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		alpha
 	);
@@ -5850,7 +5850,7 @@ NGrid NGrid::relu(const float_t alpha) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		alpha
 	);
@@ -5902,7 +5902,7 @@ NGrid NGrid::relu_drv(const float_t alpha) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		alpha
 	);
@@ -5952,7 +5952,7 @@ NGrid NGrid::tanh_drv() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -6007,7 +6007,7 @@ NGrid NGrid::outliers_clamp_minmax(const float_t min_value, const float_t max_va
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		min_value,
 		max_value
@@ -6064,7 +6064,7 @@ NGrid NGrid::outliers_clamp_zscore(const float_t z_score) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		upper_limit,
 		lower_limit
@@ -6121,7 +6121,7 @@ NGrid NGrid::outliers_mean_imputation(const float_t z_score) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		upper_limit,
 		lower_limit,
@@ -6179,7 +6179,7 @@ NGrid NGrid::outliers_value_imputation(const float_t z_score, const float_t valu
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		upper_limit,
 		lower_limit,
@@ -6233,7 +6233,7 @@ NGrid NGrid::recover() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -6286,7 +6286,7 @@ NGrid NGrid::operator>(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -6337,7 +6337,7 @@ NGrid NGrid::operator>=(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -6387,7 +6387,7 @@ NGrid NGrid::operator==(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -6437,7 +6437,7 @@ NGrid NGrid::operator!=(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -6487,7 +6487,7 @@ NGrid NGrid::operator<(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -6537,7 +6537,7 @@ NGrid NGrid::operator<=(const float_t value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		value
 	);
@@ -6589,7 +6589,7 @@ NGrid NGrid::operator>(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
@@ -6649,7 +6649,7 @@ NGrid NGrid::operator>=(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
@@ -6709,7 +6709,7 @@ NGrid NGrid::operator==(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
@@ -6769,7 +6769,7 @@ NGrid NGrid::operator!=(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
@@ -6829,7 +6829,7 @@ NGrid NGrid::operator<(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
@@ -6889,7 +6889,7 @@ NGrid NGrid::operator<=(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
@@ -6977,7 +6977,7 @@ NGrid NGrid::operator!() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -7027,7 +7027,7 @@ NGrid NGrid::operator&&(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
@@ -7087,7 +7087,7 @@ NGrid NGrid::operator||(const NGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		other.get_elements(),
 		this->dimensions,
@@ -7174,7 +7174,7 @@ NGrid NGrid::reshape(const std::vector<uint32_t>& new_shape, const float_t defau
 		Task& task = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants (transient resource, owned by the task)
-		PushConstants& constants = task.add_constants(
+		PushConstants& constants = task.make_constants(
 			this->dimensions,
 			result.get_dimensions(),
 			this->elements,
@@ -7282,7 +7282,7 @@ NGrid NGrid::concatenate(const NGrid& other, const uint32_t axis) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		other.get_dimensions(),
 		result.get_dimensions(),
@@ -7352,7 +7352,7 @@ NGrid NGrid::padding(const uint32_t amount, const float_t init_value) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
@@ -7414,15 +7414,15 @@ NGrid NGrid::pool_max(const std::vector<uint32_t>& window_shape, const std::vect
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy window shape to a temporary staging buffer
-	Buffer<uint32_t>& window_shape_staging_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& window_shape_staging_buffer = task.make_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	window_shape_staging_buffer.write(window_shape);
-	Buffer<uint32_t>& window_shape_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& window_shape_buffer = task.make_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// copy stride shape to a temporary staging buffer
 	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-	Buffer<uint32_t>& stride_shape_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& stride_shape_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -7449,7 +7449,7 @@ NGrid NGrid::pool_max(const std::vector<uint32_t>& window_shape, const std::vect
 	NGrid result(result_shape);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
@@ -7526,15 +7526,15 @@ NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::v
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy window shape to a temporary staging buffer
-	Buffer<uint32_t>& window_shape_staging_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& window_shape_staging_buffer = task.make_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	window_shape_staging_buffer.write(window_shape);
-	Buffer<uint32_t>& window_shape_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& window_shape_buffer = task.make_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// copy stride shape to a temporary staging buffer
 	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-	Buffer<uint32_t>& stride_shape_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& stride_shape_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -7561,7 +7561,7 @@ NGrid NGrid::pool_maxabs(const std::vector<uint32_t>& window_shape, const std::v
 	NGrid result(result_shape);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
@@ -7638,15 +7638,15 @@ NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vect
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy window shape to a temporary staging buffer
-	Buffer<uint32_t>& window_shape_staging_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& window_shape_staging_buffer = task.make_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	window_shape_staging_buffer.write(window_shape);
-	Buffer<uint32_t>& window_shape_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& window_shape_buffer = task.make_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// copy stride shape to a temporary staging buffer
 	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-	Buffer<uint32_t>& stride_shape_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& stride_shape_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -7673,7 +7673,7 @@ NGrid NGrid::pool_min(const std::vector<uint32_t>& window_shape, const std::vect
 	NGrid result(result_shape);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
@@ -7750,15 +7750,15 @@ NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vec
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy window shape to a temporary staging buffer
-	Buffer<uint32_t>& window_shape_staging_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& window_shape_staging_buffer = task.make_buffer<uint32_t>(window_shape.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	window_shape_staging_buffer.write(window_shape);
-	Buffer<uint32_t>& window_shape_buffer = task.make_temp_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& window_shape_buffer = task.make_buffer<uint32_t>(window_shape.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// copy stride shape to a temporary staging buffer
 	// (if stride shape is empty, use window shape as default)
-	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& stride_shape_staging_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	stride_shape_staging_buffer.write(stride_shape.size() == 0 ? window_shape : stride_shape);
-	Buffer<uint32_t>& stride_shape_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& stride_shape_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// calculate window elements
 	uint32_t window_N = 1;
@@ -7785,7 +7785,7 @@ NGrid NGrid::pool_mean(const std::vector<uint32_t>& window_shape, const std::vec
 	NGrid result(result_shape);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
@@ -7869,7 +7869,7 @@ NGrid NGrid::convolution(const NGrid& kernel, const uint32_t padding_amount, con
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		this->elements,
 		result.get_elements(),
@@ -7951,12 +7951,12 @@ NGrid NGrid::transpose(const std::vector<uint32_t>& target_axis_order) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// add a temporary staging buffer to store the target axis order
-	Buffer<uint32_t>& target_axis_order_staging_buffer = task.make_temp_buffer<uint32_t>(target_axis_order.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& target_axis_order_staging_buffer = task.make_buffer<uint32_t>(target_axis_order.size(), BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	target_axis_order_staging_buffer.write(target_axis_order);
-	Buffer<uint32_t>& target_axis_order_buffer = task.make_temp_buffer<uint32_t>(target_axis_order.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& target_axis_order_buffer = task.make_buffer<uint32_t>(target_axis_order.size(), BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->dimensions,
 		result.get_dimensions(),
 		this->elements
@@ -8050,7 +8050,7 @@ LUresult NGrid::lu() const {
 		Task& task_k = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants (transient resource, owned by the task)
-		PushConstants& constants = task_k.add_constants(
+		PushConstants& constants = task_k.make_constants(
 			this->shape[0],		// source matrix rows
 			this->shape[1],		// source matrix columns
 			k					// current row index
@@ -8138,7 +8138,7 @@ NGrid NGrid::l_inverse() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->shape[0]
 	);
 
@@ -8195,7 +8195,7 @@ NGrid NGrid::u_inverse() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->shape[0]
 	);
 
@@ -8259,12 +8259,12 @@ QRresult NGrid::qr(const bool hessenberg) const {
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
 
 	// create temporary buffers
-	Buffer<float_t>& Temp_w = main_task.make_temp_buffer<float_t>(cols, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Temp_u = main_task.make_temp_buffer<float_t>(rows, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Temp_y = main_task.make_temp_buffer<float_t>(hessenberg ? rows : 1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // (small dummy for standard QR, only used for Hessenberg)
-	Buffer<float_t>& Alpha = main_task.make_temp_buffer<float_t>(k_max, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Gamma = main_task.make_temp_buffer<float_t>(k_max, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& LocalResults = main_task.make_temp_buffer<float_t>(row_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // to store local results from parallel reductions
+	Buffer<float_t>& Temp_w = main_task.make_buffer<float_t>(cols, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_u = main_task.make_buffer<float_t>(rows, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_y = main_task.make_buffer<float_t>(hessenberg ? rows : 1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // (small dummy for standard QR, only used for Hessenberg)
+	Buffer<float_t>& Alpha = main_task.make_buffer<float_t>(k_max, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Gamma = main_task.make_buffer<float_t>(k_max, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& LocalResults = main_task.make_buffer<float_t>(row_workgroups, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // to store local results from parallel reductions
 
 	// initialize result members
 	uint32_t cols_V = k_max;
@@ -8338,7 +8338,7 @@ QRresult NGrid::qr(const bool hessenberg) const {
 		ds.write();
 
 		// define push constants (transient resource, managed by the main task)
-		PushConstants& constants = task_k.add_constants(
+		PushConstants& constants = task_k.make_constants(
 			rows,				// rows in the source matrix
 			cols,				// columns in the source matrix
 			cols_V,
@@ -8607,10 +8607,10 @@ void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta
 
 	// create temporary buffers
 	uint32_t current_size = end_row - start_row;
-	Buffer<float_t>& v_k = main_task.make_temp_buffer<float_t>(3, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& tau_k = main_task.make_temp_buffer<float_t>(1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Temp_y = main_task.make_temp_buffer<float_t>(current_size, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<float_t>& Temp_w = main_task.make_temp_buffer<float_t>(current_size, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& v_k = main_task.make_buffer<float_t>(3, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& tau_k = main_task.make_buffer<float_t>(1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_y = main_task.make_buffer<float_t>(current_size, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<float_t>& Temp_w = main_task.make_buffer<float_t>(current_size, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	// define descriptor set layout
 	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
@@ -8657,7 +8657,7 @@ void NGrid::doubleshift_bulge_chase(const float_t alpha_poly, const float_t beta
 		ds.write();
 
 		// define push constants
-		PushConstants& constants = task_k.add_constants(
+		PushConstants& constants = task_k.make_constants(
 			start_row,		// offset of the start of the current relevant submatrix within H
 			end_row,		// offset of the end of the current relevant submatrix within H
 			this->rows(),	// height, width of the full matrix H (needed for correct indexing)
@@ -8850,8 +8850,8 @@ RREF NGrid::rref(const NGrid& augment) const {
 	Task& main_task = manager->get_compute_task(__FUNCTION__);
 
 	// add temporary buffers (owned by the main task)
-	Buffer<uint32_t>& swap_row = main_task.make_temp_buffer<uint32_t>(1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // row to be swapped for current row 'k'
-	Buffer<float_t>& multipliers = main_task.make_temp_buffer<float_t>(this->shape[0], BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // multipliers in column 'k'
+	Buffer<uint32_t>& swap_row = main_task.make_buffer<uint32_t>(1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // row to be swapped for current row 'k'
+	Buffer<float_t>& multipliers = main_task.make_buffer<float_t>(this->shape[0], BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // multipliers in column 'k'
 
 	// define descriptor set layout
 	static DescriptorSetLayout set_layout = DescriptorSetLayout(manager->get_device());
@@ -8905,7 +8905,7 @@ RREF NGrid::rref(const NGrid& augment) const {
 		ds.write();
 
 		// define push constants
-		PushConstants& constants = task_k.add_constants(
+		PushConstants& constants = task_k.make_constants(
 			this->shape[0],	// rows (is equal for left part and augmentation part)
 			this->shape[1],	// source matrix columns
 			aug_cols,		// augmentation matrix columns
@@ -8988,7 +8988,7 @@ RREF NGrid::rref(const NGrid& augment) const {
 		ds.write();
 
 		// define push constants
-		PushConstants& constants = task_k.add_constants(
+		PushConstants& constants = task_k.make_constants(
 			this->shape[0],	// rows (is equal for left part and augmentation part)
 			this->shape[1],	// source matrix columns
 			aug_cols,		// augmentation matrix columns
@@ -9053,8 +9053,8 @@ NGrid NGrid::mirror(const std::vector<bool>& mirror_axes) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// copy the mirror axes to a storage buffer
-	Buffer<uint32_t>& mirror_axes_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	Buffer<uint32_t>& mirror_axes_staging_buffer = task.make_temp_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	Buffer<uint32_t>& mirror_axes_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	Buffer<uint32_t>& mirror_axes_staging_buffer = task.make_buffer<uint32_t>(this->dimensions, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 	if (mirror_axes.size() == 0) {
 		// if no axes are specified, mirror all axes
@@ -9069,7 +9069,7 @@ NGrid NGrid::mirror(const std::vector<bool>& mirror_axes) const {
 	}
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		this->dimensions
 	);
@@ -9151,7 +9151,7 @@ NGrid NGrid::remap(const NGrid& target_index_map) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements
 	);
 
@@ -9677,7 +9677,7 @@ NGrid NGrid::stationary(const uint32_t degree) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		differenced_result.get_elements()
 	);
 
@@ -9753,7 +9753,7 @@ NGrid NGrid::stationary_log(const uint32_t degree, const float_t log_base) const
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		differenced_result.get_elements(),
 		log_base
 	);
@@ -9829,7 +9829,7 @@ NGrid NGrid::sort(const bool ascending) const {
 		Task& task = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants (transient resource, owned by the task)
-		PushConstants& constants = task.add_constants(
+		PushConstants& constants = task.make_constants(
 			this->elements,
 			pass,
 			static_cast<uint32_t>(ascending)
@@ -9955,7 +9955,7 @@ NGrid NGrid::diagonal() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		size,
 		this->dimensions
 	);
@@ -10025,7 +10025,7 @@ void NGrid::print(const std::string& comment, const int32_t precision, const boo
 	NGrid has_fractional_ngrid(this->elements);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->elements,
 		fract_significant_digits
 	);
@@ -11129,7 +11129,7 @@ CGrid CGrid::operator*(const std::complex<float_t> complex_factor) const {
 		// acquire an idle compute task
 		Task& task = manager->get_compute_task(__FUNCTION__);
 
-		PushConstants& constants = task.add_constants(
+		PushConstants& constants = task.make_constants(
 			this->get_elements(),
 			complex_factor.real(),
 			complex_factor.imag()
@@ -11243,7 +11243,7 @@ CGrid CGrid::matrix_product(const CGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->get_elements(),
 		first_rows,
 		first_cols,
@@ -11333,7 +11333,7 @@ CGrid CGrid::Hadamard_product(const CGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->get_elements(),
 		result.get_dimensions()
 	);
@@ -11416,7 +11416,7 @@ CGrid CGrid::operator/(const std::complex<float_t> complex_divisor) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->get_elements(),
 		complex_divisor.real(),
 		complex_divisor.imag()
@@ -11503,7 +11503,7 @@ CGrid CGrid::Hadamard_division(const CGrid& other) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->get_elements(),
 		result.get_dimensions()
 	);
@@ -11582,7 +11582,7 @@ CGrid CGrid::pow(const float_t exponent_real, const float_t exponent_imag) const
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		result.get_elements(),
 		exponent_real,
 		exponent_imag
@@ -11675,7 +11675,7 @@ CGrid CGrid::pow(const NGrid& other_real, const NGrid& other_imag, bool other_is
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		result.get_elements(),
 		result.get_dimensions(),
 		other_real.get_elements(),
@@ -11760,7 +11760,7 @@ CGrid CGrid::log(const float_t base_real, const float_t base_imag) const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		result.get_elements(),
 		base_real,
 		base_imag
@@ -11827,7 +11827,7 @@ CGrid CGrid::exp() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		result.get_elements()
 	);
 
@@ -11979,7 +11979,7 @@ CGrid CGrid::convolution(const CGrid& kernel, const  uint32_t padding_amount, co
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->get_dimensions(),
 		this->get_elements(),
 		result.get_elements(),
@@ -12113,7 +12113,7 @@ LUresultComplex CGrid::lu() const {
 		Task& task_k = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants
-		PushConstants& constants = task_k.add_constants(
+		PushConstants& constants = task_k.make_constants(
 			this->get_shape()[0],	// source matrix rows
 			this->get_shape()[1],	// source matrix columns
 			k						// current row index
@@ -12214,7 +12214,7 @@ CGrid CGrid::l_inverse() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->get_shape()[0]
 	);
 
@@ -12277,7 +12277,7 @@ CGrid CGrid::u_inverse() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		this->get_shape()[0]
 	);
 
@@ -12455,7 +12455,7 @@ NGrid CGrid::magnitude() const {
 	Task& task = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants
-	PushConstants& constants = task.add_constants(
+	PushConstants& constants = task.make_constants(
 		result.get_elements()
 	);
 
@@ -12614,7 +12614,7 @@ void CGrid::print(const std::string& comment, const int32_t precision, const boo
 	Task& task_real = manager->get_compute_task(__FUNCTION__);
 
 	// define push constants (transient resource, owned by the task)
-	PushConstants& constants_real = task_real.add_constants(
+	PushConstants& constants_real = task_real.make_constants(
 		elements,
 		fract_significant_digits
 	);
@@ -12653,7 +12653,7 @@ void CGrid::print(const std::string& comment, const int32_t precision, const boo
 		Task& task_imag = manager->get_compute_task(__FUNCTION__);
 
 		// define push constants (transient resource, owned by the task)
-		PushConstants& constants_imag = task_imag.add_constants(
+		PushConstants& constants_imag = task_imag.make_constants(
 			elements,
 			fract_significant_digits
 		);

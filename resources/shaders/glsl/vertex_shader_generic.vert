@@ -26,14 +26,17 @@ layout(binding = 3, set = 0, std430) readonly buffer model_matrices_buffer {
     mat4 model_matrices[];
 };
 
-// Push constants for dynamic data.
+// Push constants for dynamic data (using std430)
 layout(push_constant) uniform push_constants {
-    mat4    view;                // Camera's view transform
-    mat4    projection;
-    vec4    camera_position;     // World Space Camera Position
-    uint    lights_count;
-    vec3    ambient_scene_color;
-    float   exposure;
+	mat4 	view; // Camera's view transform
+	mat4 	projection;
+	uint 	material_index;
+	uint 	lights_count;
+	uint    prefiltered_mip_levels;
+	float   exposure;
+	float   ibl_intensity;
+	vec3    ambient_scene_color;
+	vec3 	camera_position; // World Space Camera Position
 };
 
 void main() {
@@ -44,6 +47,9 @@ void main() {
     vec4 world_pos = model * vec4(in_position, 1.0);
     gl_Position = projection * view * world_pos;
     v_position = vec3(world_pos);
+
+    // --- VIEW DIRECTION CALCULATION ---
+    v_view_dir = camera_position.xyz - vec3(world_pos);
 
     // --- TBN BASIS TRANSFORMATION ---
     // Normal Matrix: Inverse Transpose of the Model Matrix's 3x3 component.

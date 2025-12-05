@@ -182,8 +182,10 @@ public:
 			Log::warning("VkDebug is not initialized. Failed to start capture.");
 			return;
 		}
+		if (capture_active) { return; }
 		if (rdoc_api) { // Only attempt capture if rdoc_api is valid
 			rdoc_api->StartFrameCapture(NULL, NULL);
+			capture_active = true;
 			Log::info("RenderDoc capture started.");
 		}
 		else {
@@ -198,8 +200,10 @@ public:
 			Log::warning("VkDebug is not initialized. Capture is not available.");
 			return;
 		}
+		if (!capture_active) { return; }
 		if (rdoc_api) { // Only attempt end capture if rdoc_api is valid
 			rdoc_api->EndFrameCapture(NULL, NULL);
+			capture_active = false;
 			Log::info("RenderDoc capture ended.");
 		}
 		else {
@@ -209,12 +213,13 @@ public:
 	}
 
 	// start RenderDoc debug label
-	static void label_start(VkCommandBuffer buffer, std::string label, float r = 1.0f, float g = 1.0f, float b = 1.0f, float a = 1.0f) {
+	static void label_start(VkCommandBuffer buffer, std::string label, float r = 1.0f, float g = 0.0f, float b = 1.0f, float a = 1.0f) {
 #ifndef _RELEASE
 		if (!initialized) {
 			Log::warning("Can't use VkDebug::label_start(). VkDebug must be initialized first");
 			return;
 		}
+		if (label_active) { label_stop(); }
 		// Correctly check and call the function pointer variable
 		if (begin_label_func) {
 			VkDebugUtilsLabelEXT labelInfo = {};
@@ -225,15 +230,19 @@ public:
 			labelInfo.color[2] = b;
 			labelInfo.color[3] = a;
 			begin_label_func(buffer, &labelInfo); // Correct call
+			label_active = true;
+			active_label_command_buffer = buffer;
 		}
 #endif
 	}
 
-	static void label_stop(VkCommandBuffer buffer) {
+	static void label_stop(VkCommandBuffer buffer = VK_NULL_HANDLE) {
 #ifndef _RELEASE
 		// Correctly check and call the function pointer variable
-		if (end_label_func) {
-			end_label_func(buffer);
+		if (end_label_func && label_active) {
+			end_label_func(buffer == VK_NULL_HANDLE ? active_label_command_buffer : buffer);
+			label_active = false;
+			active_label_command_buffer = VK_NULL_HANDLE;
 		}
 #endif
 	}
@@ -279,6 +288,9 @@ private:
 	static inline PFN_vkCmdEndDebugUtilsLabelEXT end_label_func = nullptr;
 	static inline PFN_vkCmdInsertDebugUtilsLabelEXT insert_label_func = nullptr;
 	static inline bool initialized = false;
+	static inline bool capture_active = false;
+	static inline bool label_active = false;
+	static inline VkCommandBuffer active_label_command_buffer = VK_NULL_HANDLE;
 };
 
 #endif // VKDEBUG_H

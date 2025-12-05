@@ -11,8 +11,6 @@
 
 void vkcontext_graphics_test_helmet() {
 
-	Log::set_level(LEVEL_WARNING);
-
 	// setup environment
 	auto& manager = VulkanManager::get_singleton();
 	Device& device = manager.get_device();
@@ -20,43 +18,90 @@ void vkcontext_graphics_test_helmet() {
 	Surface& surface = manager.get_surface();
 	auto surface_format = device.select_surface_format(surface);
 
+	VkDebug::init(manager.get_instance().get());
+	VkDebug::capture_start();
+
 	// load model
-	Mesh model(device, "resources/models/gltf/DamagedHelmet.glb", tl_semaphore, true, true); // source: Khronos Group
+	Mesh model(device, "resources/models/gltf/DamagedHelmet2.glb", tl_semaphore, true, true); // source: Khronos Group
 
 	// create scene
 	VkExtent2D extent = { 1920, 1080 };
 	Scene scene;
-	uint32_t entity_id = scene.add_entity(&model, { 0.0f, 0.0f, 0.0f }, true);
-	scene.get_active_camera().set_position({ 0.0f, 0.0f, 2.0f });
+	uint32_t entity_id = scene.add_entity(&model, { 0.0f, 0.0f, 0.0f });
+	scene.get_active_camera().set_position({ 0.0f, 0.0f, 2.2f });
 	scene.get_active_camera().set_world_up({ 0.0f, -1.0f, 0.0f });
 	scene.get_active_camera().set_yaw(-90.0f);
 	scene.get_active_camera().set_pitch(0.0f);
 	scene.get_active_camera().set_aspect_ratio(extent);
 	scene.get_active_camera().set_near_plane(0.01f);
-	scene.get_active_camera().set_far_plane(200.0f);
-	scene.set_ambient({ 0.1f, 0.1f, 0.1f });
+	scene.get_active_camera().set_far_plane(100.0f);
+	scene.set_ambient({ 0.01f, 0.01f, 0.01f });
 	scene.set_exposure(1.0f);
+	scene.set_contrast(0.5f);
+	scene.set_ibl_intensity(0.3f);
+
+	// backfill light
 	uint32_t light_id = scene.add_scene_light(
 		LightType::SPOT_LIGHT,			// type
-		glm::vec3(0.0f, -5.0f, 3.0f),	// Position
-		glm::vec3{ 1.0f, 1.0f, 1.0f }	// Color
+		glm::vec3(0.0f, 0.0f, -5.0f)	// Position: lateral, vertical, depth
 	);
-	scene.get_scene_light(light_id).set_direction(glm::normalize(scene.get_entity(entity_id).get_position() - scene.get_scene_light(light_id).get_position()));
-	scene.get_scene_light(light_id).set_intensity(100.0f);
-	scene.get_scene_light(light_id).set_range(20.0f);
+	scene.get_scene_light(light_id).point_to(scene.get_entity(entity_id));
+	scene.get_scene_light(light_id).set_intensity(300.0f);
+	scene.get_scene_light(light_id).set_range(30.0f);
 	scene.get_scene_light(light_id).set_cone_angle(0.78f, 1.57f); // angle units: radians
+
+	// front light
+	uint32_t light_id2 = scene.add_scene_light(
+		LightType::SPOT_LIGHT,
+		glm::vec3(0.0f, -0.15f, 5.0f)	// Position: lateral, vertical, depth
+	);
+	scene.get_scene_light(light_id2).point_to(scene.get_entity(entity_id));
+	scene.get_scene_light(light_id2).set_intensity(100.0f);
+	scene.get_scene_light(light_id2).set_range(30.0f);
+	scene.get_scene_light(light_id2).set_cone_angle(0.78f, 1.57f); // angle units: radians
+
+	scene.add_cubemap(manager.get_device(), "resources/cubemaps/sunflowers_puresky_4k.exr", tl_semaphore, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType::EQUIRECTANGULAR_HDR_TEXTYPE, 1024, VK_FORMAT_R32G32B32A32_SFLOAT);
 
 	// create pipeline dependencies
 	RenderPass renderpass(device);
 	SubPass subpass(renderpass);
-	uint32_t color_attachment_id = renderpass.add_color_attachment(surface_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE);
-	uint32_t depth_attachment_id = renderpass.add_attachment(AttachmentType::DEPTH_TYPE, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE);
-	subpass.add_attachment_reference(color_attachment_id);
-	subpass.add_attachment_reference(depth_attachment_id);
+	subpass.add_attachment_reference(
+		renderpass.add_attachment(
+			AttachmentType::COLOR_TYPE,
+			ColorBlendState::OPAQUE_BLEND,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			VK_ATTACHMENT_LOAD_OP_CLEAR,
+			VK_ATTACHMENT_STORE_OP_STORE,
+			VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+			VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			surface_format.format
+		)
+	);
+	subpass.add_attachment_reference(
+		renderpass.add_attachment(
+			AttachmentType::DEPTH_TYPE,
+			ColorBlendState::OPAQUE_BLEND,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+			VK_ATTACHMENT_LOAD_OP_CLEAR,
+			VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			VK_ATTACHMENT_LOAD_OP_CLEAR,
+			VK_ATTACHMENT_STORE_OP_DONT_CARE
+		)
+	);
 	uint32_t subpass_index = subpass.finalize(0, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	renderpass.add_subpass_dependency(
+		VK_SUBPASS_EXTERNAL,
+		subpass_index,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // src_stage_mask: Operations that write to the swapchain before the render pass
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, // dst_stage_mask: Where the pipeline writes color and depth
+		0, // src_access_mask: Wait for image layout transition
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT // dst_access_mask: ensure color/depth writes are safe
+	);
 	renderpass.finalize();
 
-	DepthBuffer depth_buffer(device, extent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	DepthBuffer depth_buffer(device, extent);
 
 	Swapchain swapchain(device, renderpass, surface, surface_format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, depth_buffer, NULLOPT, extent);
 
@@ -66,7 +111,8 @@ void vkcontext_graphics_test_helmet() {
 	DescriptorSetLayout set_layout(device);
 	set_layout.add_bindings(3, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);						// for materials, lights, scene Material texIDs
 	set_layout.add_bindings(1, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_VERTEX_BIT);							// for model matrices
-	set_layout.add_bindings(1, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES);	// for textures
+	set_layout.add_bindings(3, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);				// for cubemaps and BRDF lut
+	set_layout.add_bindings(1, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT); // for textures
 	set_layout.finalize();
 
 	DescriptorSet set(device, set_layout, manager.get_descriptor_pool());
@@ -74,50 +120,41 @@ void vkcontext_graphics_test_helmet() {
 	set.bind_buffer(1, scene.get_lights_buffer(tl_semaphore));
 	set.bind_buffer(2, scene.get_scene_texIDs_buffer(tl_semaphore));
 	set.bind_buffer(3, scene.get_model_matrices_buffer(tl_semaphore));
-	set.bind_textures(4, scene.get_textures());
+	set.bind_cubemap(4, scene.get_cubemap_irradiance(tl_semaphore));
+	set.bind_cubemap(5, scene.get_cubemap_prefiltered(tl_semaphore));
+	set.bind_textures(6, scene.get_brdf_lut(tl_semaphore));
+	set.bind_textures(7, scene.get_textures());
 	set.write();
 
 	std::vector<VkClearValue> clear_values(2);
 	clear_values[0].color = { {0.0f, 0.0f, 0.0f, 1.0f} };
 	clear_values[1].depthStencil = { 1.0f, 0 };
 
-	const auto opaque_color_blend_state = std::make_optional<ColorBlendState>(
-		VK_BLEND_FACTOR_ONE,
-		VK_BLEND_FACTOR_ZERO,
-		VK_BLEND_OP_ADD,
-		VK_BLEND_FACTOR_ONE,
-		VK_BLEND_FACTOR_ZERO,
-		VK_BLEND_OP_ADD
-	);
-
-	const auto alpha_color_blend_state = std::make_optional<ColorBlendState>(
-		VK_BLEND_FACTOR_SRC_ALPHA,
-		VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-		VK_BLEND_OP_ADD,
-		VK_BLEND_FACTOR_SRC_ALPHA,
-		VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-		VK_BLEND_OP_ADD
-	);
-
 	PushConstants constants;
 	size_t view_matrix_offset = constants.add_values(scene.get_active_camera().get_view_matrix());
 	size_t projection_offset = constants.add_values(scene.get_active_camera().get_projection_matrix());
-	size_t camera_position_offset = constants.add_values(scene.get_active_camera().get_position());
 	size_t material_offset = constants.add_values(uint32_t(0));
 	size_t light_count_offset = constants.add_values(scene.get_visible_lights_count());
-	size_t ambient_scene_color_offset = constants.add_values(scene.get_ambient());
+	size_t prefmipl_offset = constants.add_values(scene.get_prefiltered_mip_levels());
 	size_t exposure_offset = constants.add_values(scene.get_exposure());
+	size_t contrast_offset = constants.add_values(scene.get_contrast());
+	size_t ibl_intensity_offset = constants.add_values(scene.get_ibl_intensity());
+	size_t ambient_scene_color_offset = constants.add_values(scene.get_ambient());
+	size_t camera_position_offset = constants.add_values(scene.get_active_camera().get_position());
 
+	// create pipeline
 	GraphicsPipelineLayout pipeline_layout(device, set_layout, constants);
-
-	// create pipelines
-	GraphicsPipeline opaque_pipeline(device, renderpass, subpass_index, pipeline_layout, vertex_shader, opaque_color_blend_state, fragment_shader);
-	GraphicsPipeline alpha_pipeline(device, renderpass, subpass_index, pipeline_layout, vertex_shader, alpha_color_blend_state, fragment_shader);
+	PipelineProperties pl_properties;
+	pl_properties.cull_mode = VK_CULL_MODE_BACK_BIT;
+	pl_properties.depth_test_enable = VK_TRUE;
+	pl_properties.depth_write_enable = VK_TRUE;
+	pl_properties.depth_compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;
+	GraphicsPipeline pipeline(device, renderpass, subpass_index, pipeline_layout, pl_properties, vertex_shader, fragment_shader);
 
 	// acquire a graphics task
 	Task& task = manager.get_graphics_task(__FUNCTION__);
-	Semaphore& image_available_bin_semaphore = task.make_temp_binary_semaphore(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
-	Semaphore& render_finished_bin_semaphore = task.make_temp_binary_semaphore(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
+	Semaphore& image_available_bin_semaphore = task.make_binary_semaphore(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+	Semaphore& render_finished_bin_semaphore = task.make_binary_semaphore(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
 
 	// main render loop
 	std::vector<Entity*> entities = scene.get_visible_entities();
@@ -136,6 +173,7 @@ void vkcontext_graphics_test_helmet() {
 		// render next frame
 		uint32_t image_index = swapchain.acquire_next_image(image_available_bin_semaphore);
 		CommandBuffer& cb = task.get_command_buffer();
+		VkDebug::label_start(cb.get(), "MAIN RENDER LOOP");
 		cb.begin_recording();
 
 		// Set dynamic state before starting render pass
@@ -146,30 +184,13 @@ void vkcontext_graphics_test_helmet() {
 		cb.begin_renderpass(renderpass, swapchain.get_framebuffer(image_index), { 0,0 }, swapchain.get_extent(), clear_values);
 		cb.bind_mesh(model);
 
-		// for each entity loop over sub-meshes and issue a draw call (= draw vertices per sub-mesh)
-
-		// 1. opaque pass
-		cb.bind_descriptor_set(set, opaque_pipeline);
-		cb.bind_pipeline(opaque_pipeline);
+		// OPAQUE pass
+		cb.bind_descriptor_set(set, pipeline);
+		cb.bind_pipeline(pipeline);
 		for (uint32_t entity_index = 0; entity_index < entities.size(); entity_index++) {
 			for (const auto& submesh : entities[entity_index]->get_mesh().get_submeshes()) {
 				constants.add_values(submesh.scene_local_material_index, material_offset); // in-place overwrite
-				scene.get_unique_materials()[submesh.scene_local_material_index]->ambient.w = AlphaMode::OPAQUE_MODE;
-				scene.get_unique_materials()[submesh.scene_local_material_index]->base_color.a = 1.0f;
-				cb.bind_push_constants(constants, opaque_pipeline);
-				cb.draw_indexed(submesh.index_count, 1, submesh.first_index, submesh.vertex_offset, entity_index);
-			}
-		}
-
-		// 2. transparency pass
-		cb.bind_descriptor_set(set, alpha_pipeline);
-		cb.bind_pipeline(alpha_pipeline);
-		for (uint32_t entity_index = 0; entity_index < entities.size(); entity_index++) {
-			for (const auto& submesh : entities[entity_index]->get_mesh().get_submeshes()) {
-				constants.add_values(submesh.scene_local_material_index, material_offset); // in-place overwrite
-				scene.get_unique_materials()[submesh.scene_local_material_index]->ambient.w = AlphaMode::BLEND_MODE;
-				scene.get_unique_materials()[submesh.scene_local_material_index]->base_color.a = 0.5f;
-				cb.bind_push_constants(constants, alpha_pipeline);
+				cb.bind_push_constants(constants, pipeline);
 				cb.draw_indexed(submesh.index_count, 1, submesh.first_index, submesh.vertex_offset, entity_index);
 			}
 		}
@@ -187,6 +208,7 @@ void vkcontext_graphics_test_helmet() {
 		task.get_fence().wait(__FUNCTION__);
 		task.get_fence().reset(__FUNCTION__);
 		task.clear_semaphore_list();
+		VkDebug::capture_stop();
 	}
 }
 #endif

@@ -69,6 +69,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}"
 
 set(PROJECT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(PROJECT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(PROJECT_THIRD_PARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/third_party")
 set(PROJECT_ENTRYPOINT "${PROJECT_SOURCE_DIR}/main.cpp")
 set(PROJECT_RESOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources")
 set(PROJECT_GLSL_DIR "${PROJECT_RESOURCES_DIR}/shaders/glsl")
@@ -95,7 +96,7 @@ if(EXISTS "${PROJECT_SOURCE_DIR}")
     endif()
 
     if(PROJECT_SOURCES)
-        target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES} "include/spirv_bin_precompiled.h")
+        target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
         message(STATUS "Added source files from: ${PROJECT_SOURCE_DIR}")
     else()
         message(WARNING "No source files found in ${PROJECT_SOURCE_DIR}")
@@ -111,6 +112,14 @@ if(EXISTS "${PROJECT_INCLUDE_DIR}")
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     message(STATUS "Added public include directory: ${PROJECT_INCLUDE_DIR}")
+endif()
+
+if(EXISTS "${PROJECT_THIRD_PARTY_DIR}")
+    target_include_directories(${PROJECT_NAME} PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_THIRD_PARTY_DIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    message(STATUS "Added public third_party directory: ${PROJECT_INCLUDE_DIR}")
 endif()
 
 set(GENERATED_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated") # add Include Directory for Generated Headers
@@ -438,123 +447,201 @@ if(USE_BOOST)
     endif()
 endif()
 
-message(STATUS "Configuration of external dependencies is now complete.")
+# --- LLVM Tools Setup ---
+option(ENABLE_LLVM_TOOLS "Enable automatic download of llvm-objcopy if not found" ON)
+if(ENABLE_LLVM_TOOLS)
+    set(LLVM_VERSION "21.1.5")
+    set(LLVM_TAG "llvmorg-${LLVM_VERSION}")
+    
+    # 1. Determine Target OS and File Suffix and HASH
+    if("${CMAKE_SYSTEM_NAME}" MATCHES "Windows")
+        set(LLVM_OS_SUFFIX "x86_64-pc-windows-msvc")
+        set(LLVM_HASH_VALUE "eba824f1379fdb1a385f6dff8d19275a57348f621c752ce93b6d11256741e349") # 21.1.5 Windows MSVC x64
+        set(LLVM_EXT_TYPE "tar.xz")
+    elseif("${CMAKE_SYSTEM_NAME}" MATCHES "Linux")
+        set(LLVM_OS_SUFFIX "x86_64-linux-gnu-ubuntu-22.04")
+        set(LLVM_HASH_VALUE "9622d1f05479075e7a93540ce8c16d56d43e5b30646c0d83272993ed61a46979") # 21.1.5 Linux x64
+        set(LLVM_EXT_TYPE "tar.xz")
+    elseif("${CMAKE_SYSTEM_NAME}" MATCHES "Darwin")
+        set(LLVM_OS_SUFFIX "x86_64-apple-darwin")
+        set(LLVM_HASH_VALUE "2a149c5855217822501a31627c5cc1cc7994e43f1ed16f88d223a54b64d1421f") # 21.1.5 macOS x64
+        set(LLVM_EXT_TYPE "tar.xz")
+    else()
+        message(WARNING "Unsupported OS for LLVM binary download: ${CMAKE_SYSTEM_NAME}. Skipping automatic tool fetch.")
+        set(ENABLE_LLVM_TOOLS OFF)
+    endif()
 
+    if(ENABLE_LLVM_TOOLS)
+        # 2. Dynamic Path Calculation
+        set(LLVM_FILENAME "clang+llvm-${LLVM_VERSION}-${LLVM_OS_SUFFIX}.${LLVM_EXT_TYPE}")
+        set(LLVM_DOWNLOAD_URL 
+            "https://github.com/llvm/llvm-project/releases/download/${LLVM_TAG}/${LLVM_FILENAME}"
+        )
+        set(LLVM_DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/_deps/llvm_download")
+        set(LLVM_ARCHIVE_PATH "${LLVM_DOWNLOAD_DIR}/${LLVM_FILENAME}")
+        set(LLVM_EXTRACT_ROOT "${LLVM_DOWNLOAD_DIR}/clang+llvm-${LLVM_VERSION}-${LLVM_OS_SUFFIX}") 
+        set(LLVM_BIN_DIR "${LLVM_EXTRACT_ROOT}/bin")
+        file(MAKE_DIRECTORY ${LLVM_DOWNLOAD_DIR})
+    endif()
+endif()
+# --- End LLVM Setup ---
+
+# === END OF DEPENDENCY MANAGEMENT ===
+message(STATUS "Configuration of external dependencies is now complete.")
 
 #==============================================================================
 # Section: GLSL Shader Compilation
 #==============================================================================
 option(COMPILE_GLSL_SHADERS "Enable automatic GLSL shader (re)compilation" ON)
+
 if(COMPILE_GLSL_SHADERS AND EXISTS "${PROJECT_GLSL_DIR}")
+    # --- Check for GLSL Compiler ---
     find_program(GLSLANG_VALIDATOR_EXECUTABLE NAMES glslangValidator glslc)
+    
     if(NOT GLSLANG_VALIDATOR_EXECUTABLE)
-        message(WARNING "Option COMPILE_GLSL_SHADERS is set to ON, but GLSL compiler (glslangValidator) can't be found!!!")
-        message(STATUS "Shader compilation will be skipped.")
-        message(STATUS "Please install the Vulkan SDK to get this tool. Download from: https://www.lunarg.com/vulkan-sdk/")
-        set(COMPILE_GLSL_SHADERS OFF) # Disable if not found, so install doesn't fail entirely
+        message(WARNING "Option COMPILE_GLSL_SHADERS is ON, but GLSL compiler (glslangValidator) can't be found. Compilation will be skipped.")
+        set(COMPILE_GLSL_SHADERS OFF)
     else()
         message(STATUS "Using GLSL compiler: ${GLSLANG_VALIDATOR_EXECUTABLE}")
-        file(MAKE_DIRECTORY "${PROJECT_SPIRV_DIR}") # Ensure output directory exists
+        file(MAKE_DIRECTORY "${PROJECT_SPIRV_DIR}")
+        
         file(GLOB_RECURSE GLSL_SHADER_SOURCES CONFIGURE_DEPENDS
-            "${PROJECT_GLSL_DIR}/*.vert"
-            "${PROJECT_GLSL_DIR}/*.frag"
-            "${PROJECT_GLSL_DIR}/*.comp"
-            "${PROJECT_GLSL_DIR}/*.tesc"
-            "${PROJECT_GLSL_DIR}/*.tese"
-            "${PROJECT_GLSL_DIR}/*.geom"
+            "${PROJECT_GLSL_DIR}/*.vert" "${PROJECT_GLSL_DIR}/*.frag" "${PROJECT_GLSL_DIR}/*.comp"
+            "${PROJECT_GLSL_DIR}/*.tesc" "${PROJECT_GLSL_DIR}/*.tese" "${PROJECT_GLSL_DIR}/*.geom"
             "${PROJECT_GLSL_DIR}/*.glsl")
 
         if(GLSL_SHADER_SOURCES)
-             message(STATUS "Found GLSL shaders to compile...")
-             set(SPIRV_OUTPUT_FILES "") # <--- Initialize list here
+            message(STATUS "Found GLSL shaders to compile...")
+            set(SPIRV_CPP_SOURCES "") # Holds the list of generated .cpp files
+            set(SPV_COMPILE_TARGETS "") # Holds the list of custom targets
+            set(SPIRV_DECL_LIST "") # Holds variable names for header generation
 
-             foreach(GLSL_INPUT ${GLSL_SHADER_SOURCES})
+            # --- Vulkan SDK Tool Path Derivation (Kept for completeness) ---
+            if(Vulkan_FOUND AND Vulkan_LIBRARIES)
+                get_filename_component(VULKAN_LIB_DIR ${Vulkan_LIBRARIES} DIRECTORY)
+                get_filename_component(VULKAN_SDK_ROOT ${VULKAN_LIB_DIR} DIRECTORY)
+                set(VULKAN_TOOLS_BIN "${VULKAN_SDK_ROOT}/Tools/bin")
+                list(APPEND CMAKE_PROGRAM_PATH ${VULKAN_TOOLS_BIN})
+                message(STATUS "Added Vulkan SDK tools path to search: ${VULKAN_TOOLS_BIN}")
+            endif()
+            
+            # =======================================
+            # --- Per-Shader File Generation Loop ---
+            # =======================================
+            set(SPIRV_CUSTOM_SRC_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/spirv_sources")
+            file(MAKE_DIRECTORY ${SPIRV_CUSTOM_SRC_DIR})
+
+            foreach(GLSL_INPUT ${GLSL_SHADER_SOURCES})
                 get_filename_component(SHADER_NAME ${GLSL_INPUT} NAME)
+                get_filename_component(BASE_NAME_WE ${SHADER_NAME} NAME_WE)
+                
+                # Calculate paths and names
                 set(SPIRV_OUTPUT "${PROJECT_SPIRV_DIR}/${SHADER_NAME}.spv")
+                
+                # 1. Sanitize Names for C++
+                string(REGEX REPLACE "\\..*" "" SANITIZED_BASE_NAME ${BASE_NAME_WE})
+                string(REGEX REPLACE "[^a-zA-Z0-9_]" "_" SANITIZED_BASE_NAME ${SANITIZED_BASE_NAME})
+                string(TOUPPER "${SANITIZED_BASE_NAME}" VAR_NAME)
+                
+                # 2. Define Generated C++ paths
+                set(SPIRV_GENERATED_SRC "${SPIRV_CUSTOM_SRC_DIR}/${VAR_NAME}_embedded.cpp")
+                list(APPEND SPIRV_CPP_SOURCES ${SPIRV_GENERATED_SRC})
+                list(APPEND SPIRV_DECL_LIST ${VAR_NAME})
 
-                # Add the output file to the list
-                list(APPEND SPIRV_OUTPUT_FILES ${SPIRV_OUTPUT})
-
+                # --- CUSTOM COMMAND 1: GLSL to SPV Compilation (Defines rule for ${SPIRV_OUTPUT}) ---
                 add_custom_command(
                     OUTPUT ${SPIRV_OUTPUT}
                     COMMAND ${GLSLANG_VALIDATOR_EXECUTABLE} -V ${GLSL_INPUT} --target-env ${PROJECT_GLSL_TARGET_ENV} -o ${SPIRV_OUTPUT}
-                    DEPENDS ${GLSL_INPUT} # Depends on the input shader file
-                    COMMENT "Compiling ${GLSL_INPUT} -> ${SPIRV_OUTPUT}"
+                    DEPENDS ${GLSL_INPUT}
+                    COMMENT "Compiling GLSL: ${GLSL_INPUT} -> ${SPIRV_OUTPUT}"
                     VERBATIM
                 )
+            
+                set(SPV_TARGET_NAME "spv_file_${VAR_NAME}")
+                add_custom_target(${SPV_TARGET_NAME} ALL DEPENDS ${SPIRV_OUTPUT})
+
+                set_property(TARGET ${SPV_TARGET_NAME} PROPERTY 
+                    ADDITIONAL_CLEAN_FILES ${SPIRV_OUTPUT}
+                )
+                
+                # --- CUSTOM COMMAND 2: BUILD-TIME C++ Source Generation (Hex Conversion) ---
+                # This uses an inline Python script to convert the binary .spv file to a C++ hex array.
+                add_custom_command(
+                    OUTPUT ${SPIRV_GENERATED_SRC}
+                    # Executing the external Python script (simpler for cmd.exe)
+                    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/cmake/spirv_to_cpp.py 
+                            ${SPIRV_OUTPUT} 
+                            ${SPIRV_GENERATED_SRC} 
+                            ${VAR_NAME}
+                    
+                    DEPENDS ${SPIRV_OUTPUT}
+                    COMMENT "Generating hex-encoded C++ source: ${SPIRV_GENERATED_SRC}"
+                    VERBATIM
+                )
+                
+                list(APPEND SPV_COMPILE_TARGETS ${SPV_TARGET_NAME})
+
             endforeach()
+
+            # --- 3. Object Library and Linkage ---
+            message(STATUS "Integrating compiled SPIR-V files into an Object Library...")
+            
+            add_library(SPIRV_BINARIES OBJECT)
+            
+            # The generated .cpp files are added as sources; CMake will compile them.
+            target_sources(SPIRV_BINARIES PRIVATE ${SPIRV_CPP_SOURCES})
+            
+            # Link the object files to your main executable
+            target_link_libraries(${PROJECT_NAME} PRIVATE $<TARGET_OBJECTS:SPIRV_BINARIES>)
+
+            # Ensure the SPIRV_BINARIES target depends on the SPV file targets
+            add_dependencies(SPIRV_BINARIES ${SPV_COMPILE_TARGETS})
+
+            # ==========================================
+            # --- 4. Generate C++ Declaration Header ---
+            # ==========================================
+            message(STATUS "Generating C++ header with 'extern' declarations...")
+
+            set(SPIRV_DECL_HEADER "${GENERATED_HEADER_DIR}/spirv_bin.h")
+            set(DECLARATION_CODE "")
+
+            foreach(VAR_NAME ${SPIRV_DECL_LIST})
+                string(APPEND DECLARATION_CODE
+                    "extern \"C\" const size_t ${VAR_NAME}_SPIRV_BYTES;\n"
+                    "extern \"C\" const unsigned char ${VAR_NAME}_SPIRV_BIN[];\n"
+                )
+            endforeach()
+
+            set(HEADER_CONTENT
+"#ifndef SPIRV_BIN_H
+#define SPIRV_BIN_H
+
+// SPIRV-V binaries generated by CMake. Do not edit.
+#include <cstddef> // for size_t
+#include <cstdint> // for unsigned char
+
+${DECLARATION_CODE}
+
+#endif // SPIRV_BIN_H"
+            )
+
+            file(WRITE "${GENERATED_HEADER_DIR}/tmp_header_content.h.in" "${HEADER_CONTENT}")
+            configure_file(
+                "${GENERATED_HEADER_DIR}/tmp_header_content.h.in"
+                "${SPIRV_DECL_HEADER}"
+                COPYONLY
+            )
+            file(REMOVE "${GENERATED_HEADER_DIR}/tmp_header_content.h.in")
+            
+            # Ensure the generated header directory is included in the project
+            target_include_directories(${PROJECT_NAME} PUBLIC ${GENERATED_HEADER_DIR})
+            message(STATUS "Successfully configured SPIR-V integration. Include: <spirv_bin.h>")
+
         else()
             message(STATUS "No GLSL shader files found in ${PROJECT_GLSL_DIR}")
-            set(COMPILE_GLSL_SHADERS OFF) # Disable if none found
-            set(SPIRV_OUTPUT_FILES "") # Ensure list is empty if no shaders found
+            set(COMPILE_GLSL_SHADERS OFF)
         endif()
     endif()
-endif()
-
-
-#==============================================================================
-# Section: Translate SPIR-V shaders to C++ header file
-# !!! requires the script "../cmake/generate_spirv_header.cmake !!!"
-#==============================================================================
-
-message(STATUS "Configuring SPIR-V to C++ header generation...")
-
-# This section relies on the SPIRV_OUTPUT_FILES list generated in the GLSL section
-# Only run if shaders were (re)compiled
-if(COMPILE_GLSL_SHADERS AND SPIRV_OUTPUT_FILES)
-
-    # Define paths
-    set(SPIRV_HEADER_OUTPUT "${GENERATED_HEADER_DIR}/spirv_bin.h")
-    set(SPIRV_HEADER_GENERATOR_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/cmake/generate_spirv_header.cmake")
-
-    if(NOT EXISTS "${SPIRV_HEADER_GENERATOR_SCRIPT}")
-         message(FATAL_ERROR "SPIR-V header generator script not found: ${SPIRV_HEADER_GENERATOR_SCRIPT}")
-    endif()
-
-    # Pass list via file
-    set(SPIRV_FILE_LIST_PATH "${GENERATED_HEADER_DIR}/spirv_files.lst") # Define path for the temporary file list
-    file(MAKE_DIRECTORY "${GENERATED_HEADER_DIR}") # Ensure the directory for the list file exists
-    file(WRITE "${SPIRV_FILE_LIST_PATH}" "") # Create or clear the list file initially
-    foreach(SPV_FILE ${SPIRV_OUTPUT_FILES}) # Iterate over the list of SPIR-V files and append each path on a new line
-        file(APPEND "${SPIRV_FILE_LIST_PATH}" "${SPV_FILE}\n")
-    endforeach()
-    message(STATUS "  -> SPIR-V file list written to: ${SPIRV_FILE_LIST_PATH}")
-
-    if(NOT EXISTS "${SPIRV_FILE_LIST_PATH}")
-        message(FATAL_ERROR "SPIR-V file list not found: ${SPIRV_FILE_LIST_PATH}")
-    endif()
-        
-    # Define the custom command to generate the header using the script
-    add_custom_command(
-        OUTPUT ${SPIRV_HEADER_OUTPUT}
-        # Command invokes CMake in script mode (-P)
-        COMMAND ${CMAKE_COMMAND}
-            -DSPIRV_FILE_LIST_PATH=${SPIRV_FILE_LIST_PATH}
-            -DOUTPUT_HEADER=${SPIRV_HEADER_OUTPUT}
-            -DGENERATED_HEADER_DIR=${GENERATED_HEADER_DIR}
-            -DPROJECT_SPIRV_DIR=${PROJECT_SPIRV_DIR}
-            -P ${SPIRV_HEADER_GENERATOR_SCRIPT}
-        # Depends on all the individual SPIR-V files and on the list file being up_to-date
-        DEPENDS ${SPIRV_OUTPUT_FILES} ${SPIRV_HEADER_GENERATOR_SCRIPT} ${SPIRV_FILE_LIST_PATH}
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        COMMENT "Generating C++ header from SPIR-V files -> ${SPIRV_HEADER_OUTPUT}"
-        VERBATIM
-    )
-
-    # Define a custom target that triggers the header generation
-    add_custom_target(spirv_header_target ALL # Use ALL to build automatically
-        DEPENDS ${SPIRV_HEADER_OUTPUT}
-    )
-
-    # Ensure the main project target depends on the header *generation target*
-    # This guarantees the header is generated before the project tries to compile files that include it.
-    add_dependencies(${PROJECT_NAME} spirv_header_target)
-
-    message(STATUS "Enabled generation of ${SPIRV_HEADER_OUTPUT}")
-    message(STATUS "  -> Will be generated from SPIR-V files in ${PROJECT_SPIRV_DIR}")
-    message(STATUS "  -> Generator script: ${SPIRV_HEADER_GENERATOR_SCRIPT}")
-else()
-     message(STATUS "SPIR-V to C++ header generation skipped (COMPILE_GLSL_SHADERS is OFF).")
 endif()
 
 #==============================================================================

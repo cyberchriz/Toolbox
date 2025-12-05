@@ -55,6 +55,7 @@ public:
 	static void to_file(bool active = true);
 	static LogLevel get_level();
 	static void enable_exit_on_error(bool active = true);
+	static void enable_exit_on_warning(bool active = true);
 
 	class Timer {
 	public:
@@ -79,6 +80,7 @@ private:
 	static bool log_to_console;
 	static bool log_to_file;
 	static bool exit_on_error;
+	static bool exit_on_warning;
 	static std::string log_filepath;
 	template <typename Arg> static void concatArgs(std::stringstream& stream, Arg&& arg);
 	template <typename First, typename... Args> static void concatArgs(std::stringstream& stream, First&& first, Args&&... args);
@@ -112,6 +114,9 @@ static void Log::warning(Args&&... args) {
 		concatArgs(stream, std::forward<Args>(args)...);
 		std::string log_message = "[WARNING]: \033[33m" + stream.str() + "\033[0m"; // yellow
 		write_log(log_message);
+	}
+	if (exit_on_warning) {
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -205,6 +210,10 @@ void Log::enable_exit_on_error(bool active) {
 	exit_on_error = active;
 }
 
+void Log::enable_exit_on_warning(bool active) {
+	exit_on_warning = active;
+}
+
 template <typename Arg>
 void Log::concatArgs(std::stringstream& stream, Arg&& arg) {
 	stream << std::forward<Arg>(arg);
@@ -221,6 +230,7 @@ LogLevel Log::log_level = DEFAULT_LEVEL;
 bool Log::log_to_console = true;
 bool Log::log_to_file = false;
 bool Log::exit_on_error = true;
+bool Log::exit_on_warning = false;
 std::string Log::log_filepath = "../logs/";
 
 
