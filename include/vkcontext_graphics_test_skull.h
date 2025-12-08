@@ -15,14 +15,14 @@ void vkcontext_graphics_test_skull() {
 	auto& manager = VulkanManager::get_singleton();
 	Device& device = manager.get_device();
 	Semaphore* tl_semaphore = manager.get_timeline_semaphore(0, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
-	Surface& surface = manager.get_surface();
+	VkExtent2D extent = { 3840, 2160 };
+	Surface& surface = manager.get_surface(extent.width, extent.height);
 	auto surface_format = device.select_surface_format(surface);
 
 	// load model
-	Mesh model(device, "resources/models/obj/Skull/12140_Skull_v3_L2.obj", tl_semaphore, true, true); // object source: https://free3d.com/3d-model/skull-v3--785914.html
+	Mesh model(device, "resources/models/obj/Skull/12140_Skull_v3_L2.obj", tl_semaphore, false, false); // object source: https://free3d.com/3d-model/skull-v3--785914.html
 
 	// create scene
-	VkExtent2D extent = { 1920, 1080 };
 	Scene scene;
 	uint32_t entity_id = scene.add_entity(&model, { 0.0f, 0.0f, 0.0f }, true);
 	scene.get_active_camera().set_position({ 0.0f, -32.0f, 22.0f });
@@ -32,26 +32,29 @@ void vkcontext_graphics_test_skull() {
 	scene.get_active_camera().set_aspect_ratio(extent);
 	scene.get_active_camera().set_near_plane(0.01f);
 	scene.get_active_camera().set_far_plane(100.0f);
-	scene.set_ambient({ 0.1f, 0.1f, 0.1f });
+	scene.set_ambient({ 0.01f, 0.01f, 0.01f });
 	scene.set_exposure(1.0f);
-	scene.set_contrast(0.0f);
-	scene.set_ibl_intensity(0.2f);
+	scene.set_contrast(0.2f);
+	scene.set_ibl_intensity(0.1f);
+
+	// backfill light
 	uint32_t light_id = scene.add_scene_light(
 		LightType::SPOT_LIGHT,			// type
-		glm::vec3(20.0f, -50.0f, 20.0f)	// Position: lateral, vertical, depth
+		glm::vec3(0.0f, 200.0f, 50.0f)	// Position: lateral, depth, vertical
 	);
 	scene.get_scene_light(light_id).point_to(scene.get_entity(entity_id));
-	scene.get_scene_light(light_id).set_intensity(500.0f);
-	scene.get_scene_light(light_id).set_range(50.0f);
+	scene.get_scene_light(light_id).set_intensity(20000.0f);
+	scene.get_scene_light(light_id).set_range(300.0f);
 	scene.get_scene_light(light_id).set_cone_angle(0.78f, 1.57f); // angle units: radians
 
+	// front light
 	uint32_t light_id2 = scene.add_scene_light(
 		LightType::SPOT_LIGHT,
-		glm::vec3(-50.0f, -50.0f, 20.0f)
+		glm::vec3(100.0f, -100.0f, 0.0f)
 	);
 	scene.get_scene_light(light_id2).point_to(scene.get_entity(entity_id));
-	scene.get_scene_light(light_id2).set_intensity(30000.0f);
-	scene.get_scene_light(light_id2).set_range(100.0f);
+	scene.get_scene_light(light_id2).set_intensity(10000.0f);
+	scene.get_scene_light(light_id2).set_range(200.0f);
 	scene.get_scene_light(light_id2).set_cone_angle(0.78f, 1.57f); // angle units: radians
 
 	scene.add_cubemap(manager.get_device(), "resources/cubemaps/sunflowers_puresky_4k.exr", tl_semaphore);
@@ -150,12 +153,17 @@ void vkcontext_graphics_test_skull() {
 	Semaphore& image_available_bin_semaphore = task.make_binary_semaphore(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 	Semaphore& render_finished_bin_semaphore = task.make_binary_semaphore(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
 
+	// Add Event Listeners
+	surface.get_event_manager().add_listener(EventType::WINDOW_RESIZE, [&](const SurfaceEvent& e) {
+		extent = { e.resize.width, e.resize.height };
+		swapchain.update_extent(extent);
+		}
+	);
+
 	// main render loop
 	std::vector<Entity*> entities = scene.get_visible_entities();
 	while (true) {
 		Log::debug("===== MAIN RENDER LOOP: START OF NEXT LOOP ITERATION =====");
-
-		// process events (TODO)
 
 		// update scene (push constants updates via in-place overwrites)
 		scene.get_entity(entity_id).rotate(glm::vec3(0.0f, 0.0f, 0.5f));
@@ -175,7 +183,7 @@ void vkcontext_graphics_test_skull() {
 		cb.set_scissor({ 0, 0 }, swapchain.get_extent());
 
 		// bind shared resources
-		cb.begin_renderpass(renderpass, swapchain.get_framebuffer(image_index), { 0,0 }, swapchain.get_extent(), clear_values);
+		cb.begin_renderpass(renderpass, swapchain.get_framebuffer(image_index).get(), {0,0}, swapchain.get_extent(), clear_values);
 		cb.bind_mesh(model);
 
 		// OPAQUE pass

@@ -32,9 +32,9 @@ The recommended way to build this project is by using the provided `CMakeLists.t
 * CMake will automatically compile the GLSL shaders and embed them as C++ string literals into a header file (`spirv_bin.h`), which is typically located in your build directory (e.g., `../out/build/[VERSION]/generated/`). This requires `glslangValidator` to be installed and available in your system's PATH.
 * If you encounter issues with CMake, please ensure your environment variables are correctly configured for your operating system.
 
-**Using a different build system:**
-* The library includes a fallback header, `spirv_bin_precompiled.h`, which contains precompiled binaries. This allows the code to work out-of-the-box without `glslangValidator` and significantly reduces compilation time.
-* However, please note that any changes to the GLSL shader code will not be reflected in the precompiled binaries. You will need to use the CMake method to recompile and include your changes.
+**Using a different build system (not encouraged):**
+* The library includes a fallback header, `spirv_bin_precompiled.h`, which contains precompiled binaries (may be out of date!). This allows the code to work out-of-the-box; otherwise `glslangValidator` is required for shader compilation.
+* However, please note that any changes to the GLSL shader code will not automatically be reflected in the precompiled binaries.
 
 ---
 
@@ -43,9 +43,9 @@ These are the primary components for high-performance GPU computing.
 
 | Library | Description | Status |
 | :--- | :--- | :--- |
-| [`NGrid`](docs/ngrid.md) | **N-dimensional data structures for GPU compute.** The core library for general-purpose GPU computing on tensors. | ✅ Tested |
-| [`CGrid`](docs/cgrid.md) | **An extension of `NGrid` with support for complex numbers.** Adds complex number functionality to the core NGrid class, leveraging the same GPU backend. | ✅ Tested |
-| [`VkContext`](docs/vkcontext.md) | **High-level wrapper for Vulkan objects.** A simplified API for managing the Vulkan context, including devices, pipelines, and synchronization. | 🚧 Compute tested; Graphics functionality is implemented but not yet fully tested. |
+| [`ngrid.h`](docs/ngrid.md) | **N-dimensional data structures for GPU compute.** The core library for general-purpose GPU computing on tensors. | ✅ Tested |
+| [`cgrid.h`](docs/cgrid.md) | **An extension of `NGrid` with support for complex numbers.** Adds complex number functionality to the core NGrid class, leveraging the same GPU backend. | ✅ Tested |
+| [`vkcontext.h`](docs/vkcontext.md) | **High-level wrapper for Vulkan objects.** A simplified API for managing the Vulkan context, including devices, pipelines, and synchronization. | 🚧 Compute tested; Graphics functionality partially tested. |
 
 ---
 
@@ -54,13 +54,22 @@ These supporting libraries simplify development and provide additional functiona
 
 | Utility | Description |
 | :--- | :--- |
-| [`Timer`](#) | **Time logger for performance optimization.** Measure code execution time to identify bottlenecks. |
-| [`Log`](#) | **A lightweight logging system** for debugging and information. |
-| [`Random`](#) | **Random number generators** for various distributions. |
-| [`CDF`](#) | **Cumulative distribution functions** for statistical analysis. |
-| [`PDF`](#) | **Probability density functions** for statistical analysis. |
-| [`Angular`](#) | **Angular measure conversion** for different units (radians, degrees, etc.). |
-| [`RDocEnable`](#) | **Implements capture for RenderDoc debugging** to analyze GPU workloads. |
+| [`log.h`](#) | **A lightweight logging system** for debugging and information. |
+| [`rnd.h`](#) | **Random number generators** for various distributions. |
+| [`cdf.h`](#) | **Cumulative distribution functions** for statistical analysis. |
+| [`pdf.h`](#) | **Probability density functions** for statistical analysis. |
+| [`angular.h`](#) | **Angular measure conversion** for different units (radians, degrees, etc.). |
+| [`vkdebug.h`](#) | **Implements capture for RenderDoc debugging** to analyze GPU workloads. |
+
+___
+
+<div align="center">
+  <br>
+    <img src="./docs/media/Khronos_Damaged_Helmet.png" alt="NGrid Mandelbrot Set" width="1000" height="850"/>
+  <br>
+  <p align="center">
+    example: TEST RENDER using the vkcontext.h library (<em>Source Model Credit: Khronos Group</em>)
+</div>
 
 ---
 

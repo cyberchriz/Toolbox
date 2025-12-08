@@ -365,6 +365,7 @@ enum  TextureType {
 enum EventType {
 	// Window/Surface Lifecycle Events
 	WINDOW_RESIZE,
+	WINDOW_FOCUS_CHANGE,
 	WINDOW_CLOSE,
 
 	// Keyboard Events
@@ -722,6 +723,7 @@ public:
 	const VkPhysicalDeviceSynchronization2Features& get_synchronization_features() const;
 	const VkPhysicalDeviceTimelineSemaphoreFeatures& get_timeline_sempahore_features() const;
 	VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
+	void wait_idle();
 
 protected:
 	void destroy(); // helper method to release resources
@@ -800,7 +802,7 @@ public:
 	~Image();
 
 	// display image to surface (e.g. for debugging)
-	void display(
+	Surface& display(
 		uint32_t mip_level = 0,
 		uint32_t array_layer = 0,
 		uint32_t initial_width = 1920,
@@ -1042,12 +1044,22 @@ struct SurfaceEvent {
 			uint32_t height;
 		} resize;
 
+		// WINDOW_FOCUS_CHANGE
+		struct {
+			int focused; // 1 (true) or 0 (false)
+		} focus;
+
 		// KEY_PRESS / KEY_RELEASE
 		struct {
 			int key_code;
 			int scancode;
 			int mods; // Modifier keys (Shift, Ctrl, Alt)
 		} key;
+
+		// TEXT_INPUT
+		struct {
+			uint32_t codepoint; // Unicode codepoint of the character typed
+		} text_input;
 
 		// MOUSE_MOVE
 		struct {
@@ -1145,30 +1157,7 @@ public:
 	EventManager& get_event_manager();
 
 #if defined(__ANDROID__)
-	// --- Static Trampoline Functions (Android NDK Requirement) ---
-	
-	// Ttrampoline function to route a command to the correct Surface instance
-	static void handle_cmd(struct android_app* app, int32_t cmd) {
-		if (app->userData) {
-			// Cast the user data back to the Surface instance pointer
-			Surface* surface = static_cast<Surface*>(app->userData);
-			// Call the non-static member function on the instance
-			surface->android_command(cmd);
-		}
-	}
-
-	// Trampoline for input events
-	static int32_t handle_input(struct android_app* app, AInputEvent* event) {
-		if (app->userData) {
-			Surface* surface = static_cast<Surface*>(app->userData);
-			// TODO: This should eventually dispatch an event via surface->dispatch_event(...)
-			// For now, return 0 (not handled) or 1 (handled)
-			return 0; // Returning 0 (not handled) for simplicity
-		}
-		return 0;
-	}
-
-	// NDK command handler
+	// NDK command handler: receives commands from the static trampoline
 	void android_command(int32_t cmd);
 #endif
 
@@ -1187,10 +1176,27 @@ protected:
 	EventManager event_manager;
 
 #if defined(__ANDROID__)
-	ANativeWindow* android_window = nullptr;
-	android_app* app = nullptr;
+	ANativeWindow* android_window = nullptr; // Instance member
+	struct android_app* app = nullptr;       // Instance member
 #else
 	GLFWwindow* glfw_window = nullptr;
+#endif
+
+	// Private static callbacks (Trampoline Functions)
+private:
+#if defined(__ANDROID__)
+	// Android NDK Trampolines
+	static void handle_cmd(struct android_app* app, int32_t cmd);
+	static int32_t handle_input(struct android_app* app, AInputEvent* event);
+#else
+	// GLFW (Desktop) Trampolines
+	static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+	static void glfw_resize_callback(GLFWwindow* window, int width, int height);
+	static void glfw_mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
+	static void glfw_mouse_move_callback(GLFWwindow* window, double xpos, double ypos);
+	static void glfw_scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+	static void glfw_close_callback(GLFWwindow* window);
+	static void glfw_focus_callback(GLFWwindow* window, int focused);
 #endif
 };
 
@@ -2602,8 +2608,8 @@ public:
 	// present the rendered image to the graphics queue (method overload with multiple semaphores)
 	VkResult present_rendered_image(std::vector<Semaphore>& binary_wait_semaphores);
 
-	void recreate();
-
+	Swapchain& update_extent(VkExtent2D extent);
+	
 	// getters
 	uint32_t get_width() const;
 	uint32_t get_height() const;
@@ -2615,21 +2621,24 @@ public:
 	VkSurfaceFormatKHR get_surface_format() const;
 	ImageView& get_color_image_view(uint32_t index);
 	ImageView& get_framebuffer_image_view(uint32_t index);
-	VkFramebuffer get_framebuffer(uint32_t index) const;
+	FrameBuffer& get_framebuffer(uint32_t index);
 	Image& get_image(uint32_t index);
 
 protected:
+	void create();
 	void destroy();
-	uint32_t num_images = 0;
+	void recreate();
+	VkPresentModeKHR selected_present_mode;
 	std::vector<Image> images;
 	std::vector<ImageView> color_image_views;
 	std::vector<ImageView> framebuffer_image_views;
-	std::vector<VkFramebuffer> framebuffer;
+	std::vector<FrameBuffer> framebuffers;
 	VkSwapchainKHR swapchain = VK_NULL_HANDLE;
 	VkSurfaceCapabilitiesKHR surface_capabilities;
 	VkExtent2D extent = { 1920, 1080 };
 	VkSurfaceFormatKHR surface_format;
 	VkImageUsageFlags image_usage;
+	uint32_t image_count;
 	VkColorSpaceKHR color_space;
 	VkDevice logical = VK_NULL_HANDLE;
 	Device* device = nullptr;					// pointer to the device that created this Swapchain (the device object must outlive this Swapchain; the device itself is NOT OWNED BY THIS CLASS !)
@@ -4052,6 +4061,13 @@ VkFormat Device::find_supported_format(const std::vector<VkFormat>& candidates, 
 	}
 }
 
+void Device::wait_idle() {
+	VkResult result = vkDeviceWaitIdle(logical);
+	if (result != VK_SUCCESS) {
+		Log::debug("in Device::wait_idle(): ", vkresult_to_string(result));
+	}
+}
+
 // This method selects and returns a surface format,
 // negotiating between the requirements of physical device, surface, and candidate preferences
 VkSurfaceFormatKHR Device::select_surface_format(Surface& surface) {
@@ -4245,9 +4261,10 @@ Image::~Image() {
 	destroy();
 }
 
-// method to display image content on a given surface (at specified mip level and array layer),
-// e.g. for debugging purposes
-void Image::display(
+// method to display image content on a surface (at specified mip level and array layer),
+// e.g. for debugging purposes;
+// returns the a reference to the Surface instance
+Surface& Image::display(
 	uint32_t mip_level,
 	uint32_t array_layer,
 	uint32_t initial_width,
@@ -4260,6 +4277,7 @@ void Image::display(
 	Surface& surface = manager.get_surface(initial_width, initial_height, window_title, monitor, share);
 
 	// ... TODO: implement image display functionality ...
+	return surface;
 }
 
 // debug helper function to read back pixels of a single mip level and array layer of an image
@@ -4729,9 +4747,11 @@ void EventManager::dispatch(const SurfaceEvent& event) {
 }
 
 #if defined(__ANDROID__)
+// This function serves as a hook but does not require complex logic 
+// as the NDK's handle_input trampoline handles the actual event routing to dispatch().
 void EventManager::setup_android_event_handlers(Surface* surface) {
-	// TODO: In a complete NDK app, this would involve setting up AInputQueue listeners.
-	// For now, it provides the required hook for Surface.cpp.
+	// Suppress unused parameter warning since the logic is handled in Surface::handle_input
+	(void)surface;
 }
 #endif
 
@@ -4770,7 +4790,8 @@ Surface::Surface(const Instance& instance, uint32_t initial_width, uint32_t init
 // note: please make sure the instance has been created with GLFW extensions and glfwInit() has been called before using this constructor
 Surface::Surface(const Instance& instance, uint32_t initial_width, uint32_t initial_height, const char* window_title, GLFWmonitor* monitor, GLFWwindow* share) : instance_handle(instance.get()) {
 	if (!instance_handle) {
-		Log::error("Surface creation failed: Provided VkInstance is NULL.");
+		Log::warning("Surface creation failed: Provided VkInstance is NULL.");
+		return;
 	}
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);	// Tell GLFW not to create an OpenGL context
@@ -4782,7 +4803,17 @@ Surface::Surface(const Instance& instance, uint32_t initial_width, uint32_t init
 		return;
 	}
 
+	// set user pointer first
 	glfwSetWindowUserPointer(this->glfw_window, this);
+
+	// Set up GLFW event callbacks 
+	glfwSetKeyCallback(this->glfw_window, glfw_key_callback);
+	glfwSetFramebufferSizeCallback(this->glfw_window, glfw_resize_callback);
+	glfwSetMouseButtonCallback(this->glfw_window, glfw_mouse_button_callback);
+	glfwSetCursorPosCallback(this->glfw_window, glfw_mouse_move_callback);
+	glfwSetScrollCallback(this->glfw_window, glfw_scroll_callback);
+	glfwSetWindowCloseCallback(this->glfw_window, glfw_close_callback);
+	glfwSetWindowFocusCallback(this->glfw_window, glfw_focus_callback);
 
 	VkResult result = glfwCreateWindowSurface(instance_handle, this->glfw_window, nullptr, &surface);
 	if (result == VK_SUCCESS) {
@@ -4791,10 +4822,9 @@ Surface::Surface(const Instance& instance, uint32_t initial_width, uint32_t init
 	else {
 		glfwDestroyWindow(this->glfw_window);
 		glfw_window = nullptr;
-		Log::error("Surface constructor: Failed to create window surface with GLFW! Result = ", vkresult_to_string(result));
+		Log::warning("Surface constructor: Failed to create window surface with GLFW! Result = ", vkresult_to_string(result));
+		return;
 	}
-	
-	// TODO: Set up GLFW event callbacks (key, mouse, resize) to call this->dispatch_event(...)
 }
 #endif
 
@@ -4852,6 +4882,7 @@ Surface::~Surface() {
 	destroy();
 }
 
+// Polls events from the underlying windowing system (GLFW or NDK).
 void Surface::poll_events() {
 #if defined(__ANDROID__)
 	if (!this->app) { return; }
@@ -4870,18 +4901,26 @@ void Surface::poll_events() {
 #endif
 }
 
-// Dispatcher for the native/GLFW callbacks to use
+// Dispatch a SurfaceEvent to the internal EventManager
 void Surface::dispatch_event(const SurfaceEvent& event) {
 	this->event_manager.dispatch(event);
 }
 
+// Get a reference to the internal EventManager
 EventManager& Surface::get_event_manager() {
 	return this->event_manager;
 }
 
-// Non-static member function to handle android commands
+// NDK command handler (Android);
+// Handles an NDK command received from the static trampoline
 #if defined(__ANDROID__)
 void Surface::android_command(int32_t cmd) {
+	// Send the command as a SurfaceEvent for easy handling in the main application loop
+	SurfaceEvent event;
+	event.type = EventType::ANDROID_COMMAND;
+	event.android_cmd.cmd = cmd;
+	this->dispatch_event(event);
+
 	switch (cmd) {
 	case APP_CMD_INIT_WINDOW:
 		if (app && app->window) {
@@ -4913,8 +4952,19 @@ void Surface::android_command(int32_t cmd) {
 		}
 		this->android_window = nullptr;
 		break;
-
-		// TODO: other handlers for APP_CMD_GAINED_FOCUS, APP_CMD_LOST_FOCUS, etc.
+	case APP_CMD_WINDOW_RESIZED:
+		// Explicitly dispatch a WINDOW_RESIZE event with the new dimensions
+		if (app && app->window) {
+			SurfaceEvent resize_event;
+			resize_event.type = EventType::WINDOW_RESIZE;
+			resize_event.resize.width = ANativeWindow_getWidth(app->window);
+			resize_event.resize.height = ANativeWindow_getHeight(app->window);
+			this->dispatch_event(resize_event);
+		}
+		break;
+	default:
+		// All other lifecycle events (e.g., GAINED_FOCUS, LOST_FOCUS) are handled by the initial dispatch_event(ANDROID_COMMAND)
+		break;
 	}
 }
 #endif
@@ -5049,6 +5099,183 @@ if (this->app) {
 	}
 	surface = VK_NULL_HANDLE;
 }
+
+// --- Static Trampoline Functions (Android NDK Requirement) ---
+#if defined(__ANDROID__)
+/**
+ * @brief Trampoline function to handle NDK application commands (APP_CMD_*) and route them to the Surface instance.
+ * @param app Pointer to the android_app structure containing the user data.
+ * @param cmd The command ID (e.g., APP_CMD_INIT_WINDOW).
+ */
+void Surface::handle_cmd(struct android_app* app, int32_t cmd) {
+	if (app->userData) {
+		// Retrieve the Surface instance from the user data pointer.
+		Surface* surface = static_cast<Surface*>(app->userData);
+		// Call the non-static member function to process the command.
+		surface->android_command(cmd);
+	}
+}
+
+/**
+ * @brief Trampoline function to handle NDK input events (touch, keys, etc.) and route them to the Surface instance.
+ * @param app Pointer to the android_app structure.
+ * @param event The raw Android NDK input event.
+ * @return 1 if the event was handled, 0 otherwise.
+ */
+int32_t Surface::handle_input(struct android_app* app, AInputEvent* event) {
+	if (app->userData) {
+		Surface* surface = static_cast<Surface*>(app->userData);
+		SurfaceEvent surface_event;
+
+		int32_t event_type = AInputEvent_getType(event);
+
+		if (event_type == AINPUT_EVENT_TYPE_KEY) {
+			int32_t key_action = AKeyEvent_getAction(event);
+
+			surface_event.type = (key_action == AKEY_EVENT_ACTION_DOWN) ? EventType::KEY_PRESS : EventType::KEY_RELEASE;
+			surface_event.key.key_code = AKeyEvent_getKeyCode(event);
+			surface_event.key.scancode = AKeyEvent_getScanCode(event);
+			surface_event.key.mods = AKeyEvent_getMetaState(event);
+
+			// Dispatch the event
+			surface->dispatch_event(surface_event);
+			return 1; // Event handled
+		}
+		else if (event_type == AINPUT_EVENT_TYPE_MOTION) {
+			int32_t motion_action = AMotionEvent_getAction(event);
+
+			// Focus only on primary pointer movements (Pointer Index 0)
+			size_t pointer_index = AMotionEvent_getActionIndex(event);
+			if (pointer_index == 0) {
+				float x = AMotionEvent_getX(event, pointer_index);
+				float y = AMotionEvent_getY(event, pointer_index);
+
+				switch (motion_action & AMOTION_EVENT_ACTION_MASK) {
+				case AMOTION_EVENT_ACTION_DOWN:
+					// Treat initial touch as a mouse button press (left click equivalent)
+					surface_event.type = EventType::MOUSE_BUTTON_PRESS;
+					surface_event.mouse_button.button = 0; // Left mouse button
+					surface_event.mouse_button.mods = AMotionEvent_getMetaState(event);
+					surface->dispatch_event(surface_event);
+					break;
+				case AMOTION_EVENT_ACTION_UP:
+					// Treat lift as a mouse button release
+					surface_event.type = EventType::MOUSE_BUTTON_RELEASE;
+					surface_event.mouse_button.button = 0;
+					surface_event.mouse_button.mods = AMotionEvent_getMetaState(event);
+					surface->dispatch_event(surface_event);
+					break;
+				case AMOTION_EVENT_ACTION_MOVE:
+					surface_event.type = EventType::MOUSE_MOVE;
+					surface_event.mouse_move.xpos = x;
+					surface_event.mouse_move.ypos = y;
+					surface->dispatch_event(surface_event);
+					break;
+				default:
+					return 0; // Unhandled motion event
+				}
+			}
+			return 1; // Event handled
+		}
+	}
+	return 0; // Event not handled
+}
+#endif // __ANDROID__
+
+// --- Static Trampoline Functions (GLFW Desktop Requirement) ---
+#ifndef __ANDROID__
+// Key callback
+void Surface::glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+	Surface* surface = static_cast<Surface*>(glfwGetWindowUserPointer(window));
+	if (surface) {
+		SurfaceEvent event;
+		if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+			event.type = EventType::KEY_PRESS;
+		}
+		else if (action == GLFW_RELEASE) {
+			event.type = EventType::KEY_RELEASE;
+		}
+		else {
+			return;
+		}
+		event.key.key_code = key;
+		event.key.scancode = scancode;
+		event.key.mods = mods;
+		surface->dispatch_event(event);
+	}
+}
+
+// Framebuffer resize callback
+void Surface::glfw_resize_callback(GLFWwindow* window, int width, int height) {
+	Surface* surface = static_cast<Surface*>(glfwGetWindowUserPointer(window));
+	if (surface) {
+		SurfaceEvent event;
+		event.type = EventType::WINDOW_RESIZE;
+		event.resize.width = static_cast<uint32_t>(width);
+		event.resize.height = static_cast<uint32_t>(height);
+		surface->dispatch_event(event);
+	}
+}
+
+// Mouse button callback
+void Surface::glfw_mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+	Surface* surface = static_cast<Surface*>(glfwGetWindowUserPointer(window));
+	if (surface) {
+		SurfaceEvent event;
+		event.type = (action == GLFW_PRESS) ? EventType::MOUSE_BUTTON_PRESS : EventType::MOUSE_BUTTON_RELEASE;
+		event.mouse_button.button = button;
+		event.mouse_button.mods = mods;
+		surface->dispatch_event(event);
+	}
+}
+
+// Cursor position (mouse move) callback
+void Surface::glfw_mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
+	Surface* surface = static_cast<Surface*>(glfwGetWindowUserPointer(window));
+	if (surface) {
+		SurfaceEvent event;
+		event.type = EventType::MOUSE_MOVE;
+		event.mouse_move.xpos = xpos;
+		event.mouse_move.ypos = ypos;
+		surface->dispatch_event(event);
+	}
+}
+
+// Scroll wheel callback
+void Surface::glfw_scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+	Surface* surface = static_cast<Surface*>(glfwGetWindowUserPointer(window));
+	if (surface) {
+		SurfaceEvent event;
+		event.type = EventType::MOUSE_SCROLL;
+		event.scroll.xoffset = xoffset;
+		event.scroll.yoffset = yoffset;
+		surface->dispatch_event(event);
+	}
+}
+
+// Window close callback. Dispatches a WINDOW_CLOSE event.
+void Surface::glfw_close_callback(GLFWwindow* window) {
+	Surface* surface = static_cast<Surface*>(glfwGetWindowUserPointer(window));
+	if (surface) {
+		SurfaceEvent event;
+		event.type = EventType::WINDOW_CLOSE;
+		// Optionally: use glfwSetWindowShouldClose(window, GLFW_FALSE) here 
+		// if the application handles the close request asynchronously.
+		surface->dispatch_event(event);
+	}
+}
+
+// Window focus callback. Dispatches a WINDOW_FOCUS_CHANGE event
+void Surface::glfw_focus_callback(GLFWwindow* window, int focused) {
+	Surface* surface = static_cast<Surface*>(glfwGetWindowUserPointer(window));
+	if (surface) {
+		SurfaceEvent event;
+		event.type = EventType::WINDOW_FOCUS_CHANGE;
+		event.focus.focused = focused;
+		surface->dispatch_event(event);
+	}
+}
+#endif // !__ANDROID__
 
 // +=================================+   
 // | Fence                           |
@@ -8160,12 +8387,13 @@ void Mesh::load_gltf(const std::filesystem::path& full_path, Semaphore* timeline
 		case 33648: // MIRRORED_REPEAT
 			return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
 		case 10497: // REPEAT (glTF default)
+			return VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		default:
 			// handles cases where the sampler might be missing or the value is unknown.
 			// glTF spec defaults to REPEAT (10497) if the sampler index is missing.
 			return VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		}
-		};
+	};
 
 	for (size_t tex_idx = 0; tex_idx < model.textures.size(); ++tex_idx) {
 		const auto& gltf_tex = model.textures[tex_idx];
@@ -10837,6 +11065,7 @@ Swapchain::Swapchain(
 	image_usage(image_usage),
 	depth_buffer(&depth_buffer),
 	other_image_views(other_image_views),
+	image_count(min_image_count),
 	extent(extent),
 	view_type(view_type),
 	present_mode_preference(present_mode_preference) {
@@ -10851,7 +11080,7 @@ Swapchain::Swapchain(
 	if (available_present_modes.empty()) {
 		Log::error("Swapchain creation failed; no suitable present modes available for the surface");
 	}
-	VkPresentModeKHR selected_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+	selected_present_mode = VK_PRESENT_MODE_FIFO_KHR;
 	bool success = false;
 	for (const auto& available : available_present_modes) {
 		if (available == present_mode_preference) {
@@ -10862,9 +11091,11 @@ Swapchain::Swapchain(
 	if (!success) {
 		Log::warning("in Swapchain constructor: preferred present mode not available -> falling back to FIFO as default");
 	}
+	this->create();
+}
 
+void Swapchain::create() {
 	// adjust image count
-	uint32_t image_count = min_image_count;
 	if (image_count > surface_capabilities.maxImageCount) {
 		image_count = surface_capabilities.maxImageCount;
 		Log::warning("in Swapchain constructor: min image count exceeds max image count of surface capabilities -> reduced to ", image_count);
@@ -10884,7 +11115,7 @@ Swapchain::Swapchain(
 	VkSwapchainCreateInfoKHR create_info = {};
 	create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	create_info.pNext = nullptr;
-	create_info.surface = surface.get();
+	create_info.surface = surface->get();
 	create_info.minImageCount = image_count;
 	create_info.imageFormat = surface_format.format;
 	create_info.imageColorSpace = surface_format.colorSpace;
@@ -10910,58 +11141,36 @@ Swapchain::Swapchain(
 	}
 
 	// get swapchain image handles
-	vkGetSwapchainImagesKHR(logical, swapchain, &num_images, nullptr);
-	std::vector<VkImage> image_handles(num_images); // only valid within local scope
-	vkGetSwapchainImagesKHR(logical, swapchain, &num_images, image_handles.data());
+	vkGetSwapchainImagesKHR(logical, swapchain, &image_count, nullptr);
+	std::vector<VkImage> image_handles(image_count); // only valid within local scope
+	vkGetSwapchainImagesKHR(logical, swapchain, &image_count, image_handles.data());
 
 	// create custom image objects from handles
-	images.reserve(num_images);
-	for (uint32_t i = 0; i < num_images; i++) {
-		images.emplace_back(device, image_handles[i], VK_IMAGE_LAYOUT_UNDEFINED);
+	images.reserve(image_count);
+	for (uint32_t i = 0; i < image_count; i++) {
+		images.emplace_back(*device, image_handles[i], VK_IMAGE_LAYOUT_UNDEFINED);
 		images[i].extent = { extent.width, extent.height, 1u };
 		images[i].format = surface_format.format;
 	}
 
 	// create image views for Swapchain images
-	color_image_views.reserve(num_images);
-	for (uint32_t i = 0; i < num_images; i++) {
-		color_image_views.emplace_back(device, images[i], view_type, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1);
+	color_image_views.reserve(image_count);
+	for (uint32_t i = 0; i < image_count; i++) {
+		color_image_views.emplace_back(*device, images[i], view_type, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1);
 	}
-	Log::info("Swapchain created with ", num_images, " images/views.");
+	Log::info("Swapchain created with ", image_count, " images/views.");
 
 	// create framebuffers
-	framebuffer.resize(num_images);
-	uint32_t expected_attachments = 2u; // guarantee a minimum of 2 attachments (for color and depth)
-	if (other_image_views.has_value()) {
-		expected_attachments += static_cast<uint32_t>(other_image_views.value().size());
-	}
-
-	for (uint32_t i = 0; i < num_images; i++) {
+	framebuffers.reserve(image_count);
+	for (uint32_t i = 0; i < image_count; i++) {
 		std::vector<VkImageView> all_image_views;
-		all_image_views.reserve(expected_attachments);
 		all_image_views.push_back(color_image_views[i].get());
-		all_image_views.push_back(depth_buffer.get_image_view().get());
-
-		// add other attachments
+		all_image_views.push_back(depth_buffer->get_image_view().get());
 		if (other_image_views.has_value()) {
 			all_image_views.insert(all_image_views.end(), other_image_views.value().begin(), other_image_views.value().end());
 		}
-
-		VkFramebufferCreateInfo framebuffer_create_info = {};
-		framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebuffer_create_info.renderPass = renderpass.get();
-		framebuffer_create_info.attachmentCount = static_cast<uint32_t>(all_image_views.size());
-		framebuffer_create_info.pAttachments = all_image_views.data();
-		framebuffer_create_info.width = extent.width;
-		framebuffer_create_info.height = extent.height;
-		framebuffer_create_info.layers = 1;
-
-		VkResult result = vkCreateFramebuffer(logical, &framebuffer_create_info, nullptr, &framebuffer[i]);
-		if (result != VK_SUCCESS) {
-			Log::error("Failed to create framebuffer ", i, " (VkResult=", result, ", ", vkresult_to_string(result), ")");
-		}
+		framebuffers.emplace_back(FrameBuffer(*device, *renderpass, all_image_views, extent.width, extent.height, 1, 0, nullptr));
 	}
-
 	Log::info("Swapchain framebuffers created successfully.");
 }
 
@@ -11076,27 +11285,15 @@ VkResult Swapchain::present_rendered_image(std::vector<Semaphore>& binary_wait_s
 	return result;
 }
 
+Swapchain& Swapchain::update_extent(VkExtent2D extent) {
+	this->extent = extent;
+	this->recreate();
+	return *this;
+}
+
 void Swapchain::recreate() {
 	destroy();
-	// Recreate Swapchain with the same parameters
-	Swapchain new_swapchain(
-		*device,
-		*renderpass,
-		*surface,
-		surface_format,
-		image_usage,
-		*depth_buffer,
-		*other_image_views,
-		extent,
-		num_images,
-		view_type,
-		present_mode_preference
-	);
-	swapchain = new_swapchain.get();
-	images = std::move(new_swapchain.images);
-	color_image_views = std::move(new_swapchain.color_image_views);
-	framebuffer = new_swapchain.framebuffer;
-	framebuffer_image_views = std::move(new_swapchain.framebuffer_image_views);
+	create();
 }
 
 // getters
@@ -11106,7 +11303,7 @@ VkExtent2D Swapchain::get_extent() const { return extent; }
 VkSwapchainKHR Swapchain::get() const { return swapchain; }
 Image& Swapchain::get_current_image() { return images[current_image_index]; }
 uint32_t Swapchain::get_current_image_index() const { return current_image_index; }
-uint32_t Swapchain::get_image_count() const { return num_images; }
+uint32_t Swapchain::get_image_count() const { return image_count; }
 VkSurfaceFormatKHR Swapchain::get_surface_format() const { return surface_format; }
 
 ImageView& Swapchain::get_color_image_view(uint32_t index) {
@@ -11127,14 +11324,11 @@ ImageView& Swapchain::get_framebuffer_image_view(uint32_t index) {
 	}
 }
 
-VkFramebuffer Swapchain::get_framebuffer(uint32_t index) const {
-	if (index < framebuffer.size()) {
-		return framebuffer[index];
+FrameBuffer& Swapchain::get_framebuffer(uint32_t index) {
+	if (index >= framebuffers.size()) {
+		Log::error("Invalid index for framebuffer (out of bounds): ", index);
 	}
-	else {
-		Log::error("Invalid index for framebuffer: ", index);
-		return VK_NULL_HANDLE;
-	}
+	return framebuffers[index];
 }
 
 Image& Swapchain::get_image(uint32_t index) {
@@ -11153,17 +11347,14 @@ Swapchain::~Swapchain() {
 
 void Swapchain::destroy() {
 	if (swapchain != nullptr) {
+		device->wait_idle();
 		vkDestroySwapchainKHR(logical, swapchain, nullptr);
 		swapchain = nullptr;
 	}
-	for (uint32_t i = 0; i < num_images; i++) {
-		vkDestroyFramebuffer(logical, framebuffer[i], nullptr);
-	}
 	color_image_views.clear();
 	framebuffer_image_views.clear();
-	framebuffer.clear();
+	framebuffers.clear();
 	images.clear();
-	num_images = 0;
 	Log::info("Swapchain destroyed.");
 }
 

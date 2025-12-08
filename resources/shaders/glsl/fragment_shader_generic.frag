@@ -16,6 +16,7 @@ const int LIGHT_TYPE_DIRECTIONAL = 0;
 const int LIGHT_TYPE_POINT = 1;
 const int LIGHT_TYPE_SPOT = 2;
 const float EPSILON = 0.0001;
+const vec3 F0_DIELECTRIC = vec3(0.044); 
 
 // ====================================================================================================
 // Matching C++ structs MaterialTexIDs & SceneMaterialTexIDs;
@@ -238,18 +239,6 @@ vec3 tone_map_aces(vec3 color, float contrast) {
 }
 
 // ====================================================================================================
-vec3 get_F0(vec3 base_color, float metallic, float ior) {
-    vec3 F0;
-    if (metallic > EPSILON) {
-        F0 = base_color;
-    } else {
-        float r = (ior - 1.0) / (ior + 1.0);
-        F0 = vec3(r * r);
-    }
-    return mix(F0, base_color, metallic);
-}
-
-// ====================================================================================================
 // --- MAIN LIGHTING FUNCTION ---
 
 vec3 calculate_light_contribution(
@@ -377,17 +366,17 @@ vec3 calculate_light_contribution(
             float NdotV_cc = max(dot(N_cc, V_world), EPSILON);
             float NdotH_cc = max(dot(N_cc, H_cc), EPSILON);
             
-            // Clearcoat BRDF (using its own roughness, fixed F0=0.04)
+            // Clearcoat BRDF (using its own roughness)
             float D_cc = distribution_ggx_clearcoat(NdotH_cc, clearcoat_roughness);
             float G_cc = geometry_smith_clearcoat(NdotL_cc, NdotV_cc);
-            vec3 F_cc = schlick_fresnel(NdotV_cc, vec3(0.04));
+            vec3 F_cc = schlick_fresnel(NdotV_cc, F0_DIELECTRIC);
             
             // Clearcoat Layer
             vec3 cc_brdf = (D_cc * G_cc * F_cc) / (4.0 * NdotL_cc * NdotV_cc);
             L_clearcoat = cc_brdf * radiance * NdotL_cc * clearcoat_factor;
 
             // Attenuate base layer by the clearcoat Fresnel, scaled by clearcoat_factor
-            vec3 F_cc_base = schlick_fresnel(NdotV_cc, vec3(0.04));
+            vec3 F_cc_base = schlick_fresnel(NdotV_cc, F0_DIELECTRIC);
             L_base = L_base * (vec3(1.0) - F_cc_base * clearcoat_factor) + L_clearcoat;
         }
 
@@ -412,7 +401,7 @@ vec3 calculate_light_contribution(
         if (phong_shininess < 0.001 && (material.metallic > 0.045 || material.roughness > 0.0)) {
             // 1. Synthesize Specular Color (Ks) from PBR F0/Metallic:
             // Use 4.5% F0 (dielectric base) and blend to final_color_base for metals.
-            phong_specular_color = mix(vec3(0.045), final_color_base, material.metallic);
+            phong_specular_color = mix(F0_DIELECTRIC, final_color_base, material.metallic);
         
             // 2. Synthesize Shininess (Ns) from PBR Roughness (inverse relationship):
             float inverse_roughness = 1.0 - material.roughness;
@@ -504,6 +493,7 @@ void main() {
     // --- NORMAL MAPPING & TBN ---
     vec3 N = normalize(v_normal);
     vec3 T = normalize(v_tangent.xyz);
+    T = normalize(T - dot(T, N) * N);
     vec3 B = normalize(cross(N, T) * v_tangent.w); // Calculate the Bitangent (B) robustly
     mat3 TBN = mat3(T, B, N);
     
@@ -518,7 +508,7 @@ void main() {
     
     // Transform tangent space normal to world space normal
     vec3 N_world = normalize(TBN * sampled_normal);
-    
+
     // --- View-Dependent Normal Flip ---
     bool is_opaque = (blend_mode == 0) || (final_transmission < EPSILON) || (final_alpha == 1.0);
     if (is_opaque) {
@@ -545,7 +535,7 @@ void main() {
             final_specular_color *= specular_sample;
         }
     };
-
+    
     // ====================================================================================================
     // --- METALLIC-ROUGHNESS SAMPLING (PBR) ---
     float final_roughness = material.roughness;
@@ -581,7 +571,7 @@ void main() {
 
     // ====================================================================================================
     // --- IOR FACTOR (KHR_materials_ior) ---
-    float final_ior = material.ior; 
+    float final_ior = material.ior;
     
     // ====================================================================================================
     // --- CLEARCOAT SAMPLING (KHR_materials_clearcoat) ---
@@ -622,7 +612,7 @@ void main() {
 
     clearcoat_factor = clamp(clearcoat_factor, 0.0, 1.0);
     clearcoat_roughness = clamp(clearcoat_roughness, 0.0, 1.0);
-
+    
     // ====================================================================================================
     // --- SHEEN COLOR SAMPLING ---
     vec3 final_sheen_color = vec3(0.0);
@@ -640,7 +630,7 @@ void main() {
         final_sheen_roughness *= texture(tex_samplers[sr_tex_id], v_tex_coord.xy).g; 
     }
     final_sheen_roughness = clamp(final_sheen_roughness, 0.045, 1.0);
-
+    
     // ====================================================================================================
     // --- LEGACY: SPECULAR GLOSSINESS OVERRIDE (HIGHER PRIORITY) ---
     int sgd_tex_id = texIDs[material_index].specular_gloss_diffuse_tex_id;
@@ -658,7 +648,7 @@ void main() {
 
     // ====================================================================================================
     // --- F0 CALCULATION & SG SPECULAR OVERRIDE ---
-    vec3 final_F0 = get_F0(final_color_base, final_metallic, final_ior);
+    vec3 final_F0 = mix(F0_DIELECTRIC, final_color_base, final_metallic);
     int sg_tex_id = texIDs[material_index].specular_gloss_tex_id;
     if (sg_tex_id >= 0) {
         final_F0 = texture(tex_samplers[sg_tex_id], v_tex_coord.xy).rgb * material.specular.rgb * material.specular_factor;
