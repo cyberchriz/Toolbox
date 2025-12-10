@@ -278,6 +278,7 @@ class Texture;
 struct Vertex;
 class FrameBuffer;
 class Semaphore;
+class Renderer;
 
 // +=================================+   
 // | Global Enums                    |
@@ -922,6 +923,7 @@ const ColorBlendState ColorBlendState::ADDITIVE_BLEND = ColorBlendState(
 // a render pass defines the structure and dependencies of graphics rendering operations
 class RenderPass {
 	friend class SubPass;
+	friend class Renderer;
 public:
 	// delete default constructor
 	RenderPass() = delete;
@@ -1002,6 +1004,7 @@ protected:
 // | SubPass                         |
 // +=================================+
 class SubPass {
+	friend class Renderer;
 public:
 	SubPass() = delete;
 	SubPass(RenderPass& renderpass);
@@ -2311,6 +2314,7 @@ int Camera::next_unique_ID = 0;
 // | Scene                           |
 // +=================================+
 class Scene {
+	friend class Renderer;
 public:
 	// ========================================================================
 	// PUBLIC INTERFACE (Constructors, Destructors, Getters, Setters, etc.)
@@ -3483,8 +3487,127 @@ private:
 	VulkanManager(); // private constructor
 };
 
+// +=================================+   
+// | Renderer                        |
+// +=================================+
+class Renderer {
+public:
+	// constructor
+	Renderer(Scene& scene, VkExtent2D extent = {1920, 1080});
+		
+	// destructor
+	~Renderer();
+	
+	// deleted copy constructor and copy assignment operator
+	Renderer(const Renderer& other) = delete;
+	Renderer& operator=(const Renderer& other) = delete;
+	
+	// move constructor & move assignment
+	Renderer(Renderer&& other) noexcept;
+	Renderer& operator=(Renderer&& other) noexcept;
 
+	// main render function
+	void render_next_frame();
 
+	// set externally owned resources
+	void set_surface(Surface& surface);
+	void set_renderpass(RenderPass& renderpass);
+	void set_subpass(SubPass& subpass);
+	void set_pipeline_layout(GraphicsPipelineLayout& pipeline_layout);
+	void set_pipeline_properties(PipelineProperties& pipeline_properties);
+	void set_pipeline(GraphicsPipeline& pipeline);
+	void set_push_constants(PushConstants& push_constants);
+	void set_vertex_shader(ShaderModule& vertex_shader);
+	void set_fragment_shader(ShaderModule& fragment_shader);
+	void set_descriptor_set_layout(DescriptorSetLayout& descriptor_set_layout);
+	void set_descriptor_set(DescriptorSet& descriptor_set);
+
+	// getters
+	Surface& get_surface();
+	Scene& get_scene();
+	RenderPass& get_renderpass();
+	SubPass& get_subpass();
+	GraphicsPipelineLayout& get_pipeline_layout();
+	PipelineProperties& get_pipeline_properties();
+	GraphicsPipeline& get_pipeline();
+	PushConstants& get_constants();
+	ShaderModule& get_vertex_shader();
+	ShaderModule& get_fragment_shader();
+	DescriptorSetLayout& get_descriptor_set_layout();
+	DescriptorSet& get_descriptor_set();
+
+private:
+	// internally owned resources (optional; used for default construction)
+	std::unique_ptr<Swapchain> m_swapchain = nullptr;
+	std::unique_ptr<RenderPass> m_renderpass = nullptr;
+	std::unique_ptr<SubPass> m_subpass = nullptr;
+	std::unique_ptr<GraphicsPipelineLayout> m_pipeline_layout = nullptr;
+	std::unique_ptr<PipelineProperties> m_pipeline_properties = nullptr;
+	std::unique_ptr<GraphicsPipeline> m_pipeline = nullptr;
+	std::unique_ptr<PushConstants> m_push_constants = nullptr;
+	std::unique_ptr<ShaderModule> m_vertex_shader = nullptr;
+	std::unique_ptr<ShaderModule> m_fragment_shader = nullptr;
+	std::unique_ptr<DescriptorSetLayout> m_descriptor_set_layout = nullptr;
+	std::unique_ptr<DescriptorSet> m_descriptor_set = nullptr;
+	std::unique_ptr<DepthBuffer> m_depth_buffer = nullptr;
+	
+	// resource pointers (these correspond either to internally owned unique resources (via smart pointers) or to externally owned resources,
+	// therefore there is no need for explicit cleanup in the destructor)
+	VulkanManager* vk_manager = nullptr;
+	Task* task = nullptr;
+	Semaphore* tl_semaphore = nullptr;
+	Semaphore* image_available_semaphore = nullptr; // binary semaphore
+	Semaphore* render_finished_semaphore = nullptr; // binary semaphore
+	Swapchain* swapchain = nullptr;
+	Surface* surface = nullptr;
+	Scene* scene = nullptr;
+	RenderPass* renderpass = nullptr;
+	SubPass* subpass = nullptr;
+	GraphicsPipelineLayout* pipeline_layout = nullptr;
+	PipelineProperties* pipeline_properties = nullptr;
+	GraphicsPipeline* pipeline = nullptr;
+	PushConstants* push_constants = nullptr;
+	ShaderModule* vertex_shader = nullptr;
+	ShaderModule* fragment_shader = nullptr;
+	DescriptorSetLayout* descriptor_set_layout = nullptr;
+	DescriptorSet* descriptor_set = nullptr;
+
+	// other members
+	void finalize();
+	bool initialized = false;
+	bool is_default_renderer = false;
+	VkExtent2D extent;
+	std::vector<VkClearValue> clear_values;
+
+	// default bindings
+	struct DefaultBindings {
+		uint32_t materials = 0;
+		uint32_t lights = 1;
+		uint32_t tex_IDs = 2;
+		uint32_t model_matrices = 3;
+		uint32_t cubemap_irradiance = 4;
+		uint32_t cubemap_prefiltered = 5;
+		uint32_t brdf_lut = 6;
+		uint32_t textures = 7;
+	};
+
+	// offsets for default push constants
+	struct DefaultConstantsOffsets {
+		size_t view_matrix_offset;
+		size_t projection_offset;
+		size_t material_offset;
+		size_t light_count_offset;
+		size_t prefmipl_offset;
+		size_t exposure_offset;
+		size_t contrast_offset;
+		size_t ibl_intensity_offset;
+		size_t ambient_scene_color_offset;
+		size_t camera_position_offset;
+	};
+public:
+	DefaultConstantsOffsets default_offsets;
+	DefaultBindings default_bindings;
+};
 
 
 
@@ -4559,18 +4682,20 @@ VkSubpassDependency RenderPass::add_subpass_dependency(
 }
 
 void RenderPass::finalize() {
-	VkRenderPassCreateInfo renderpass_create_info = {};
-	renderpass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	renderpass_create_info.attachmentCount = static_cast<uint32_t>(attachment_description.size());
-	renderpass_create_info.pAttachments = attachment_description.data();
-	renderpass_create_info.subpassCount = static_cast<uint32_t>(subpass_description.size());
-	renderpass_create_info.pSubpasses = subpass_description.data();
-	renderpass_create_info.dependencyCount = static_cast<uint32_t>(subpass_dependency.size());
-	renderpass_create_info.pDependencies = subpass_dependency.data();
-	if (vkCreateRenderPass(logical, &renderpass_create_info, nullptr, &renderpass) != VK_SUCCESS) {
-		Log::error("failed to create render pass!");
+	if (!this->finalized) {
+		VkRenderPassCreateInfo renderpass_create_info = {};
+		renderpass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderpass_create_info.attachmentCount = static_cast<uint32_t>(attachment_description.size());
+		renderpass_create_info.pAttachments = attachment_description.data();
+		renderpass_create_info.subpassCount = static_cast<uint32_t>(subpass_description.size());
+		renderpass_create_info.pSubpasses = subpass_description.data();
+		renderpass_create_info.dependencyCount = static_cast<uint32_t>(subpass_dependency.size());
+		renderpass_create_info.pDependencies = subpass_dependency.data();
+		if (vkCreateRenderPass(logical, &renderpass_create_info, nullptr, &renderpass) != VK_SUCCESS) {
+			Log::error("failed to create render pass!");
+		}
+		this->finalized = true;
 	}
-	this->finalized = true;
 }
 
 // getter functions
@@ -4668,8 +4793,8 @@ void SubPass::add_attachment_reference(uint32_t attachment_index) {
 // returns the index of the subpass within the parent RenderPass
 uint32_t SubPass::finalize(VkSubpassDescriptionFlags flags, VkPipelineBindPoint bind_point) {
 	if (finalized) {
-		Log::warning("in method Subpass::finalize() this subpass has already been finalized and added to a parent RenderPass");
-		return UINT32_MAX;
+		Log::debug("in method Subpass::finalize() this subpass has already been finalized and added to a parent RenderPass");
+		return this->index;
 	}
 	uint32_t id = static_cast<uint32_t>(renderpass->subpass_description.size());
 	renderpass->subpass_description.resize(id + 1);
@@ -14248,6 +14373,330 @@ std::vector<std::unique_ptr<Task>> VulkanManager::tasks = {};
 std::vector<std::unique_ptr<Semaphore>> VulkanManager::timeline_semaphores = {};
 std::vector<std::unique_ptr<Surface>> VulkanManager::surfaces = {};
 
+// +=================================+   
+// | Renderer                        |
+// +=================================+
+
+// constructor
+Renderer::Renderer(Scene& scene, VkExtent2D extent) :
+	scene(&scene),
+	extent(extent),
+	vk_manager(&VulkanManager::get_singleton()) {
+	this->tl_semaphore = vk_manager->get_timeline_semaphore(
+		0,																					// initial value
+		VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,	// wait dst stage mask
+		VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT		// signal dst stage mask
+	);
+	task = &vk_manager->get_graphics_task(__FUNCTION__);
+	image_available_semaphore = &task->make_binary_semaphore(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+	render_finished_semaphore = &task->make_binary_semaphore(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
+}
+
+// destructor
+Renderer::~Renderer() {
+	// TODO
+}
+
+// move constructor
+Renderer::Renderer(Renderer&& other) noexcept {
+	// TODO
+}
+
+// move assignment
+Renderer& Renderer::operator=(Renderer&& other) noexcept {
+	// TODO
+}
+
+// set externally owned resources
+void Renderer::set_surface(Surface& surface) { this->surface = &surface; }
+void Renderer::set_renderpass(RenderPass& renderpass) { this->renderpass = &renderpass; }
+void Renderer::set_subpass(SubPass& subpass) { this->subpass = &subpass; }
+void Renderer::set_pipeline_layout(GraphicsPipelineLayout& pipeline_layout) { this->pipeline_layout = &pipeline_layout; }
+void Renderer::set_pipeline_properties(PipelineProperties& pipeline_properties) { this->pipeline_properties = &pipeline_properties; }
+void Renderer::set_pipeline(GraphicsPipeline& pipeline) { this->pipeline = &pipeline; }
+void Renderer::set_push_constants(PushConstants& push_constants) { this->push_constants = &push_constants; }
+void Renderer::set_vertex_shader(ShaderModule& vertex_shader) { this->vertex_shader = &vertex_shader; }
+void Renderer::set_fragment_shader(ShaderModule& fragment_shader) { this->fragment_shader = &fragment_shader; }
+void Renderer::set_descriptor_set_layout(DescriptorSetLayout& descriptor_set_layout) { this->descriptor_set_layout = &descriptor_set_layout; }
+void Renderer::set_descriptor_set(DescriptorSet& descriptor_set) { this->descriptor_set = &descriptor_set; }
+
+// private method to finalize the renderer after all resources have been assigned
+// (otherise, defaults are used)
+void Renderer::finalize() {
+
+	// make sure a surface has been assigned
+	if (!this->surface) {
+		Log::debug("Renderer::finalize(): no surface has been assigned -> creating a default surface with extent ", this->extent.width, "x", this->extent.height);
+		this->surface = &vk_manager->get_surface(this->extent.width, this->extent.height, "Vulkan Renderer");
+	}
+	auto surface_format = vk_manager->get_device().select_surface_format(*this->surface);
+
+	// make sure the scene has a cubemap
+	if (!this->scene->cubemap) {
+		Log::debug("Renderer::finalize(): no cubemap has been assigned to the scene -> loading a default equirectangular HDR cubemap");
+		this->scene->add_cubemap(
+			vk_manager->get_device(),
+			"resources/cubemaps/sunflowers_puresky_4k.exr",
+			tl_semaphore,
+			VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			TextureType::EQUIRECTANGULAR_HDR_TEXTYPE,
+			1024,
+			VK_FORMAT_R32G32B32A32_SFLOAT
+		);
+	}
+
+	// make sure a renderpass has been assigned
+	if (!this->renderpass) {
+		Log::debug("Renderer::finalize(): no renderpass has been assigned -> creating a default renderpass for the selected surface format (owned by the Renderer instance)");
+		uint32_t multisample_count = 1;
+		this->m_renderpass = std::make_unique<RenderPass>(vk_manager->get_device(), multisample_count);
+		this->renderpass = this->m_renderpass.get();
+	}
+
+	// make sure a subpass has been assigned
+	if (!this->subpass) {
+		Log::debug("Renderer::finalize(): no subpass has been assigned -> creating a default subpass for the selected surface format (owned by the Renderer instance)");
+		this->m_subpass = std::make_unique<SubPass>(*renderpass);
+		this->subpass = this->m_subpass.get();
+	}
+
+	// make sure the renderpass has at least one color attachment
+	if (!this->renderpass->has_color_attachment()) {
+		Log::debug("Renderer::finalize(): renderpass has no color attachment -> adding a default color attachment for the selected surface format");
+		this->subpass->add_attachment_reference(
+			this->renderpass->add_attachment(
+				AttachmentType::COLOR_TYPE,
+				ColorBlendState::OPAQUE_BLEND,
+				VK_IMAGE_LAYOUT_UNDEFINED,
+				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+				VK_ATTACHMENT_LOAD_OP_CLEAR,
+				VK_ATTACHMENT_STORE_OP_STORE,
+				VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+				VK_ATTACHMENT_STORE_OP_DONT_CARE,
+				surface_format.format
+			)
+		);
+	}
+
+	// make sure the renderpass has a depth attachment
+	if (!this->renderpass->has_depth_stencil()) {
+		Log::debug("Renderer::finalize(): renderpass has no depth/stencil attachment -> adding a default depth/stencil attachment");
+		this->subpass->add_attachment_reference(
+			this->renderpass->add_attachment(
+				AttachmentType::DEPTH_TYPE,
+				ColorBlendState::OPAQUE_BLEND,
+				VK_IMAGE_LAYOUT_UNDEFINED,
+				VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+				VK_ATTACHMENT_LOAD_OP_CLEAR,
+				VK_ATTACHMENT_STORE_OP_DONT_CARE,
+				VK_ATTACHMENT_LOAD_OP_CLEAR,
+				VK_ATTACHMENT_STORE_OP_DONT_CARE
+			)
+		);
+	}
+
+	// finalize subpass and renderpass
+	uint32_t subpass_index = this->subpass->finalize(0, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	if (this->renderpass->subpass_dependency.empty()) {
+		Log::debug("Renderer::finalize(): renderpass has no subpass dependencies -> adding a default dependency from external to subpass ", subpass_index);
+		this->renderpass->add_subpass_dependency(
+			VK_SUBPASS_EXTERNAL,
+			subpass_index,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // src_stage_mask: Operations that write to the swapchain before the render pass
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, // dst_stage_mask: Where the pipeline writes color and depth
+			0, // src_access_mask: Wait for image layout transition
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT // dst_access_mask: ensure color/depth writes are safe
+		);
+	}
+	this->renderpass->finalize(); // has no effect if already finalized
+
+	// create a depth buffer for the current extent (internally owned)
+	if (!this->m_depth_buffer) {
+		this->m_depth_buffer = std::make_unique<DepthBuffer>(vk_manager->get_device(), extent);
+	}
+
+	// make sure a swapchain has been assigned
+	if (!this->swapchain) {
+		Log::debug("Renderer::finalize(): no swapchain has been assigned -> creating a default swapchain for the selected surface and extent (owned by the Renderer instance)");
+		this->m_swapchain = std::make_unique<Swapchain>(
+			vk_manager->get_device(),
+			renderpass,
+			surface,
+			surface_format,
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+			m_depth_buffer,
+			NULLOPT,
+			extent
+		);
+		this->swapchain = this->m_swapchain.get();
+	}
+
+	// make sure a vertex shader is assigned
+	if (!this->vertex_shader) {
+		Log::debug("Renderer::finalize(): no vertex shader has been assigned -> loading a generic vertex shader as default (owned by the Renderer instance)");
+		is_default_renderer = true;
+		this->m_vertex_shader = std::make_unique<ShaderModule>(
+			vk_manager->get_device(),
+			VERTEX_SHADER_GENERIC_SPIRV_BIN,
+			VERTEX_SHADER_GENERIC_SPIRV_BYTES
+		);
+		this->vertex_shader = this->m_vertex_shader.get();
+	}
+
+	// make sure a fragment shader is assigned
+	// (note: if the default fragment shader is used, the descriptor set layout and push constants must match the outline expected by this shader!)
+	if (!this->fragment_shader) {
+		Log::debug("Renderer::finalize(): no fragment shader has been assigned -> loading a generic fragment shader as default (owned by the Renderer instance)");
+		is_default_renderer = true;
+		this->m_fragment_shader = std::make_unique<ShaderModule>(
+			vk_manager->get_device(),
+			FRAGMENT_SHADER_GENERIC_SPIRV_BIN,
+			FRAGMENT_SHADER_GENERIC_SPIRV_BYTES
+		);
+		this->fragment_shader = this->m_fragment_shader.get();
+	}
+
+	// make sure a descriptor set layout has been assigned
+	// (if not: create one that matches the default fragment shader's expectations)
+	if (!this->descriptor_set_layout) {
+		is_default_renderer = true;
+		this->m_descriptor_set_layout = std::make_unique<DescriptorSetLayout>(vk_manager->get_device());
+		this->m_descriptor_set_layout->add_bindings(3, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);						// for materials, lights, scene Material texIDs
+		this->m_descriptor_set_layout->add_bindings(1, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_VERTEX_BIT);							// for model matrices
+		this->m_descriptor_set_layout->add_bindings(3, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);				// for cubemaps and BRDF lut
+		this->m_descriptor_set_layout->add_bindings(1, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT); // for textures
+		this->m_descriptor_set_layout->finalize();
+		this->descriptor_set_layout = this->m_descriptor_set_layout.get();
+	}
+
+	// make sure a descriptor set has been assigned
+	// (if not: create one that matches the default fragment shader's expectations)
+	if (!this->descriptor_set) {
+		is_default_renderer = true;
+		this->m_descriptor_set = std::make_unique<DescriptorSet>(vk_manager->get_device(), *descriptor_set_layout, vk_manager->get_descriptor_pool());
+		this->m_descriptor_set->bind_buffer(0, scene->get_unique_materials_buffer(tl_semaphore));
+		this->m_descriptor_set->bind_buffer(1, scene->get_lights_buffer(tl_semaphore));
+		this->m_descriptor_set->bind_buffer(2, scene->get_scene_texIDs_buffer(tl_semaphore));
+		this->m_descriptor_set->bind_buffer(3, scene->get_model_matrices_buffer(tl_semaphore));
+		this->m_descriptor_set->bind_cubemap(4, scene->get_cubemap_irradiance(tl_semaphore));
+		this->m_descriptor_set->bind_cubemap(5, scene->get_cubemap_prefiltered(tl_semaphore));
+		this->m_descriptor_set->bind_textures(6, scene->get_brdf_lut(tl_semaphore));
+		this->m_descriptor_set->bind_textures(7, scene->get_textures());
+		this->m_descriptor_set->write();
+		this->descriptor_set = this->m_descriptor_set.get();
+	}
+
+	// make sure clear values are defined
+	if (this->clear_values.empty()) {
+		this->clear_values.resize(2);
+		this->clear_values[0].color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+		this->clear_values[1].depthStencil = { 1.0f, 0 };
+	}
+
+	// make sure push constants are defined
+	// (if not: create ones that match the default fragment shader's expectations)
+	if (!this->push_constants) {
+		this->m_push_constants = std::make_unique<PushConstants>();
+		default_offsets.view_matrix_offset = m_push_constants->add_values(scene->get_active_camera().get_view_matrix());
+		default_offsets.projection_offset = m_push_constants->add_values(scene->get_active_camera().get_projection_matrix());
+		default_offsets.material_offset = m_push_constants->add_values(uint32_t(0));
+		default_offsets.light_count_offset = m_push_constants->add_values(scene->get_visible_lights_count());
+		default_offsets.prefmipl_offset = m_push_constants->add_values(scene->get_prefiltered_mip_levels());
+		default_offsets.exposure_offset = m_push_constants->add_values(scene->get_exposure());
+		default_offsets.contrast_offset = m_push_constants->add_values(scene->get_contrast());
+		default_offsets.ibl_intensity_offset = m_push_constants->add_values(scene->get_ibl_intensity());
+		default_offsets.ambient_scene_color_offset = m_push_constants->add_values(scene->get_ambient());
+		default_offsets.camera_position_offset = m_push_constants->add_values(scene->get_active_camera().get_position());
+		this->push_constants = this->m_push_constants.get();
+	}
+
+	// make sure a pipeline layout has been assigned
+	if (!this->pipeline_layout) {
+		Log::debug("Renderer::finalize(): no pipeline layout has been assigned -> creating a default pipeline layout (owned by the Renderer instance)");
+		this->m_pipeline_layout = std::make_unique<GraphicsPipelineLayout>(
+			vk_manager->get_device(),
+			*descriptor_set_layout,
+			*push_constants
+		);
+		this->pipeline_layout = this->m_pipeline_layout.get();
+	}
+
+	// make sure pipeline properties are defined
+	if (!this->pipeline_properties) {
+		Log::debug("Renderer::finalize(): no pipeline properties have been assigned -> creating default pipeline properties (owned by the Renderer instance)");
+		this->m_pipeline_properties = std::make_unique<PipelineProperties>();
+		this->m_pipeline_properties->cull_mode = VK_CULL_MODE_BACK_BIT;
+		this->m_pipeline_properties->depth_test_enable = VK_TRUE;
+		this->m_pipeline_properties->depth_write_enable = VK_TRUE;
+		this->m_pipeline_properties->depth_compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;
+		this->pipeline_properties = this->m_pipeline_properties.get();
+	}
+
+	// make sure a pipeline has been assigned
+	if (!this->pipeline) {
+		this->m_pipeline = std::make_unique<GraphicsPipeline>(
+			vk_manager->get_device(),
+			renderpass,
+			subpass_index,
+			pipeline_layout,
+			pipeline_properties,
+			vertex_shader,
+			fragment_shader
+		);
+		this->pipeline = this->m_pipeline.get();
+	}
+}
+
+void Renderer::render_next_frame() {
+	if (!initialized) { this->finalize(); }
+	this->descriptor_set->write();
+	uint32_t image_index = this->swapchain->acquire_next_image(*image_available_semaphore);
+	CommandBuffer& cb = task->get_command_buffer();
+	cb.begin_recording();
+	cb.set_viewport({ 0, 0 }, extent);
+	cb.set_scissor({ 0, 0 }, extent);
+	cb.begin_renderpass(*renderpass, swapchain->get_framebuffer(image_index).get(), { 0,0 }, swapchain->get_extent(), clear_values);
+	cb.bind_descriptor_set(*this->descriptor_set, *this->pipeline);
+	cb.bind_pipeline(*this->pipeline);
+	for (auto& it : this->scene->get_unique_meshes()) {
+		cb.bind_mesh(*it.second);
+	}
+	std::vector<Entity*> entities = this->scene->get_visible_entities();
+	for (uint32_t entity_index = 0; entity_index < entities.size(); entity_index++) {
+		for (const auto& submesh : entities[entity_index]->get_mesh().get_submeshes()) {
+			if (is_default_renderer) {
+				this->push_constants->add_values(submesh.scene_local_material_index, default_offsets.material_offset); // in-place overwrite
+			}
+			cb.bind_push_constants(*this->push_constants, *this->pipeline);
+			cb.draw_indexed(submesh.index_count, 1, submesh.first_index, submesh.vertex_offset, entity_index);
+		}
+	}
+	cb.end_renderpass();
+	cb.end_recording();
+	task->timeline_sync(*tl_semaphore);
+	task->wait_binary_semaphore(*image_available_semaphore);
+	task->signal_binary_semaphore(*render_finished_semaphore);
+	task->submit();
+	task->clear_semaphore_list();
+	this->swapchain->present_rendered_image(*render_finished_semaphore);
+}
+
+// getters
+Surface& Renderer::get_surface() { return *this->surface; }
+Scene& Renderer::get_scene() { return *this->scene; }
+RenderPass& Renderer::get_renderpass() { return *this->renderpass; }
+SubPass& Renderer::get_subpass() { return *this->subpass; }
+GraphicsPipelineLayout& Renderer::get_pipeline_layout() { return *this->pipeline_layout; }
+PipelineProperties& Renderer::get_pipeline_properties() { return *this->pipeline_properties; }
+GraphicsPipeline& Renderer::get_pipeline() { return *this->pipeline; }
+PushConstants& Renderer::get_constants() { return *this->push_constants; }
+ShaderModule& Renderer::get_vertex_shader() { return *this->vertex_shader; }
+ShaderModule& Renderer::get_fragment_shader() { return *this->fragment_shader; }
+DescriptorSetLayout& Renderer::get_descriptor_set_layout() { return *this->descriptor_set_layout; }
+DescriptorSet& Renderer::get_descriptor_set() { return *this->descriptor_set; }
+
+// ====================================================================
 // helper function to convert VkResult values to human-readable strings
 std::string vkresult_to_string(VkResult result) {
 	switch (result) {
