@@ -777,7 +777,7 @@ void NGrid::create(const std::vector<uint32_t>& shape) {
 	// because it's provided by the VulkanManager singleton, its lifetime is guaranteed
 	// until the end of the program
 	if (!timeline_semaphore) {
-		timeline_semaphore = manager->get_timeline_semaphore(0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+		timeline_semaphore = &manager->get_timeline_semaphore(0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 	}
 
 	if (this->elements != 0) {

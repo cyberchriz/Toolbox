@@ -34,6 +34,7 @@ layout(push_constant) uniform push_constants {
 	uint 	lights_count;
 	uint    prefiltered_mip_levels;
 	float   exposure;
+    float   contrast;
 	float   ibl_intensity;
 	vec3    ambient_scene_color;
 	vec3 	camera_position; // World Space Camera Position

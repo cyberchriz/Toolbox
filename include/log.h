@@ -1,10 +1,12 @@
 #ifndef LOG_H
 #define LOG_H
 
-#ifdef _RELEASE
-#define DEFAULT_LEVEL LogLevel::LEVEL_ERROR
+#ifdef NDEBUG
+#define DEFAULT_LOG_LEVEL LogLevel::LEVEL_ERROR
+//#define DEBUG_LOG_IN_RELEASE						// <-- uncomment this line to enable Log::debug(...) in RELEASE
+//#define HEAP_MEMLOG								// <-- uncomment this line to log memory allocations on the heap (overrides 'new' & 'delete')
 #else
-#define DEFAULT_LEVEL LogLevel::LEVEL_WARNING
+#define DEFAULT_LOG_LEVEL LogLevel::LEVEL_WARNING
 #endif
 
 #include <chrono>
@@ -24,10 +26,12 @@
 #endif
 
 // macro shortcuts
-#define TIMER_START Log::Timer timer(LEVEL_FORCE, __FUNCTION__); // start timer
-#define TIMER_ELAPSED_MS timer.elapsed_microsec()   // get elapsed time in ms
-#define TIMER_STOP timer.stop();                    // stop timer and log elapsed time (since start or last stop)
-#define TIMER_RESTART timer.restart();              // restart timer
+#define TIMER_START Log::Timer timer(LEVEL_DEBUG, __FUNCTION__);	// start timer (first start within scope)
+#define TIMER_STOP timer.stop();									// stop timer and log elapsed time (since start or last stop)
+#define TIMER_SILENT_STOP timer.silent_stop();						// stop the timer without logging (thus silencing output when the Timer instance goes out of scope)
+#define TIMER_RESTART timer.restart();								// restart timer
+#define TIMER_STOP_RESTART timer.stop(); timer.restart();			// log elapsed time and directly restart the timer
+#define TIMER_ELAPSED_SEC timer.elapsed_sec()						// get elapsed time in seconds
 
 enum LogLevel {
 	LEVEL_ERROR,
@@ -46,9 +50,17 @@ public:
 	template <typename... Args> static void error(Args&&... args);
 	template <typename... Args> static void warning(Args&&... args);
 	template <typename... Args> static void info(Args&&... args);
-	template <typename... Args> static void debug(Args&&... args);
 	template <typename... Args> static void force(Args&&... args);
-	template <typename... Args> static void log(LogLevel level, Args&&... args);
+	
+	// Ignore debug logs in RELEASE:
+#if defined(NDEBUG) && !defined(DEBUG_LOG_IN_RELEASE)
+	// In Release: Define as an empty inline function. The compiler will typically "optimize away" the call and its arguments.
+	template <typename... Args>	static inline void debug(Args&&...) {}
+#else
+	// In Debug: Keep the standard declaration.
+	template <typename... Args>	static void debug(Args&&... args);
+#endif
+
 	static void set_level(LogLevel level);
 	static void set_filepath(const std::string& filepath);
 	static void to_console(bool active = true);
@@ -57,11 +69,13 @@ public:
 	static void enable_exit_on_error(bool active = true);
 	static void enable_exit_on_warning(bool active = true);
 
+	// nested class for time logging
 	class Timer {
 	public:
 		Timer(LogLevel level = LEVEL_FORCE, std::string caller_function = "");
 		~Timer();
 		void stop();
+		void silent_stop();
 		void restart();
 		double elapsed_sec();
 		static void sleep(int64_t nanosec, LogLevel level = LEVEL_DEBUG);
@@ -75,6 +89,7 @@ public:
 private:
 	Log() {}
 	~Log() {}
+	template <typename... Args> static void log(LogLevel level, Args&&... args);
 	static void write_log(std::string log_message);
 	static LogLevel log_level;
 	static bool log_to_console;
@@ -176,7 +191,9 @@ void Log::set_filepath(const std::string& filepath) {
 }
 
 void Log::to_console(bool active) {
+#ifndef __ANDROID__
 	log_to_console = active;
+#endif
 }
 
 void Log::to_file(bool active) {
@@ -226,9 +243,14 @@ void Log::concatArgs(std::stringstream& stream, First&& first, Args&&... args) {
 }
 
 // Initialization of static members (outside class)
-LogLevel Log::log_level = DEFAULT_LEVEL;
+LogLevel Log::log_level = DEFAULT_LOG_LEVEL;
+#if defined(__ANDROID__)
+bool Log::log_to_console = false;
+bool Log::log_to_file = true;
+#else
 bool Log::log_to_console = true;
 bool Log::log_to_file = false;
+#endif
 bool Log::exit_on_error = true;
 bool Log::exit_on_warning = false;
 std::string Log::log_filepath = "../logs/";
@@ -289,6 +311,11 @@ void Log::Timer::stop() {
 	begin = std::chrono::high_resolution_clock::now();
 }
 
+void Log::Timer::silent_stop() {
+	stopped = true;
+	begin = std::chrono::high_resolution_clock::now();
+}
+
 void Log::Timer::restart() {
 	begin = std::chrono::high_resolution_clock::now();
 	stopped = false;
@@ -312,8 +339,8 @@ Log::Timer::~Timer() {
 
 // this code logs any heap memory allocations to the console
 // by overriding the `new` and 'delete' operators;
-// in order to use this, simply use a "#define _MEMLOG" flag as a preprocessor directive before(!) including this file
-#ifdef _MEMLOG
+// in order to use this, simply use a "#define HEAL_MEMLOG" flag as a preprocessor directive before(!) including this file
+#ifdef HEAP_MEMLOG
 
 // global variables
 std::unordered_map<void*, std::size_t> allocated_memory;
@@ -324,7 +351,7 @@ void* operator new(std::size_t size) {
 	void* ptr = std::malloc(size);
 	allocated_memory.insert(ptr, size);
 	total_allocation += size;
-	std::cout << "HEAP MEMORY: allocated " << size << " bytes at address " << ptr << " [total allocation: " << total_allocation << " bytes]" << std::endl;
+	Log::force("HEAP MEMORY: allocated ", size, " bytes at address ", ptr, " [updated total allocation: ", total_allocation, " bytes]");
 	return ptr;
 }
 
@@ -332,9 +359,9 @@ void* operator new(std::size_t size) {
 void operator delete(void* ptr) noexcept {
 	std::size_t size = allocated_memory[ptr];
 	total_allocation -= size;
-	std::cout << "HEAP MEMORY: freed " << size << " bytes at address " << ptr << " [total allocation: " << total_allocation << " bytes]" << std::endl;
 	allocated_memory.erase(ptr);
 	std::free(ptr);
+	Log::force("HEAP MEMORY: freed ", size, " bytes at address ", ptr, " [remaining total allocation: ", total_allocation, " bytes]");
 }
 #endif
 

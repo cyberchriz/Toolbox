@@ -78,10 +78,10 @@ struct Material {
 // ====================================================================================================
 // Light Struct to handle multiple light types
 struct Light {
-    vec4 position;	// xyz=position (World Space - STATIC), w=range/attenuation
-    vec4 direction; // xyz=direction (World Space), w=type
+    vec4 position;	// xyz=position (World Space - STATIC), w=type
+    vec4 direction; // xyz=direction (World Space), w=range/attenuation
     vec4 color;	    // rgb=color, a=intensity
-    vec4 spot;	    // x=innerConeAngle, y=outerConeAngle, zw=padding
+    vec4 spot;	    // x=innerConeAngle, y=outerConeAngle, z=visible, w=global_uniqueID
 };
 
 // ====================================================================================================
@@ -264,13 +264,14 @@ vec3 calculate_light_contribution(
     float distance = 1.0;
     float attenuation = 1.0;
     vec3 radiance;
-    int light_type = int(light.direction.w);
+    int light_type = int(light.position.w);
+    float intensity = light.color.w;
 
     // --- DIRECTIONAL LIGHT ---
     if (light_type == LIGHT_TYPE_DIRECTIONAL) {
         L_world = -normalize(light.direction.xyz);  // World Space calculation: L is direction *to* light.
-        radiance = light.color.rgb * light.color.w;
-        distance = 1e6;                    // Effectively infinite
+        radiance = light.color.rgb * intensity;
+        distance = 1e6;                             // Effectively infinite
     }
 
     // --- POINT OR SPOT LIGHT ---
@@ -278,11 +279,11 @@ vec3 calculate_light_contribution(
         vec3 light_vec = light.position.xyz - v_position; 
         distance = length(light_vec);
         L_world = normalize(light_vec);
-        radiance = light.color.rgb * light.color.w;
+        radiance = light.color.rgb * intensity;
 
         // --- ATTENUATION LOGIC ---
-        float range = light.position.w;
-        if (range > 0.0) {
+        float range = light.direction.w;
+        if (range > EPSILON) {
             attenuation = 1.0 / (distance * distance + 1.0);            // Inverse Square Falloff (Physical)
             float cutoff = max(0.0, 1.0 - pow(distance / range, 4.0));  // Range Cutoff (Smoothly fading to zero at 'range')
             attenuation *= cutoff;
@@ -502,7 +503,7 @@ void main() {
     vec3 sampled_normal = vec3(0.0, 0.0, 1.0); // Default to straight up in tangent space
     if (normal_tex_id >= 0) {
         sampled_normal = texture(tex_samplers[normal_tex_id], v_tex_coord.xy).rgb;
-        //sampled_normal.g = 1.0 - sampled_normal.g; // Vulkan fix
+        sampled_normal.g = 1.0 - sampled_normal.g; // Vulkan fix
         sampled_normal = normalize(sampled_normal * 2.0 - 1.0);
     }
     
@@ -838,7 +839,7 @@ void main() {
         vec3 ibl_contribution = ibl_base * final_occlusion * (1.0 - final_transmission) * ibl_intensity;
         total_lighting += ibl_contribution;
     }
-
+    
     // ====================================================================================================
     // --- FINAL ALPHA CALCULATION & CUTOFF ---
     if (blend_mode == 0) {                                  // OPAQUE_MODE
@@ -860,6 +861,7 @@ void main() {
         // If final_transmission is 0.0, final_alpha remains the value calculated 
         // earlier from base_color.a, which is correct for standard alpha blending.
     }
+    
     final_alpha = clamp(final_alpha, 0.0, 1.0);
 
     // ====================================================================================================

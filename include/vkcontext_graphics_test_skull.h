@@ -14,7 +14,7 @@ void vkcontext_graphics_test_skull() {
 	// setup environment
 	auto& manager = VulkanManager::get_singleton();
 	Device& device = manager.get_device();
-	Semaphore* tl_semaphore = manager.get_timeline_semaphore(0, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+	Semaphore& tl_semaphore = manager.get_timeline_semaphore(0, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
 	VkExtent2D extent = { 3840, 2160 };
 	Surface& surface = manager.get_surface(extent.width, extent.height);
 	auto surface_format = device.select_surface_format(surface);
@@ -24,7 +24,7 @@ void vkcontext_graphics_test_skull() {
 
 	// create scene
 	Scene scene;
-	uint32_t entity_id = scene.add_entity(&model, { 0.0f, 0.0f, 0.0f }, true);
+	uint32_t entity_id = scene.add_entity(model, { 0.0f, 0.0f, 0.0f }, true);
 	scene.get_active_camera().set_position({ 0.0f, -32.0f, 22.0f });
 	scene.get_active_camera().set_world_up({ 0.0f, 1.0f, 0.0f });
 	scene.get_active_camera().set_yaw(-90.0f);
@@ -103,7 +103,7 @@ void vkcontext_graphics_test_skull() {
 	Swapchain swapchain(device, renderpass, surface, surface_format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, depth_buffer, NULLOPT, extent);
 
 	ShaderModule vertex_shader(device, VERTEX_SHADER_GENERIC_SPIRV_BIN, VERTEX_SHADER_GENERIC_SPIRV_BYTES);
-	auto fragment_shader = std::make_optional<ShaderModule>(device, FRAGMENT_SHADER_GENERIC_SPIRV_BIN, FRAGMENT_SHADER_GENERIC_SPIRV_BYTES);
+	ShaderModule fragment_shader(device, FRAGMENT_SHADER_GENERIC_SPIRV_BIN, FRAGMENT_SHADER_GENERIC_SPIRV_BYTES);
 
 	DescriptorSetLayout set_layout(device);
 	set_layout.add_bindings(3, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);						// for materials, lights, scene Material texIDs
@@ -200,7 +200,7 @@ void vkcontext_graphics_test_skull() {
 		cb.end_renderpass();
 		cb.end_recording();
 
-		task.timeline_sync(*tl_semaphore);
+		task.timeline_sync(tl_semaphore);
 		task.wait_binary_semaphore(image_available_bin_semaphore);
 		task.signal_binary_semaphore(render_finished_bin_semaphore);
 		task.submit();

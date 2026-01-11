@@ -2,6 +2,7 @@
 #include <ngrid_test.h>
 #include <vkcontext.h>
 #include <vkcontext_graphics_test_helmet.h>
+#include <vkcontext_graphics_test_helmet_simplified.h>
 #include <vkcontext_graphics_test_skull.h>
 
 int main() {
@@ -9,7 +10,8 @@ int main() {
 	//Log::enable_exit_on_warning();
 	//ngrid_test();
 	//vkcontext_graphics_test_skull();
-	vkcontext_graphics_test_helmet();
+	//vkcontext_graphics_test_helmet();
+	vkcontext_graphics_test_helmet_simplified();
 
 	std::cin.get();
 }
