@@ -1,13 +1,13 @@
 ﻿<div align="center">
   <br>
-    <img src="./docs/media/ngrid-logo.png" alt="NGrid Logo" width="800" height="350"/>
-  <br>
-  <h1 align="center">
-    NGrid - High-Performance GPU Computing
-  </h1>
+    <img src="./docs/media/VkNC_logo.png" alt="NGrid Logo" width="900" height="280"/>
   <br>
   <p align="center">
-    A C++ library for high-performance GPU-accelerated computing, built on Vulkan.
+    A C++ library for high-performance GPU-accelerated graphics and compute, built on Vulkan,
+	<br>
+	as wrapper classes for making life with Vulkan easier, reducing complex concepts to just a few lines of code.
+	<br> The user decides how verbose he/she wants to be! With classes like VulkanManager, Scene, Renderer, NGrid, etc...
+	<br> we can avoid the boilerplate and focus on the actual application logic. Still, everything is customizable when needed.
   </p>
   <br>
   <a href="./LICENSE">
@@ -24,11 +24,11 @@
 ---
 
 ## Quick Start
-This library requires **Vulkan** to be installed on your system.
-<br><br>
-It's recommended to build this project using CMake with the provided `CMakeLists.txt`.
-* CMake will automatically compile the GLSL shaders and embed them as C++ string literals into a header file (`spirv_bin.h`), which is typically located in your build directory (e.g., `../out/build/[VERSION]/generated/`). This requires `glslangValidator` to be installed and available in your system's PATH.
-* If you encounter issues with CMake, please ensure your environment variables are correctly configured for your operating system (Visual Studio: check CMakeSettings.json --> "CMake Variables & Cache").
+This library requires the **[VulkanSDK](https://vulkan.lunarg.com/)** and **[glslangValidator](https://github.com/KhronosGroup/glslang)** to be installed on your system.
+<br>
+It's recommended to build this project using CMake with the provided [`CMakeLists.txt`](CMakeLists.txt).
+- CMake will automatically compile the GLSL shaders and embed them as C++ string literals into a header file (`spirv_bin.h`), which is typically located in your build directory (e.g., `../out/build/[VERSION]/generated/`).
+- If you encounter issues with CMake, please ensure your environment variables are correctly configured for your operating system (Visual Studio: check CMakeSettings.json --> "CMake Variables & Cache").
 
 ---
 
@@ -37,9 +37,9 @@ These are the primary components for high-performance GPU computing.
 
 | Library | Description | Status |
 | :--- | :--- | :--- |
-| [`ngrid.h`](docs/ngrid.md) | **N-dimensional data structures for GPU compute.** The core library for general-purpose GPU computing on tensors. | ✅ Tested |
-| [`cgrid.h`](docs/cgrid.md) | **An extension of `NGrid` with support for complex numbers.** Adds complex number functionality to the core NGrid class, leveraging the same GPU backend. | ✅ Tested |
-| [`vkcontext.h`](docs/vkcontext.md) | **High-level wrapper for Vulkan objects.** A simplified API for managing the Vulkan context, including devices, pipelines, and synchronization. | 🚧 Compute tested; Graphics functionality partially tested. |
+| [`vkcontext.h`](docs/vkcontext.md) | **High-level wrapper for Vulkan objects.** | 🚧 Compute tested; most Graphics features implemented + tested. |
+| [`ngrid.h`](docs/ngrid.md) | **N-dimensional data structures for GPU compute.** | ✅ Tested & Feature-complete. |
+| [`cgrid.h`](docs/cgrid.md) | **An extension of `NGrid` with support for complex numbers.** | ✅ Tested & Feature-complete. |
 
 ---
 
@@ -59,7 +59,7 @@ ___
 ## Usage Example for Graphics
 <div align="center">
   <br>
-    <img src="./docs/media/Khronos_Damaged_Helmet.png" alt="NGrid Mandelbrot Set" width="1000" height="850"/>
+    <img src="./docs/media/Khronos_Damaged_Helmet.png" alt="NGrid Mandelbrot Set" width="960" height="770"/>
   <br>
   <p align="center">
     example: TEST RENDER using the vkcontext.h library (<em>Source Model Credit: Khronos Group</em>)
