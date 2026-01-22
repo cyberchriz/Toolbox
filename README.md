@@ -1,6 +1,6 @@
 ﻿<div align="center">
   <br>
-    <img src="./docs/media/VkNC_logo.png" alt="NGrid Logo" width="900" height="280"/>
+    <img src="./docs/media/VkToolbox_logo.png" alt="NGrid Logo" width="900" height="350"/>
   <br>
   <p align="center">
     A C++ library for high-performance GPU-accelerated graphics and compute, built on Vulkan,
