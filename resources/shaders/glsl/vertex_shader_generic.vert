@@ -3,23 +3,28 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_EXT_scalar_block_layout : require
 
-// Input vertex attributes from the Mesh class.
+// Input vertex attributes from the Mesh class (conventional order following glTF 2.0 specification)
 layout(location = 0) in vec4 in_color;
 layout(location = 1) in vec4 in_tangent;
 layout(location = 2) in vec3 in_position;
 layout(location = 3) in vec3 in_normal;
-layout(location = 4) in vec2 in_tex_coord;
-layout(location = 5) in uint in_material_index;
+layout(location = 4) in vec2 in_tex_coord_0;
+layout(location = 5) in vec2 in_tex_coord_1;
+layout(location = 6) in vec2 in_tex_coord_2;
+layout(location = 7) in vec2 in_tex_coord_3;
+layout(location = 8) in uint in_material_index;
 
-// Output to the fragment shader.
+// Output to the fragment shader
 layout(location = 0) out vec4 v_color;
 layout(location = 1) out vec4 v_tangent;
 layout(location = 2) out vec3 v_position;
 layout(location = 3) out vec3 v_normal;
-layout(location = 4) out vec3 v_view_dir;
-layout(location = 5) out vec2 v_tex_coord;
-layout(location = 6) flat out uint v_material_index;
-
+layout(location = 4) out vec2 v_tex_coord_0;
+layout(location = 5) out vec2 v_tex_coord_1;
+layout(location = 6) out vec2 v_tex_coord_2;
+layout(location = 7) out vec2 v_tex_coord_3;
+layout(location = 8) flat out uint v_material_index;
+layout(location = 9) out vec3 v_view_dir;
 
 // Define storage buffer for model matrices (Binding 3, as defined in the descriptor set)
 layout(binding = 3, set = 0, std430) readonly buffer model_matrices_buffer { 
@@ -67,5 +72,8 @@ void main() {
     // --- OTHER INTERFACE PASS-THROUGH TO NEXT STAGE (FRAGMENT SHADER) ---
     v_color = in_color;
     v_material_index = in_material_index;
-    v_tex_coord = in_tex_coord;
+    v_tex_coord_0 = in_tex_coord_0;
+    v_tex_coord_1 = in_tex_coord_1;
+    v_tex_coord_2 = in_tex_coord_2;
+    v_tex_coord_3 = in_tex_coord_3;
 }

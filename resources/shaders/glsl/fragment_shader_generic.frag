@@ -46,33 +46,71 @@ struct MaterialTexIDs {
 	int     thickness_tex_id;
 	int     specular_gloss_diffuse_tex_id;
 	int     specular_gloss_tex_id;
+
+    // UV map IDs (tex_coord)
+	int	    ambient_uv_id;
+	int	    base_color_uv_id;
+	int	    specular_uv_id;
+	int	    specular_color_uv_id;
+
+    int	    displacement_uv_id;
+	int	    alpha_uv_id;
+	int	    reflection_uv_id;
+	int	    metallic_roughness_uv_id;
+
+    int	    normal_uv_id;
+	int	    occlusion_uv_id;
+	int	    emissive_uv_id;
+	int     clearcoat_uv_id;
+
+    int     clearcoat_roughness_uv_id;
+	int     clearcoat_normal_uv_id;
+	int     sheen_color_uv_id;
+	int     sheen_roughness_uv_id;
+
+    int     transmission_uv_id;
+	int     thickness_uv_id;
+	int     specular_gloss_diffuse_uv_id;
+	int     specular_gloss_uv_id;
 };
 
 // ====================================================================================================
-// Matching with C++ Material Struct Layout
+// Matching with host-side C++ Material Struct Layout (16-byte aligned blocks)
 struct Material {
-    vec4 	ambient;            // ambient.w is used for the blend mode, with 0=OPAQUE, 1=MASK, 2=BLEND
+    vec4 	ambient;
     vec4 	specular;
-    vec4 	transmittance;
+    vec4 	transmittance;          // transmittance.xyz: volume thickness/color
     vec4 	emission;	
     vec4 	base_color;
+    vec4 	uv_transform;           // xy = offset, zw = scale
+    vec4    attenuation_color;      // for volume / thickness (KHR_materials_volume)
 
+    float   uv_rotation;
     float 	shininess;
     float 	ior;
     float 	dissolve;
-    float 	roughness;
-    		
+
+    float 	roughness;		
     float 	metallic;
     float   diffuse_factor;
     float   glossiness_factor;
+
     float   specular_factor;
-
     float   clearcoat_factor;
-    float 	alpha_cutoff;
-    int 	illum;
-    int     unique_id;  // unique GLOBAL(!) material index (typically not used by this shader; the material IDs in this shader refer to the local indices of the materials[] SSBO)
+    float   clearcoat_roughness;
+    float   sheen_factor;
 
-    MaterialTexIDs global_texIDs;   // not used by this shader
+    float   alpha_cutoff;
+    float   transmission_factor;
+    float   thickness_factor;       // for volume / thickness (KHR_materials_volume)
+    float   attenuation_distance;   // ""
+
+    int 	illum;
+    int	    alpha_mode; // 0=Opaque, 1=Mask, 2=Blend
+    int     unique_id;  // unique GLOBAL(!) material index (typically not used by this shader; the material IDs in this shader refer to the local indices of the materials[] SSBO)
+    int     padding0;
+
+    MaterialTexIDs global_texIDs;   // not used by this shader (texIDs local to the scene are used instead)
 };
 
 // ====================================================================================================
@@ -112,13 +150,16 @@ layout(push_constant) uniform push_constants {
 
 // ====================================================================================================
 // Input variables from the vertex shader (All World Space).
-layout(location = 0) in vec4 v_color;		
-layout(location = 1) in vec4 v_tangent;	            // World Space Tangent (with v_tangent.w as the handedness)
+layout(location = 0) in vec4 v_color;
+layout(location = 1) in vec4 v_tangent;             // World Space Tangent (with v_tangent.w as the handedness)
 layout(location = 2) in vec3 v_position;            // World Space Position (P_world)
 layout(location = 3) in vec3 v_normal;              // World Space Normal (N_world - pre-normal map)
-layout(location = 4) in vec3 v_view_dir;            // World Space View Direction (Fragment to Camera)
-layout(location = 5) in vec2 v_tex_coord;
-layout(location = 6) flat in uint v_material_index; // GLOBAL(!) Material Index (not used by this shader)
+layout(location = 4) in vec2 v_tex_coord_0;         // Primary UVs
+layout(location = 5) in vec2 v_tex_coord_1;         // Secondary UVs
+layout(location = 6) in vec2 v_tex_coord_2;         // ""
+layout(location = 7) in vec2 v_tex_coord_3;         // ""
+layout(location = 8) flat in uint v_material_index; // GLOBAL(!) Material Index (not used by this shader)
+layout(location = 9) in vec3 v_view_dir;            // World Space View Direction (Fragment to Camera)
 
 // The output color.
 layout(location = 0) out vec4 out_color;
@@ -132,6 +173,15 @@ layout(location = 0) out vec4 out_color;
 // Simple PBR Fresnel approximation (Schlick's)
 vec3 schlick_fresnel(float NdotV, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - NdotV, 0.0, 1.0), 5.0);
+}
+
+// ====================================================================================================
+// Disney Burley Diffuse for better "non-flat" appearance (compared to simple Lambertian)
+float diffuse_burley(float NdotL, float NdotV, float LdotH, float roughness) {
+    float fd90 = 0.5 + 2.0 * LdotH * LdotH * roughness;
+    float lightScatter = (1.0 + (fd90 - 1.0) * pow(1.0 - NdotL, 5.0));
+    float viewScatter  = (1.0 + (fd90 - 1.0) * pow(1.0 - NdotV, 5.0));
+    return (lightScatter * viewScatter) / PI;
 }
 
 // ====================================================================================================
@@ -200,41 +250,31 @@ float distribution_sheen_charlie(float NdotH, float sheen_roughness) {
 }
 
 // ====================================================================================================
-// Simple Reinhard tone mapping operator,
-// with Simple Gamma correction to sRGB
-vec3 tone_map_reinhard(vec3 color) {
-    vec3 result_color = color * exposure;           // Apply exposure (lifts dark areas before tone mapping)
-    result_color /= (result_color + vec3(1.0));     // Standard Reinhard tone mapping function: L / (L + 1)
-    return pow(result_color, vec3(1.0 / 2.2));      // Simple Gamma correction to sRGB
-}
-
-// ====================================================================================================
 // ACES tonemapping with contrast adjustment
 vec3 tone_map_aces(vec3 color, float contrast) {
-    // 1. Apply exposure first
+
+    // EXPOSURE
     color *= exposure;
-    
-    // 2. ACES Filmic Tone Mapping (maps input to a near-[0, 1] range)
+
+    // ACES Filmic Tone Mapping (maps input to a near-[0, 1] range)
     const float a = 2.51;
     const float b = 0.03;
     const float c = 2.43;
     const float d = 0.59;
     const float e = 0.14;
-    
     color = (color * (a * color + b)) / (color * (c * color + d) + e);
-    color = clamp(color, 0.0, 1.0); 
+    color = clamp(color, 0.0, 1.0);
 
-    // 3. Contrast Adjustment (Centered Power Function)
-    float p_exponent = 1.0 - contrast * 0.7; 
-    p_exponent = clamp(p_exponent, 0.001, 100.0);                       // safe range
-    vec3 c_norm = color * 2.0 - 1.0;                                    // normalize color from [0, 1] to [-1, 1]
-    vec3 c_power = sign(c_norm) * pow(abs(c_norm), vec3(p_exponent));   // apply power, preserving the sign
-    color = c_power * 0.5 + 0.5;                                        // denormalize color back to [0, 1]
+    // ADAPTIVE CONTRAST LOGIC
+    float p = pow(2.0, contrast); 
+    vec3 sign_vec = sign(color - 0.5);
+    vec3 abs_dist = abs(color * 2.0 - 1.0);
+    color = 0.5 + 0.5 * sign_vec * pow(abs_dist, vec3(1.0 / p));
     
-    // 4. Gamma correction (applies the display transfer function)
+    // GAMMA CORRECTION
     color = pow(color, vec3(1.0 / 2.2));
 
-    // 5. Final Clamp (Safety and Guarantee)
+    // FINAL SAFETY CLAMP
     return clamp(color, 0.0, 1.0);
 }
 
@@ -252,7 +292,7 @@ vec3 calculate_light_contribution(
     float final_occlusion,                          // Occlusion after texture sampling
     float final_metallic,                           // Metallic after texture sampling
     float final_ior,
-    float clearcoat_factor,
+    float final_clearcoat,
     float clearcoat_roughness,
     vec3 clearcoat_normal_world,
     vec3 sheen_color,
@@ -261,42 +301,30 @@ vec3 calculate_light_contribution(
     
     vec3 light_output = vec3(0.0);
     vec3 L_world; // Light direction vector (World Space, v_position -> Light)
-    float distance = 1.0;
-    float attenuation = 1.0;
-    vec3 radiance;
-    int light_type = int(light.position.w);
     float intensity = light.color.w;
+    vec3 radiance = light.color.rgb * intensity;
+    int light_type = int(light.position.w);
 
     // --- DIRECTIONAL LIGHT ---
     if (light_type == LIGHT_TYPE_DIRECTIONAL) {
         L_world = -normalize(light.direction.xyz);  // World Space calculation: L is direction *to* light.
-        radiance = light.color.rgb * intensity;
-        distance = 1e6;                             // Effectively infinite
     }
 
     // --- POINT OR SPOT LIGHT ---
     else {
-        vec3 light_vec = light.position.xyz - v_position; 
-        distance = length(light_vec);
-        L_world = normalize(light_vec);
-        radiance = light.color.rgb * intensity;
-
-        // --- ATTENUATION LOGIC ---
         float range = light.direction.w;
-        if (range > EPSILON) {
-            attenuation = 1.0 / (distance * distance + 1.0);            // Inverse Square Falloff (Physical)
-            float cutoff = max(0.0, 1.0 - pow(distance / range, 4.0));  // Range Cutoff (Smoothly fading to zero at 'range')
-            attenuation *= cutoff;
-        }	
-        else {
-            attenuation = 1.0 / (distance * distance + 1.0);            // No range defined, use inverse square falloff without cutoff
+        if (range >= EPSILON) { // range 0.0: infinite / no fall-off
+            // Attenuation Logic: Using 'range' as the reference distance where attenuation = 1.0
+            vec3 light_vec = light.position.xyz - v_position;
+            float dist = length(light_vec);
+            float attenuation = (range * range) / (dist * dist);
+            radiance *= attenuation;            
         }
     }
-    radiance *= attenuation;
 
     // --- SPOT LIGHT CONE CHECK (World Space calculation) ---
-    float spot_effect = 1.0;
     if (light_type == LIGHT_TYPE_SPOT) {
+        float spot_effect = 1.0;
         vec3 D_beam = normalize(light.direction.xyz); 
         float cos_theta = dot(-L_world, D_beam);	
         float cos_inner = cos(light.spot.x);
@@ -310,8 +338,11 @@ vec3 calculate_light_contribution(
         else if (cos_theta < cos_inner) {
             spot_effect = smoothstep(cos_outer, cos_inner, cos_theta);
         }
+        radiance *= spot_effect;
     }
-    radiance *= spot_effect;
+
+    // Early exit if no light reaches surface
+    if (length(radiance) < EPSILON) return vec3(0.0);
 
     // --- SHADING LOGIC (PBR or Phong) ---
     bool use_pbr = material.illum == 4;
@@ -321,35 +352,38 @@ vec3 calculate_light_contribution(
 
         // --- COMMON VECTORS & DOT PRODUCTS (Base Material) ---
         vec3  H_world   = normalize(V_world + L_world); 
-        float NdotL     = max(dot(N_world, L_world), EPSILON);
-        float NdotV     = max(dot(N_world, V_world), EPSILON);
-        float NdotH     = max(dot(N_world, H_world), EPSILON);
-        float HdotV     = max(dot(H_world, V_world), EPSILON);
+        float NdotL = clamp(dot(N_world, L_world), 0.001, 1.0);
+        float NdotV = clamp(abs(dot(N_world, V_world)), 0.001, 1.0);
+        float NdotH = clamp(dot(N_world, H_world), 0.0, 1.0);
+        float VdotH = clamp(dot(V_world, H_world), 0.0, 1.0);
 
-        float roughness_base = final_roughness;
-
-        // Cook-Torrance BRDF (SPECULAR)
+        // SPECULAR BRDF TERM (Cook-Torrance)
         float D = distribution_ggx(N_world, H_world, final_roughness);
         float G = smith_geometry(N_world, V_world, L_world, final_roughness);
-        vec3 F = schlick_fresnel(HdotV, F0);
+        vec3 F = schlick_fresnel(VdotH, F0);
 
-        // --- DIFFUSE BRDF TERM ---
-        vec3 kD = (vec3(1.0) - F) * (1.0 - final_metallic); 
-        vec3 diffuse_brdf = kD * final_color_base / PI;
+        vec3 spec_numerator = D * G * F;
+        float spec_denominator = 4.0 * NdotV * NdotL;
+        vec3 specular_brdf = spec_numerator / max(spec_denominator, 0.001);
 
-        // SPECULAR BRDF TERM
-        vec3 numerator = D * G * F;
-        float denominator = 4.0 * NdotV * NdotL;
-        vec3 specular_brdf = numerator / max(denominator, EPSILON);
+        // DIFFUSE BRDF TERM (Disney Burley)
+        float fd = diffuse_burley(NdotL, NdotV, VdotH, final_roughness);
+        vec3  kD = (vec3(1.0) - F) * (1.0 - final_metallic); 
+        vec3  diffuse_brdf = kD * final_color_base * (fd / PI);
 
-        // --- CORE SHADING RESULT ---
+        // Multi-scattering energy compensation
+        float reflectivity = max(max(F0.r, F0.g), F0.b);
+        float energy_compensation = 1.0 + final_roughness * (1.0 / NdotV - 1.0) * reflectivity;
+        specular_brdf *= energy_compensation;
+
+        // --- CORE LIGHTING RESULT ---
         vec3 L_base = (diffuse_brdf + specular_brdf) * radiance * NdotL;
 
         // --- SHEEN (KHR_materials_sheen) ---
         vec3 L_sheen = vec3(0.0);
-        if (dot(sheen_color, sheen_color) > EPSILON) {
+        if (max(sheen_color.r, max(sheen_color.g, sheen_color.b)) > EPSILON) {
             float D_sheen = distribution_sheen_charlie(NdotH, sheen_roughness);
-            float F_sheen = pow(clamp(1.0 - HdotV, 0.0, 1.0), 5.0); 
+            float F_sheen = pow(clamp(1.0 - VdotH, 0.0, 1.0), 5.0); 
             L_sheen = (D_sheen * F_sheen / NdotL) * sheen_color * radiance * NdotL;
 
             // Energy conservation: attenuate base by sheen, then add sheen on top
@@ -359,77 +393,65 @@ vec3 calculate_light_contribution(
 
         // --- CLEARCOAT (KHR_materials_clearcoat) ---
         vec3 L_clearcoat = vec3(0.0);
-        if (clearcoat_factor > EPSILON) {
+        if (final_clearcoat > EPSILON) {
             // Clearcoat Normal/Vectors
             vec3 N_cc = clearcoat_normal_world;
             vec3 H_cc = normalize(V_world + L_world); 
             float NdotL_cc = max(dot(N_cc, L_world), EPSILON);
             float NdotV_cc = max(dot(N_cc, V_world), EPSILON);
             float NdotH_cc = max(dot(N_cc, H_cc), EPSILON);
+            float VdotH_cc = max(dot(V_world, H_cc), EPSILON);
             
             // Clearcoat BRDF (using its own roughness)
             float D_cc = distribution_ggx_clearcoat(NdotH_cc, clearcoat_roughness);
             float G_cc = geometry_smith_clearcoat(NdotL_cc, NdotV_cc);
-            vec3 F_cc = schlick_fresnel(NdotV_cc, F0_DIELECTRIC);
+            vec3 F_cc = schlick_fresnel(VdotH_cc, F0_DIELECTRIC);
             
             // Clearcoat Layer
-            vec3 cc_brdf = (D_cc * G_cc * F_cc) / (4.0 * NdotL_cc * NdotV_cc);
-            L_clearcoat = cc_brdf * radiance * NdotL_cc * clearcoat_factor;
+            vec3 cc_brdf = (D_cc * G_cc * F_cc) / (4.0 * NdotL_cc * NdotV_cc + EPSILON);
+            L_clearcoat = cc_brdf * radiance * NdotL_cc * final_clearcoat;
 
-            // Attenuate base layer by the clearcoat Fresnel, scaled by clearcoat_factor
-            vec3 F_cc_base = schlick_fresnel(NdotV_cc, F0_DIELECTRIC);
-            L_base = L_base * (vec3(1.0) - F_cc_base * clearcoat_factor) + L_clearcoat;
+            // Attenuate base layer by clearcoat Fresnel
+            vec3 transmission_tint = (vec3(1.0) - F_cc * final_clearcoat);
+            L_base = L_base * transmission_tint + L_clearcoat;
         }
 
         // Final occlusion application
-        light_output = L_base * final_occlusion;
-        return light_output;
+        return L_base * final_occlusion;
     }	
-    else {
-        // --- LEGACY PHONG SHADING PATH (Fallback) ---
+    else { // --- PHONG SHADING PATH (Legacy Fallback) ---
 
-        // --------------------------------------------------------------------------------
-        // PBR-to-Phong Conversion Logic
-        // Synthesize valid Phong inputs (Ks and Ns) if the material is PBR-sourced 
-        // and lacks legacy data (e.g., shininess=0 or specular color is black).
-        // This prevents the Phong path from resulting in a black screen.
-        // --------------------------------------------------------------------------------
-        vec3 phong_specular_color = final_specular_color;
-        float phong_shininess = material.shininess;
+        float NdotL = max(dot(N_world, L_world), 0.0);
+        float NdotV = max(dot(N_world, V_world), 0.0);
+        vec3 effective_F0 = mix(F0_DIELECTRIC, final_color_base, final_metallic);
+        vec3 F = schlick_fresnel(NdotV, effective_F0);
 
-        // Check if the material is likely PBR (e.g., metallic/roughness values present) 
-        // and the legacy shininess is effectively zero (a common sign of missing Phong data).
-        if (phong_shininess < 0.001 && (material.metallic > 0.045 || material.roughness > 0.0)) {
-            // 1. Synthesize Specular Color (Ks) from PBR F0/Metallic:
-            // Use 4.5% F0 (dielectric base) and blend to final_color_base for metals.
-            phong_specular_color = mix(F0_DIELECTRIC, final_color_base, material.metallic);
-        
-            // 2. Synthesize Shininess (Ns) from PBR Roughness (inverse relationship):
-            float inverse_roughness = 1.0 - material.roughness;
-            phong_shininess = inverse_roughness * inverse_roughness * 1000.0;
+        // === SHININESS TERM ===
+        float phong_shininess;
+        if (material.shininess > EPSILON) {
+            phong_shininess = (material.shininess + 8.0) / (8.0 * PI);          // Energy conservation
         }
-        // --------------------------------------------------------------------------------
-
-        // Specular (ks * (R.V)^ns * I_light)
+        else { // Fallback: derive from roughness
+            float inverse_roughness = 1.0 - final_roughness;
+            phong_shininess = inverse_roughness * inverse_roughness * 256.0; 
+        }
+        phong_shininess = max(1.0, phong_shininess);
+        
+        // === DIFFUSE TERM ===
+        vec3 kD = (vec3(1.0) - F) * (1.0 - final_metallic);                     // Energy conservation
+        vec3 diffuse_light = kD * (NdotL / PI) * final_color_base * radiance;   // Normalized (Lambertian)
+        
+        // === SPECULAR TERM ===
+        vec3 phong_specular_color = final_specular_color;
+        if (dot(phong_specular_color, phong_specular_color) <= EPSILON) {
+            phong_specular_color = mix(F0_DIELECTRIC, final_color_base, final_metallic);
+        }
+        float normalization_spec = (phong_shininess + 2.0) / (2.0 * PI);        // Energy Normalization
         vec3 reflect_dir = reflect(-L_world, N_world);
+        float spec_dot = max(dot(V_world, reflect_dir), 0.0);
+        vec3 specular_light = phong_specular_color * F * pow(spec_dot, phong_shininess) * normalization_spec * radiance * NdotL;
         
-        // Enforce minimum shininess (1.0) for visual stability.
-        float final_shininess = max(1.0, phong_shininess);
-        
-        float spec_strength = pow(max(dot(V_world, reflect_dir), 0.0), final_shininess);
-        
-        vec3 specular_light = spec_strength * phong_specular_color * radiance;
-
-        // ENERGY CONSERVATION FIX (Phong): Subtract specular energy from diffuse
-        float specular_energy_loss = max(max(phong_specular_color.r, phong_specular_color.g), phong_specular_color.b);
-        vec3 energy_conserved_diffuse_color = final_color_base * (1.0 - specular_energy_loss);
-
-        // Diffuse (kd * NdotL * I_light)
-        float NdotL = max(dot(N_world, L_world), EPSILON);
-        vec3 diffuse_light = NdotL * energy_conserved_diffuse_color * radiance;
-        
-        light_output = diffuse_light + specular_light;
-        return light_output;
+        return (diffuse_light + specular_light) * final_occlusion;
     }
 }
 
@@ -438,103 +460,125 @@ void main() {
     // ====================================================================================================
     // --- MATERIAL SELECTION ---
     Material material = materials[material_index];
-    int blend_mode = int(material.ambient.w);
+    bool use_pbr = material.illum == 4;
 
     // ====================================================================================================
     // --- VIEW DIRECTION (IN WORLD SPACE) ---
     vec3 V_world = normalize(v_view_dir); // World Space View Direction (Fragment to Camera)
 
     // ====================================================================================================
-    // --- TRANSMISSION SAMPLING ---
-    float final_transmission = material.transmittance.a;
-    int tx_tex_id = texIDs[material_index].transmission_tex_id;
-    if (tx_tex_id >= 0) {
-        // glTF standard: Transmission is in the Red (R) channel of the texture
-        float transmission_sample = texture(tex_samplers[tx_tex_id], v_tex_coord.xy).r;
-        if (material.transmittance.a == 0.0f) {
-            final_transmission = transmission_sample;
-        }
-        else {
-            final_transmission *= transmission_sample;
-        }
+    // --- UV TRANSFORM (KHR_texture_transform) ---
+    // Apply offset, scale, and rotation to the input UVs
+    float s = sin(material.uv_rotation);
+    float c = cos(material.uv_rotation);
+    mat2 rot_mat = mat2(c, s, -s, c);
+    vec2 uv_offset = material.uv_transform.xy;
+    vec2 uv_scale = material.uv_transform.zw;
+
+    vec2 uv[4];
+    uv[0] = (rot_mat * (v_tex_coord_0.xy * uv_scale)) + uv_offset;
+    uv[1] = v_tex_coord_1.xy;  // Secondary UVs usually untransformed (standard for AO/Lightmaps in glTF)
+    uv[2] = v_tex_coord_2.xy;  // ""
+    uv[3] = v_tex_coord_3.xy;  // "
+    
+    // ====================================================================================================
+    // --- NORMAL MAPPING & TBN ---
+
+    vec3 N, T, B;
+
+    // 1. Sanitize and normalize geometric normal
+    if (any(isnan(v_normal)) || length(v_normal) < 1e-4) {
+        N = vec3(0.0, 1.0, 0.0);
+    } else {
+        N = normalize(v_normal);
     }
-    final_transmission = clamp(final_transmission, 0.0, 1.0);
+    if (!gl_FrontFacing) {N = -N;} // View-dependent normal flip
+
+    // 2. Check if tangent data is usable
+    bool tangent_valid =
+        !any(isnan(v_tangent.xyz)) &&
+        length(v_tangent.xyz) > 0.01 &&
+        abs(dot(normalize(v_tangent.xyz), N)) < 0.99;
+
+    // 3. Use mesh tangent if valid
+    if (tangent_valid) {
+        vec3 T0 = normalize(v_tangent.xyz);
+
+        // Gram-Schmidt orthogonalization
+        T = normalize(T0 - N * dot(N, T0));
+
+        // Reconstruct bitangent using handedness
+        float handedness = (abs(v_tangent.w) < 0.5) ? 1.0 : sign(v_tangent.w);
+        B = normalize(cross(N, T)) * handedness;
+    }
+    // 4. Fallback: screen-space derivative TBN
+    else {
+        vec3 dpdx = dFdx(v_position);
+        vec3 dpdy = dFdy(v_position);
+        vec2 dtdx = dFdx(uv[0]);
+        vec2 dtdy = dFdy(uv[0]);
+
+        vec3 T_ = dpdx * dtdy.y - dpdy * dtdx.y;
+        vec3 B_ = dpdy * dtdx.x - dpdx * dtdy.x;
+
+        // Normalize and orthogonalize
+        T = normalize(T_ - N * dot(N, T_));
+        B = normalize(cross(N, T));
+    }
+
+    mat3 TBN = mat3(T, B, N);
+    
+    // Get the sampled normal from the normal/bump map texture if available
+    vec3 N_world = N; // default normal
+    int normal_tex_id = texIDs[material_index].normal_tex_id;
+    if (normal_tex_id >= 0) {
+        // the sampled normal OVERRIDES the default (no multiplication here)
+        vec3 sampled_normal = texture(tex_samplers[normal_tex_id], uv[texIDs[material_index].normal_uv_id]).rgb;
+        sampled_normal.g = 1.0 - sampled_normal.g; // Vulkan Fix (invert green channel)
+        N_world = normalize(TBN * normalize(sampled_normal * 2.0 - 1.0));
+    }
 
     // ====================================================================================================
     // --- BASE COLOR SAMPLING (SRGB) ---
     vec4 base_color_sample = material.base_color; // Start with base color from Material SSBO
     int bc_tex_id = texIDs[material_index].base_color_tex_id;
     if (bc_tex_id >= 0) {
-        base_color_sample = texture(tex_samplers[bc_tex_id], v_tex_coord.xy);
+        base_color_sample *= texture(tex_samplers[bc_tex_id], uv[texIDs[material_index].base_color_uv_id]);
     }
     vec3 final_color_base = base_color_sample.rgb;
 
     // ====================================================================================================
     // --- ALPHA SAMPLING ---
     // Sample separate Alpha Texture (Alpha/Dissolve Mask)
-    float final_alpha = base_color_sample.a * material.base_color.a;
+    float final_alpha = base_color_sample.a * material.dissolve; // Note: material.dissolve is MTL legacy; should be 1.0 by default if not assigned explicitly
     int alpha_tex_id = texIDs[material_index].alpha_tex_id;
     if (alpha_tex_id >= 0) {
         // Assume alpha is stored in the Red channel (R) of the alpha mask texture
-        float alpha_mask_sample = texture(tex_samplers[alpha_tex_id], v_tex_coord.xy).r;
-        
-        if (material.dissolve < EPSILON) {
-            final_alpha *= alpha_mask_sample;
-        }
-        else {
-            final_alpha *= (material.dissolve * alpha_mask_sample);
-        }
-    }
-    else {
-        final_alpha *= material.dissolve;
+        final_alpha *= texture(tex_samplers[alpha_tex_id], uv[texIDs[material_index].alpha_uv_id]).r;
     }
     final_alpha = clamp(final_alpha, 0.0, 1.0);
 
     // ====================================================================================================
-    // --- NORMAL MAPPING & TBN ---
-    vec3 N = normalize(v_normal);
-    vec3 T = normalize(v_tangent.xyz);
-    T = normalize(T - dot(T, N) * N);
-    vec3 B = normalize(cross(N, T) * v_tangent.w); // Calculate the Bitangent (B) robustly
-    mat3 TBN = mat3(T, B, N);
-    
-    // Get the sampled normal from the normal/bump map texture if available
-    int normal_tex_id = texIDs[material_index].normal_tex_id;
-    vec3 sampled_normal = vec3(0.0, 0.0, 1.0); // Default to straight up in tangent space
-    if (normal_tex_id >= 0) {
-        sampled_normal = texture(tex_samplers[normal_tex_id], v_tex_coord.xy).rgb;
-        sampled_normal.g = 1.0 - sampled_normal.g; // Vulkan fix
-        sampled_normal = normalize(sampled_normal * 2.0 - 1.0);
+    // --- TRANSMISSION SAMPLING ---
+    float final_transmission = material.transmission_factor;
+    int tx_tex_id = texIDs[material_index].transmission_tex_id;
+    if (tx_tex_id >= 0) {
+        // glTF standard: Transmission is in the Red (R) channel of the texture
+        final_transmission *= texture(tex_samplers[tx_tex_id], uv[texIDs[material_index].transmission_uv_id]).r;
     }
-    
-    // Transform tangent space normal to world space normal
-    vec3 N_world = normalize(TBN * sampled_normal);
+    final_transmission = clamp(final_transmission, 0.0, 1.0);
 
-    // --- View-Dependent Normal Flip ---
-    bool is_opaque = (blend_mode == 0) || (final_transmission < EPSILON) || (final_alpha == 1.0);
-    if (is_opaque) {
-        if (dot(N_world, V_world) < EPSILON) {
-            N_world = -N_world;
-        }
-    } else {
-        if (dot(N_world, N) < 0.0) {
-            N_world = -N_world;
-        }
+    // Safeguard for materials which encode transparency only as transmission: override final_alpha
+    if (final_alpha > (1.0 - final_transmission)) {
+        final_alpha = 1.0 - final_transmission;
     }
-
     // ====================================================================================================
     // --- SPECULAR SAMPLING (SRGB) ---
     vec3 final_specular_color = material.specular.rgb * material.specular_factor;
     int specular_tex_id = texIDs[material_index].specular_tex_id;
     if (specular_tex_id >= 0) {
         // Sample the texture array and multiply by the material specular color
-        vec3 specular_sample = texture(tex_samplers[specular_tex_id], v_tex_coord.xy).rgb;
-        if (dot(final_specular_color, final_specular_color) < EPSILON) {
-            final_specular_color = specular_sample * material.specular_factor;
-        }
-        else {
-            final_specular_color *= specular_sample;
-        }
+        final_specular_color *= texture(tex_samplers[specular_tex_id], uv[texIDs[material_index].specular_color_uv_id]).rgb;
     };
     
     // ====================================================================================================
@@ -545,20 +589,13 @@ void main() {
     int mr_tex_id = texIDs[material_index].metallic_roughness_tex_id;
     if (mr_tex_id >= 0) {
         // Sample the texture array using the fetched ID
-        vec3 metallic_roughness_sample = texture(tex_samplers[mr_tex_id], v_tex_coord.xy).rgb;
-        // gLTF convention: Roughness is in the Green channel
-        if (final_roughness < EPSILON) {
-            final_roughness = metallic_roughness_sample.g;
-        }
-        else {
-            final_roughness *= metallic_roughness_sample.g;
-        }
-        // gLTF convention: Metallic is in the Blue channel
-        if (final_metallic < EPSILON) {
-            final_metallic = metallic_roughness_sample.b;
-        }
-        else {
-            final_metallic = metallic_roughness_sample.b;
+        vec3 mr_sample = texture(tex_samplers[mr_tex_id], uv[texIDs[material_index].metallic_roughness_uv_id]).rgb;
+        // Safeguard: check if the sample is non-zero to avoid "killing" the material factors
+        if (dot(mr_sample.rgb, mr_sample.rgb) > EPSILON) {
+            // gLTF convention: Roughness is in the Green channel
+            final_roughness *= mr_sample.g;
+            // gLTF convention: Metallic is in the Blue channel
+            final_metallic *= mr_sample.b;
         }
     }
 
@@ -567,7 +604,7 @@ void main() {
     final_roughness = max(final_roughness, normal_len * 0.5);
     
     // Update the material structure with the final, clamped values for the lighting function
-    final_roughness = clamp(final_roughness, 0.045, 1.0); // Never go below 0.045
+    final_roughness = clamp(final_roughness, 0.045, 1.0);
     final_metallic = clamp(final_metallic, 0.0, 1.0);
 
     // ====================================================================================================
@@ -576,50 +613,38 @@ void main() {
     
     // ====================================================================================================
     // --- CLEARCOAT SAMPLING (KHR_materials_clearcoat) ---
-    float clearcoat_factor = material.clearcoat_factor;
-    float clearcoat_roughness = 0.2;
-    vec3 clearcoat_normal_tangent = vec3(0.0, 0.0, 1.0); // Default to straight up in tangent space
+    float final_clearcoat = material.clearcoat_factor;
+    float clearcoat_roughness = material.clearcoat_roughness;
+    vec3 clearcoat_normal_tangent = vec3(0.0, 1.0, 0.0); // Default to straight up in tangent space
 
     int cc_tex_id = texIDs[material_index].clearcoat_tex_id;
     if (cc_tex_id >= 0) {
         // glTF: Clearcoat factor is R channel
-        if (clearcoat_factor < EPSILON) {
-            clearcoat_factor = texture(tex_samplers[cc_tex_id], v_tex_coord.xy).r;
-        }
-        else {
-            clearcoat_factor *= texture(tex_samplers[cc_tex_id], v_tex_coord.xy).r;
-        }
+        final_clearcoat *= texture(tex_samplers[cc_tex_id], uv[texIDs[material_index].clearcoat_uv_id]).r;
     }
+    final_clearcoat = clamp(final_clearcoat, 0.0, 1.0);
 
     int ccr_tex_id = texIDs[material_index].clearcoat_roughness_tex_id;
     if (ccr_tex_id >= 0) {
         // glTF: Clearcoat roughness is G channel
-        if (clearcoat_roughness < EPSILON) {
-            clearcoat_roughness = texture(tex_samplers[ccr_tex_id], v_tex_coord.xy).g;
-        }
-        else {
-            clearcoat_roughness *= texture(tex_samplers[ccr_tex_id], v_tex_coord.xy).g;
-        }
+        clearcoat_roughness *= texture(tex_samplers[ccr_tex_id], uv[texIDs[material_index].clearcoat_roughness_uv_id]).g;
     }
+    clearcoat_roughness = clamp(clearcoat_roughness, 0.0, 1.0);
 
+    vec3 clearcoat_normal_world = N_world;
     int ccn_tex_id = texIDs[material_index].clearcoat_normal_tex_id;
     if (ccn_tex_id >= 0) {
-        // This is a normal map, requires TBN
-        vec3 cc_normal_sample = texture(tex_samplers[ccn_tex_id], v_tex_coord.xy).rgb;
-        //cc_normal_sample.g = 1.0 - cc_normal_sample.g; // Vulkan fix
-        clearcoat_normal_tangent = normalize(cc_normal_sample * 2.0 - 1.0);
+        // the sampled normal OVERRIDES the default clearcoat normal (no multiplying)
+        vec3 ccn_sample = texture(tex_samplers[ccn_tex_id], uv[texIDs[material_index].clearcoat_normal_uv_id]).rgb;
+        clearcoat_normal_world = normalize(TBN * normalize(ccn_sample * 2.0 - 1.0));
     }
-    vec3 clearcoat_normal_world = normalize(TBN * clearcoat_normal_tangent);
 
-    clearcoat_factor = clamp(clearcoat_factor, 0.0, 1.0);
-    clearcoat_roughness = clamp(clearcoat_roughness, 0.0, 1.0);
-    
     // ====================================================================================================
     // --- SHEEN COLOR SAMPLING ---
-    vec3 final_sheen_color = vec3(0.0);
+    vec3 final_sheen_color = vec3(material.sheen_factor);
     int sc_tex_id = texIDs[material_index].sheen_color_tex_id;
     if (sc_tex_id >= 0) {
-        final_sheen_color = texture(tex_samplers[sc_tex_id], v_tex_coord.xy).rgb;
+        final_sheen_color *= texture(tex_samplers[sc_tex_id], uv[texIDs[material_index].sheen_color_uv_id]).rgb;
     }
 
     // ====================================================================================================
@@ -628,7 +653,7 @@ void main() {
     int sr_tex_id = texIDs[material_index].sheen_roughness_tex_id;
     if (sr_tex_id >= 0) {
         // glTF KHR_materials_sheen standard specifies G channel for roughness map
-        final_sheen_roughness *= texture(tex_samplers[sr_tex_id], v_tex_coord.xy).g; 
+        final_sheen_roughness *= texture(tex_samplers[sr_tex_id], uv[texIDs[material_index].sheen_roughness_uv_id]).g; 
     }
     final_sheen_roughness = clamp(final_sheen_roughness, 0.045, 1.0);
     
@@ -636,14 +661,14 @@ void main() {
     // --- LEGACY: SPECULAR GLOSSINESS OVERRIDE (HIGHER PRIORITY) ---
     int sgd_tex_id = texIDs[material_index].specular_gloss_diffuse_tex_id;
     if (sgd_tex_id >= 0) {
-        vec4 sgd_sampled = texture(tex_samplers[sgd_tex_id], v_tex_coord.xy);
-        final_color_base = sgd_sampled.rgb * material.diffuse_factor;
+        vec4 sgd_sampled = texture(tex_samplers[sgd_tex_id], uv[texIDs[material_index].specular_gloss_diffuse_uv_id]);
+        final_color_base *= sgd_sampled.rgb * material.diffuse_factor;
         final_roughness = 1.0 - (sgd_sampled.a * material.glossiness_factor);
          
         // Disable Mutually Exclusive Extensions (Sheen, Clearcoat, etc., must be disabled if SG is active)
         final_sheen_color = vec3(0.0);
         final_sheen_roughness = 1.0;
-        clearcoat_factor = 0.0;
+        final_clearcoat = 0.0;
         final_metallic = 0.045;
     }
 
@@ -652,7 +677,7 @@ void main() {
     vec3 final_F0 = mix(F0_DIELECTRIC, final_color_base, final_metallic);
     int sg_tex_id = texIDs[material_index].specular_gloss_tex_id;
     if (sg_tex_id >= 0) {
-        final_F0 = texture(tex_samplers[sg_tex_id], v_tex_coord.xy).rgb * material.specular.rgb * material.specular_factor;
+        final_F0 = texture(tex_samplers[sg_tex_id], uv[texIDs[material_index].specular_gloss_uv_id]).rgb * material.specular.rgb * material.specular_factor;
     }
 
     // ====================================================================================================
@@ -660,38 +685,35 @@ void main() {
     vec3 emission_color = material.emission.rgb;
     int ec_tex_id = texIDs[material_index].emissive_tex_id;
     if (ec_tex_id >= 0) {
-        emission_color = material.emission.rgb;
-        vec3 emissive_sample = texture(tex_samplers[ec_tex_id], v_tex_coord.xy).rgb;
-        if (dot(emission_color, emission_color) < EPSILON) {
-            emission_color = emissive_sample;
-        }
-        else {
-            emission_color *= emissive_sample;
-        }
+        emission_color *= texture(tex_samplers[ec_tex_id], uv[texIDs[material_index].emissive_uv_id]).rgb;
     }
 
     // ====================================================================================================
     // --- THICKNESS SAMPLING (KHR_materials_volume) ---
-    float final_thickness = 0.05; // = use as default if no thickness texture is provided
+    float final_thickness = material.thickness_factor;
     int th_tex_id = texIDs[material_index].thickness_tex_id;
     if (th_tex_id >= 0) {
-        // glTF: Thickness is B channel (or R/G)
-        if (final_thickness < EPSILON) {
-            final_thickness = texture(tex_samplers[th_tex_id], v_tex_coord.xy).b;
-        }
-        else {
-            final_thickness *= texture(tex_samplers[th_tex_id], v_tex_coord.xy).b;
-        }
+        // Note: glTF spec specifies the GREEN channel for thickness
+        final_thickness *= texture(tex_samplers[th_tex_id], uv[texIDs[material_index].thickness_uv_id]).g;
     }
     final_thickness = max(final_thickness, 0.0); // Thickness must be non-negative
     
+    // define the color of the volume's interior
+    vec3 final_transmittance = vec3(material.transmittance);
+    if (material.attenuation_distance > 0.0) {
+        // calculate the absorption coefficient (sigma); we use -log(color) to find the rate of decay per unit of distance
+        vec3 sigma = -log(material.attenuation_color.rgb) / material.attenuation_distance;
+        // Transmittance = e^(-sigma * distance)
+        final_transmittance = exp(-sigma * final_thickness);
+    }
+
     // ====================================================================================================
     // --- REFLECTION SAMPLING (KHR_materials_reflection - Custom/Deprecated) ---
     // Assuming reflection texture provides a mask (R channel) for IBL contribution
     float reflection_factor = 0.045; // = use as default if no reflection texture is provided
     int refl_tex_id = texIDs[material_index].reflection_tex_id;
     if (refl_tex_id >= 0) {
-        reflection_factor = texture(tex_samplers[refl_tex_id], v_tex_coord.xy).r;
+        reflection_factor = texture(tex_samplers[refl_tex_id], uv[texIDs[material_index].reflection_uv_id]).r;
     }
 
     // ====================================================================================================
@@ -700,51 +722,30 @@ void main() {
     int occl_tex_id = texIDs[material_index].occlusion_tex_id;
     if (occl_tex_id >= 0) {
         // glTF standard: Red (R) is the Occlusion factor.
-        final_occlusion = texture(tex_samplers[occl_tex_id], v_tex_coord.xy).r;
+        final_occlusion = texture(tex_samplers[occl_tex_id], uv[texIDs[material_index].occlusion_uv_id]).r;
     }
     final_occlusion = clamp(final_occlusion, 0.0, 1.0);
     
     // ====================================================================================================
-    // --- AMBIENT SAMPLING ---
+    // --- AMBIENT SAMPLING (Ka) ---
     vec3 material_ambient_color = material.ambient.rgb;
     int ambient_tex_id = texIDs[material_index].ambient_tex_id;
     if (ambient_tex_id >= 0) {
-        vec3 ambient_sample = texture(tex_samplers[ambient_tex_id], v_tex_coord.xy).rgb;
-        if (dot(material_ambient_color, material_ambient_color) < EPSILON) {
-            material_ambient_color = ambient_sample;
-        }
-        else {
-            material_ambient_color *= ambient_sample;
-        }
+        material_ambient_color *= texture(tex_samplers[ambient_tex_id], uv[texIDs[material_index].ambient_uv_id]).rgb;
     }
     
-    // FIX FOR PHONG BLACK SCREEN (illum != 4):
-    // In many legacy models, material.ambient (Ka) is black, but the model is meant to be lit.
-    // If the material is NOT PBR, and Ka is near black, we should fall back to using 
-    // the final_color_base (Kd) as the ambient coefficient to ensure visibility.
-    bool use_pbr = material.illum == 4;
+    // Fallback: If Ka is black on legacy models, use the base albedo (Kd)
     if (!use_pbr && dot(material_ambient_color, material_ambient_color) < EPSILON) {
         material_ambient_color = final_color_base;
     }
-    else if (dot(material_ambient_color, material_ambient_color) < EPSILON) {
-         // Safety: If ambient is still black, use white for scaling, but this should only 
-         // happen if both Ka and Kd are black, which would be truly invisible.
-         material_ambient_color = vec3(1.0);
-    }
-
-    // Ambient light for Phong Legacy
-    vec3 ambient_light = vec3(0.0);
-    if (!use_pbr) {
-        ambient_light = ambient_scene_color * material_ambient_color * final_color_base * final_occlusion;
-        
-        // attenuate ambient light by transmission factor (only reflected light remains)
-        ambient_light *= (1.0 - final_transmission);
-    }
+ 
+    vec3 final_ambient = ambient_scene_color * material_ambient_color * final_occlusion;
+    final_ambient *= (1.0 - final_transmission); // attenuation by transmission
 
     // ====================================================================================================
     // TOTAL LIGHTING CALCULATION
  
-    vec3 total_lighting = ambient_light + emission_color;
+    vec3 total_lighting = final_ambient + emission_color;
     
     // --- PER-LIGHT CALCULATION LOOP ---
     for (uint i = 0; i < lights_count; ++i) { 
@@ -753,50 +754,89 @@ void main() {
             N_world, 
             V_world,  
             material, 
-            final_color_base,
+            final_color_base  * (1.0 - final_transmission), // base color attenuated by transmission
             final_specular_color,
             final_roughness,
             final_occlusion,
             final_metallic,
             final_ior,
-            clearcoat_factor,
+            final_clearcoat,
             clearcoat_roughness,
             clearcoat_normal_world,
             final_sheen_color,
             final_sheen_roughness,
             final_F0
         );
-        
-        // attenuate reflected light by transmission factor
-        reflected_light *= (1.0 - final_transmission);
-        
         total_lighting += reflected_light;
     }
 
+
     // ====================================================================================================
     // --- IBL CALCULATION ---
-    if (use_pbr) {
-        // --- BASE LAYER IBL (Diffuse + Specular) ---
-        vec3 k_diffuse = (vec3(1.0) - final_F0) * (1.0 - final_metallic);
-        vec3 irradiance = texture(irradiance_map, N_world).rgb;
-        vec3 diffuse_ibl = irradiance * final_color_base * k_diffuse;
-    
-        vec3 R = normalize(reflect(-V_world, N_world));
+    if (use_pbr && ibl_intensity > EPSILON) {
+
         float NdotV = clamp(dot(N_world, V_world), 0.0, 1.0);
+        vec2 brdf = texture(brdf_lut, clamp(vec2(NdotV, final_roughness), 0.0, 1.0)).rg;
+
+        // --- REFLECTION (SPECULAR IBL) ---
+        vec3 R = normalize(reflect(-V_world, N_world));
         uint max_mip_level = max(prefiltered_mip_levels - 1, 0);
         float lod = final_roughness * max_mip_level;
         lod = clamp(lod, 0.0, float(max_mip_level));
         vec3 prefiltered_color = textureLod(prefiltered_map, R, lod).rgb;
-        vec2 brdf = texture(brdf_lut, clamp(vec2(NdotV, final_roughness), 0.0, 1.0)).rg;
 
-        vec3 specular_ibl = prefiltered_color * (final_F0 * brdf.x + brdf.y);
-        vec3 ibl_base = diffuse_ibl + specular_ibl;
+        // Multi-scattering compensation
+        vec3 ms_compensation = vec3(1.0) + final_F0 * (1.0 / max(brdf.x + brdf.y, 0.01) - 1.0);
+        vec3 specular_ibl = prefiltered_color * (final_F0 * brdf.x + brdf.y) * ms_compensation;
+
+        // Horizon fading to prevent light leaking from under the surface
+        float horizon = clamp(1.0 + dot(R, v_normal), 0.0, 1.0);
+        specular_ibl *= horizon * horizon;
+
+        // --- DIFFUSE IBL (ONLY RELEVANT FOR OPAQUE PARTS) ---
+        vec3 k_diffuse = (vec3(1.0) - final_F0) * (1.0 - final_metallic);
+        vec3 irradiance = texture(irradiance_map, N_world).rgb;
+        vec3 diffuse_ibl = irradiance * final_color_base * k_diffuse * (1.0 - final_transmission); // diffuse disappears as transmission increases
+    
+        // TRANSMISSION / REFRACTION IBL ---
+        vec3 transmission_ibl = vec3(0.0);
+        if (final_transmission > EPSILON) {
+            // Calculate the Refraction Vector (Snell's Law); eta is the ratio of IORs (Air IOR / Material IOR)
+            float air_ior = 1.0;
+            float material_ior = max(final_ior, 1.0001); // Prevent div by zero
+            float eta = air_ior / material_ior;
+
+            // Refract the view vector through the surface normal; We use -V_world because 'refract' expects the direction FROM the light source
+            vec3 ray_primary = refract(-V_world, N_world, eta);
+
+            // Account for Thickness (The "Shift"); For thick volumes, the exit point is shifted based on thickness (common glTF approximation)
+            vec3 refraction_dir;
+            if (final_thickness > EPSILON) {
+                // Approximate the shift as the ray travels through the volume
+                refraction_dir = normalize(ray_primary); 
+            }
+            else {
+                // Thin-walled (like a bubble) doesn't shift, it just bends
+                refraction_dir = ray_primary;
+            }
+
+            // Sample the background with the shifted vector; Using lod based on roughness for 'frosted' glass look
+            vec3 background_light = textureLod(prefiltered_map, refraction_dir, lod).rgb;
+
+            // Final coloring with Transmittance (Beer's Law)
+            vec3 refracted_light = background_light * final_transmittance;
+
+            // Fresnel Weighting (1 - F), using the BRDF results to ensure we don't transmit light where we should be reflecting
+            vec3 F_surface = final_F0 * brdf.x + brdf.y;
+            transmission_ibl = refracted_light * (vec3(1.0) - F_surface) * final_transmission;
+        }
+
+        // --- COMBINE BASE LAYER ---
+        vec3 ibl_base = diffuse_ibl + specular_ibl + transmission_ibl;
         
-        // --- SHEEN IBL CONTRIBUTION ---
+        // --- SHEEN IBL ---
         vec3 ibl_sheen = vec3(0.0);
         if (dot(final_sheen_color, final_sheen_color) > EPSILON) {
-            // Sheen uses a more diffuse IBL lookup (higher roughness)
-            // Charlie sheen is cloth-like, so we use a rough approximation
             float sheen_lod = final_sheen_roughness * max_mip_level;
             sheen_lod = clamp(sheen_lod, 0.0, max_mip_level);
             vec3 sheen_prefiltered = textureLod(prefiltered_map, R, sheen_lod).rgb;
@@ -812,9 +852,9 @@ void main() {
             ibl_base = ibl_base * (1.0 - sheen_strength * F_sheen_ibl) + ibl_sheen;
         }
     
-        // --- CLEARCOAT IBL CONTRIBUTION ---
+        // --- CLEARCOAT IBL ---
         vec3 ibl_clearcoat = vec3(0.0);
-        if (clearcoat_factor > EPSILON) {
+        if (final_clearcoat > EPSILON) {
             // Clearcoat has its own reflection vector and roughness
             vec3 N_cc = normalize(clearcoat_normal_world);
             vec3 R_cc = reflect(-V_world, N_cc);
@@ -822,47 +862,39 @@ void main() {
         
             // Clearcoat uses its own roughness for IBL lookup
             float cc_lod = clearcoat_roughness * max_mip_level;
-            cc_lod = clamp(cc_lod, 0.0, max_mip_level);
+            cc_lod = clamp(cc_lod, 0.0, float(max_mip_level));
             vec3 cc_prefiltered = textureLod(prefiltered_map, R_cc, cc_lod).rgb;
         
             // Clearcoat always has F0 = 0.04 (fixed IOR ~1.5)
             vec3 F0_cc = vec3(0.04);
             vec2 cc_brdf = texture(brdf_lut, vec2(NdotV_cc, clearcoat_roughness)).rg;
-            ibl_clearcoat = cc_prefiltered * (F0_cc * cc_brdf.x + cc_brdf.y) * clearcoat_factor;
+            ibl_clearcoat = cc_prefiltered * (F0_cc * cc_brdf.x + cc_brdf.y) * final_clearcoat;
         
             // Attenuate base layer by clearcoat's Fresnel
             vec3 F_cc_ibl = schlick_fresnel(NdotV_cc, F0_cc);
-            ibl_base = ibl_base * (vec3(1.0) - F_cc_ibl * clearcoat_factor) + ibl_clearcoat;
+            ibl_base = ibl_base * (vec3(1.0) - F_cc_ibl * final_clearcoat) + ibl_clearcoat;
         }
     
-        // Apply occlusion and transmission to final IBL
-        vec3 ibl_contribution = ibl_base * final_occlusion * (1.0 - final_transmission) * ibl_intensity;
-        total_lighting += ibl_contribution;
+        // FINAL IBL
+        vec3 ibl_contribution = ibl_base * final_occlusion * ibl_intensity;
+        total_lighting += ibl_contribution; // Alternative: direct addition without highpass filter
     }
     
     // ====================================================================================================
-    // --- FINAL ALPHA CALCULATION & CUTOFF ---
-    if (blend_mode == 0) {                                  // OPAQUE_MODE
-        if (final_transmission > EPSILON) {
-            // discard transmissive fragments in OPAQUE PASS
-            discard;
+    // --- DISCARD ACCORDING TO BLEND MODE ---
+    if (material.alpha_mode == 0) {                                  // OPAQUE_MODE
+        if (final_alpha < (1.0 - EPSILON) && final_transmission <= EPSILON) {
+            discard; // Only discard if it's truly supposed to be transparent
         }
     }
-    else if (blend_mode == 1) {                             // MASK_MODE
-        // Apply alpha cutoff for Masked regions
+    else if (material.alpha_mode == 1) {                             // MASK_MODE
         if (final_alpha < material.alpha_cutoff) {
             discard;
         }
     }
-    else if (blend_mode == 2) {                             // BLEND_MODE
-        if (final_transmission > EPSILON) {
-            final_alpha = 1.0 - final_transmission;
-        }
-        // If final_transmission is 0.0, final_alpha remains the value calculated 
-        // earlier from base_color.a, which is correct for standard alpha blending.
+    else if (material.alpha_mode == 2) {                             // BLEND_MODE (alpha)
+        // No discard; already handled in the alpha calculation
     }
-    
-    final_alpha = clamp(final_alpha, 0.0, 1.0);
 
     // ====================================================================================================
     // Final NaN / INF check

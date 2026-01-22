@@ -14,6 +14,8 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define MAX_TEXTURES 1024 // max number of textures that can be loaded
 #define NUM_DEFAULT_TEXTURES 4 // number of default textures (1x1 pixel) created be mesh/texture loaders
+#define INVALID_ID -1
+#define INVALID_HASH UINT64_MAX
 #define CUBEMAP_FACE_COUNT 6
 #define MAX_DESCRIPTOR_SET_COUNT 50 // max number of descriptor sets within the shared singleton descriptor pool
 #define MAX_TASKS_IN_DEBUG  50 // if this number of compute or graphics tasks is exceeded, this will trigger a warning in DEBUG to indicate a possible resource leak (=muted in release)
@@ -26,6 +28,7 @@
 
 //#define DEBUG_LOG_IN_RELEASE			// <-- uncomment this line to enable Log::debug(...) in RELEASE
 //#define HEAP_MEMLOG					// <-- uncomment this line to log memory allocations on the heap (overrides 'new' & 'delete')
+//#define MAKE_RENDERDOC_CAPTURE		// <-- uncomment this line to enable RenderDoc captures (if RenderDoc is installed)
 
 // include headers
 #include <algorithm>
@@ -56,7 +59,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
-#include <stringhash.h>
 #include <third_party/json.hpp>
 #include <third_party/mikktspace.h>
 #include <third_party/stb_image.h>
@@ -70,7 +72,9 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#if defined(MAKE_RENDERDOC_CAPTURE)
 #include <vkdebug.h>
+#endif
 #include <vulkan/vulkan.h>
 
 // Android-Specific Headers
@@ -219,36 +223,6 @@ std::vector<VkDescriptorPoolSize> DEFAULT_POOL_SIZE = {
 	// {VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV, 0}
 };
 
-// default settings for cameras
-const glm::vec3 CAMERA_DEFAULT_POSITION = { 0.0f, 0.0f, 5.0f };
-const float CAMERA_DEFAULT_YAW = -90.0f;						// Yaw -90.0f: "forward" along the positive Y-axis
-const float CAMERA_DEFAULT_PITCH = 0.0f;
-const float CAMERA_DEFAULT_ROLL = 0.0f;
-const glm::vec3 CAMERA_DEFAULT_UP = { 0.0f, 1.0f, 0.0f };
-const glm::vec3 DEFAULT_WORLD_UP = { 0.0f, 1.0f, 0.0f };
-const float CAMERA_DEFAULT_SPEED = 2.5f;
-const float CAMERA_DEFAULT_SENSITIVITY = 0.1f;
-const float CAMERA_DEFAULT_FOV = 45.0f;
-const float CAMERA_DEFAULT_ASPECT_RATIO = 16.0f / 9.0f;			// standard widescreen aspect ratio
-const float CAMERA_DEFAULT_NEAR_PLANE = 0.1f;					// Must be > 0. Prevents Z-fighting near the camera.
-const float CAMERA_DEFAULT_FAR_PLANE = 1000.0f;					// Determines maximum rendering distance.
-const float CAMERA_MAX_FOV = 45.0f;								// max field of view
-
-// default light setting
-const glm::vec3 LIGHT_DEFAULT_POSITION = { 0.0f, 10.0f, 0.0f };
-const float_t LIGHT_DEFAULT_TYPE = 1.0f; // 1.0f = LightType::POINT_LIGHT
-const glm::vec3 LIGHT_DEFAULT_DIRECTION = { 0.0f, -10.0f, 0.0f };
-const float_t LIGHT_DEFAULT_RANGE = 0.0f; // 0 = infinity / no fall-off
-const glm::vec3 LIGHT_DEFAULT_COLOR = { 1.0f, 1.0f, 1.0f };
-const float_t LIGHT_DEFAULT_INTENSITY = 10.0f;
-const float_t LIGHT_DEFAULT_INNER_CONE_ANGLE = 0.78f; // for spot lights
-const float_t LIGHT_DEFAULT_OUTER_CONE_ANGLE = 1.57f; // for spot lights
-
-// default settings for scenes
-const glm::vec3 SCENE_DEFAULT_AMBIENT = { 0.1f, 0.1f, 0.1f };	// default ambient light color
-const float SCENE_DEFAULT_EXPOSURE = 1.0f;
-const float SCENE_DEFAULT_CONTRAST = 0.0f;
-
 // preferred formats
 const std::vector<VkFormat> DEPTH_FORMAT_CANDIDATES = {
 	VK_FORMAT_D32_SFLOAT,
@@ -366,7 +340,8 @@ enum LightType {
 enum AlphaMode {
 	OPAQUE_MODE,
 	MASK_MODE,
-	BLEND_MODE
+	ALPHA_BLEND_MODE,
+	PREMULTIPLIED_ALPHA_BLEND_MODE
 };
 
 enum  TextureType {
@@ -408,6 +383,60 @@ enum EventType {
 	CUSTOM_EVENT
 };
 
+enum UpAxis {
+	X_UP,
+	Y_UP,
+	Z_UP,
+	X_DOWN,
+	Y_DOWN,
+	Z_DOWN
+};
+
+glm::vec3 up_axis_as_vec3(UpAxis up_axis) {
+	switch (up_axis) {
+	case UpAxis::X_UP: return glm::vec3({ 1,0,0 }); break;
+	case UpAxis::Z_UP: return glm::vec3({ 0,0,1 }); break;
+	case UpAxis::X_DOWN: return glm::vec3({ -1,0,0 }); break;
+	case UpAxis::Y_DOWN: return glm::vec3({ 0,-1,0 }); break;
+	case UpAxis::Z_DOWN: return glm::vec3({ 0,0,-1 }); break;
+	default: return glm::vec3({ 0,1,0 }); // Y-UP as default
+	}
+}
+
+struct Handedness {
+	inline static const float_t Right = 1.0f;
+	inline static const float_t Left = -1.0f;
+};
+
+// default settings for cameras
+const glm::vec3 CAMERA_DEFAULT_POSITION = { 0.0f, 0.0f, 5.0f };
+const float CAMERA_DEFAULT_YAW = -90.0f;						// Yaw -90.0f: "forward" along the positive Y-axis
+const float CAMERA_DEFAULT_PITCH = 0.0f;
+const float CAMERA_DEFAULT_ROLL = 0.0f;
+const UpAxis CAMERA_DEFAULT_UP = UpAxis::Y_UP;
+const UpAxis DEFAULT_WORLD_UP = UpAxis::Y_UP;
+const float CAMERA_DEFAULT_SPEED = 2.5f;
+const float CAMERA_DEFAULT_SENSITIVITY = 0.1f;
+const float CAMERA_DEFAULT_FOV = 45.0f;
+const float CAMERA_DEFAULT_ASPECT_RATIO = 16.0f / 9.0f;			// standard widescreen aspect ratio
+const float CAMERA_DEFAULT_NEAR_PLANE = 0.1f;					// Must be > 0. Prevents Z-fighting near the camera.
+const float CAMERA_DEFAULT_FAR_PLANE = 1000.0f;					// Determines maximum rendering distance.
+const float CAMERA_MAX_FOV = 45.0f;								// max field of view
+
+// default light setting
+const glm::vec3 LIGHT_DEFAULT_POSITION = { 0.0f, 10.0f, 0.0f };
+const float_t LIGHT_DEFAULT_TYPE = 1.0f; // 1.0f = LightType::POINT_LIGHT
+const glm::vec3 LIGHT_DEFAULT_DIRECTION = { 0.0f, -10.0f, 0.0f };
+const float_t LIGHT_DEFAULT_RANGE = 0.0f; // 0 = infinity / no fall-off
+const glm::vec3 LIGHT_DEFAULT_COLOR = { 1.0f, 1.0f, 1.0f };
+const float_t LIGHT_DEFAULT_INTENSITY = 10.0f;
+const float_t LIGHT_DEFAULT_INNER_CONE_ANGLE = 0.78f; // for spot lights
+const float_t LIGHT_DEFAULT_OUTER_CONE_ANGLE = 1.57f; // for spot lights
+
+// default settings for scenes
+const glm::vec3 SCENE_DEFAULT_AMBIENT = { 0.1f, 0.1f, 0.1f };	// default ambient light color
+const float SCENE_DEFAULT_EXPOSURE = 1.0f;
+const float SCENE_DEFAULT_CONTRAST = 0.0f;
 
 // +=================================+   
 // | Helper Functions                |
@@ -434,16 +463,77 @@ std::filesystem::path get_executable_directory() {
 #endif
 }
 
-std::string resolve_path(const std::string& base_directory_path, const std::string& relative_uri) {
-	// 1. Create a path object for the base directory
-	std::filesystem::path base = base_directory_path;
-
-	// 2. Append the relative URI to the base path
-	std::filesystem::path resolved_path = base / relative_uri;
-
-	// 3. Return the normalized, absolute path string
+std::string abs_filepath(const std::string& relative_filepath) {
+	std::filesystem::path project_root = get_executable_directory() / "..";
+	std::filesystem::path full_filepath = project_root / relative_filepath;
+	std::filesystem::path resolved_path = std::filesystem::absolute(full_filepath);
 	return resolved_path.lexically_normal().string();
 }
+
+// Custom Key for optimized unordered_map lookups
+struct StringHash {
+	std::string string_identifier = "invalid";
+	uint64_t unique_hash = INVALID_HASH;
+
+	StringHash(const std::string& hash_from_custom_string) : string_identifier("CUSTOM_TEX_" + hash_from_custom_string) {
+		unique_hash = std::hash<std::string>{}(hash_from_custom_string);
+	}
+
+	StringHash(const std::filesystem::path& hash_from_filepath) : string_identifier("FILEPATH_TEX_" + hash_from_filepath.string()) {
+		unique_hash = std::hash<std::string>{}(hash_from_filepath.string());
+	}
+
+	StringHash(const tinygltf::Image& image) {
+		if (!image.uri.empty()) {
+			string_identifier = "uri_" + image.uri;
+			unique_hash = std::hash<std::string>{}(string_identifier);
+		}
+		else if (!image.name.empty()) {
+			string_identifier = "name_" + image.name;
+			unique_hash = std::hash<std::string>{}(string_identifier);
+		}
+		else if (!image.image.empty()) {
+			// No metadata? -> hash the actual binary pixel data
+			string_identifier = "bin_" + std::to_string(image.image.size());
+			uint64_t data_hash = image.image.size();
+
+			// we hash a sample of the data to keep it fast while maintaining uniqueness
+			static const size_t MAX_SAMPLE_SIZE = 4096;
+			size_t sample_size = std::min(image.image.size(), MAX_SAMPLE_SIZE);
+			for (size_t i = 0; i < sample_size; i += 64) {
+				hash_combine(data_hash, static_cast<uint64_t>(image.image[i]));
+			}
+			unique_hash = data_hash;
+		}
+		else {
+			// do nothing (leave as invalid)
+		}
+	}
+
+	StringHash() : unique_hash(0) {}
+
+	// Overload the equality operator for collision checking
+	bool operator==(const StringHash& other) const {
+		// 1. CHEAP CHECK: Compare the hash values first. If hashes differ, paths MUST be different.
+		if (unique_hash != other.unique_hash) {
+			return false;
+		}
+
+		// 2. EXPENSIVE CHECK (Only executed on hash collision): 
+		// Compare the full strings to handle the rare hash collision scenario.
+		return string_identifier == other.string_identifier;
+	}
+	void hash_combine(uint64_t& seed, uint64_t v) {	seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2); }
+};
+
+// Specialization of std::hash for the StringHash struct
+// This tells the unordered_map how to get the hash for bucket lookup.
+template <>
+struct std::hash<StringHash> {
+	size_t operator()(const StringHash& tp) const {
+		return tp.unique_hash;
+	}
+};
 
 // helper struct for 1x1 image creation;
 // simplifies the creation of tinygltf::Image objects in memory,
@@ -468,7 +558,7 @@ VkFormat get_texture_format(int components, bool is_srgb) {
 		switch (components) {
 		case 1: return VK_FORMAT_R8_SRGB;
 		case 2: return VK_FORMAT_R8G8_SRGB;
-		case 3: return VK_FORMAT_R8G8B8_SRGB;
+		//case 3: return VK_FORMAT_R8G8B8_SRGB; // UNSUPPORTED BY MOST HARDWARE
 		case 4: return VK_FORMAT_R8G8B8A8_SRGB;
 		default:
 			// Fallback to the safest option
@@ -481,11 +571,11 @@ VkFormat get_texture_format(int components, bool is_srgb) {
 		switch (components) {
 		case 1: return VK_FORMAT_R8_UNORM;
 		case 2: return VK_FORMAT_R8G8_UNORM;
-		case 3:	return VK_FORMAT_R8G8B8_UNORM;
+		//case 3:	return VK_FORMAT_R8G8B8_UNORM;  // UNSUPPORTED BY MOST HARDWARE
 		case 4: return VK_FORMAT_R8G8B8A8_UNORM;
 		default:
 			// Fallback to the safest option
-			Log::error("Unsupported UNORM component count: " + std::to_string(components));
+			Log::warning("Unsupported UNORM component count: " + std::to_string(components));
 			return VK_FORMAT_R8G8B8A8_UNORM;
 		}
 	}
@@ -894,19 +984,25 @@ struct ColorBlendState {
 		alpha_blend_op,
 		VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT // colorWriteMask
 	) {
-		this->alpha_mode = dst_color_blend_factor == VK_BLEND_FACTOR_ZERO && dst_alpha_blend_factor == VK_BLEND_FACTOR_ZERO ? AlphaMode::OPAQUE_MODE : AlphaMode::BLEND_MODE;
+		switch (dst_color_blend_factor) {
+		case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+		case VK_BLEND_FACTOR_SRC_ALPHA:
+		case VK_BLEND_FACTOR_CONSTANT_ALPHA:
+			attachment_state.blendEnable = VK_TRUE; break;
+		default:
+			attachment_state.blendEnable = VK_FALSE; break;
+		}
 	}
 
 	const VkPipelineColorBlendAttachmentState& get_attachment() const { return attachment_state; };
-	AlphaMode get_alpha_mode() const { return alpha_mode; }
 private:
 	VkPipelineColorBlendAttachmentState attachment_state = {};
-	AlphaMode alpha_mode = AlphaMode::OPAQUE_MODE;
 public:
 	// declare defaults
 	static const ColorBlendState OPAQUE_BLEND;
 	static const ColorBlendState ALPHA_BLEND;
 	static const ColorBlendState ADDITIVE_BLEND;
+	static const ColorBlendState PREMULTIPLIED_ALPHA_BLEND;
 };
 
 // === DEFINE STATIC MEMBERS OUTSIDE CLASS ===
@@ -926,6 +1022,15 @@ const ColorBlendState ColorBlendState::ALPHA_BLEND = ColorBlendState(
 	VK_BLEND_FACTOR_ONE,                    // src_alpha_blend_factor (often ONE)
 	VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,    // dst_alpha_blend_factor (often ONE_MINUS_SRC_ALPHA)
 	VK_BLEND_OP_ADD                         // alpha_blend_op
+);
+
+const ColorBlendState ColorBlendState::PREMULTIPLIED_ALPHA_BLEND = ColorBlendState(
+	VK_BLEND_FACTOR_ONE,					// src_color_blend_factor
+	VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,	// dst_color_blend_factor
+	VK_BLEND_OP_ADD,
+	VK_BLEND_FACTOR_ONE,
+	VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+	VK_BLEND_OP_ADD
 );
 
 const ColorBlendState ColorBlendState::ADDITIVE_BLEND = ColorBlendState(
@@ -968,7 +1073,6 @@ public:
 	// adds an attachment description (=owned by this main RenderPass) and returns its index
 	uint32_t add_attachment(
 		AttachmentType type,
-		const ColorBlendState& blend_state,		// ignored for depth attachments (a default such as ColorBlendState::OPAQUE_BLEND can be used in this case)
 		VkImageLayout initial_layout,
 		VkImageLayout final_layout,
 		VkAttachmentLoadOp load_op,
@@ -998,7 +1102,6 @@ public:
 	bool has_depth_stencil() const;
 	bool has_color_attachment() const;
 	const std::vector<VkAttachmentDescription>& get_attachment_descriptions();
-	const std::vector<ColorBlendState>& get_blend_states() const;
 	const AttachmentType get_attachment_type(uint32_t index) const;
 	bool is_finalized() const { return finalized; }
 
@@ -1011,7 +1114,6 @@ protected:
 	bool color_attachment_flag = false;
 	std::vector<VkAttachmentDescription> attachment_description;
 	std::vector<AttachmentType> attachment_type;
-	std::vector<ColorBlendState> blend_states;
 	std::vector<VkSubpassDescription> subpass_description;
 	std::vector<VkSubpassDependency> subpass_dependency;
 	bool finalized = false;
@@ -1753,17 +1855,18 @@ protected:
 // | Vertex                          |
 // +=================================+
 
-#pragma pack(push, 1) 
 struct Vertex {
 	glm::vec4	color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 	glm::vec4	tangent = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);;
 	glm::vec3	position = { 0.0f, 0.0f, 0.0f };
 	glm::vec3	normal = { 0.0f, 0.0f, 0.0f };
-	glm::vec2	tex_coord = { 0.0f, 0.0f };
+	glm::vec2	tex_coord_0 = { 0.0f, 0.0f };
+	glm::vec2	tex_coord_1 = { 0.0f, 0.0f };
+	glm::vec2	tex_coord_2 = { 0.0f, 0.0f };
+	glm::vec2	tex_coord_3 = { 0.0f, 0.0f };
 	uint32_t	material_index = 0;
 	bool operator==(const Vertex& other) const;
 };
-#pragma pack(pop)
 
 // +=================================+   
 // | MikkTSpace Adapter              |
@@ -1840,7 +1943,8 @@ struct MeshTangentGenerator {
 		const uint32_t vertex_index = MikkTSpaceData::get_vertex_index(context, i_face, i_vert);
 		const MikkTSpaceData* user_data = static_cast<const MikkTSpaceData*>(context->m_pUserData);
 
-		const glm::vec2& uv = user_data->vertices->at(vertex_index).tex_coord;
+		// MikkTSpace should almost always be calculated based on the primary UV set (i.e. v.tex_coord_0)
+		const glm::vec2& uv = user_data->vertices->at(vertex_index).tex_coord_0;
 		fv_tex_out[0] = uv.x;
 		fv_tex_out[1] = uv.y;
 	}
@@ -1921,30 +2025,56 @@ struct MeshTangentGenerator {
 // +=================================+
 // struct for storing global texture IDs used by the Material
 struct MaterialTexIDs {
-	int	ambient_tex_id = -1;
-	int	base_color_tex_id = -1;
-	int	specular_tex_id = -1;
-	int	specular_color_tex_id = -1;
+	int32_t	ambient_tex_id = INVALID_ID;
+	int32_t	base_color_tex_id = INVALID_ID;
+	int32_t	specular_tex_id = INVALID_ID;
+	int32_t	specular_color_tex_id = INVALID_ID;
 
-	int	displacement_tex_id = -1;
-	int	alpha_tex_id = -1;
-	int	reflection_tex_id = -1;
-	int	metallic_roughness_tex_id = -1;	// Combined map for metallic and roughness values
+	int32_t	displacement_tex_id = INVALID_ID;
+	int32_t	alpha_tex_id = INVALID_ID;
+	int32_t	reflection_tex_id = INVALID_ID;
+	int32_t	metallic_roughness_tex_id = INVALID_ID;	// Combined map for metallic and roughness values
 
-	int	normal_tex_id = -1;				// Texture used for normal mapping
-	int	occlusion_tex_id = -1;			// Texture used for ambient occlusion.
-	int	emissive_tex_id = -1;
-	int clearcoat_tex_id = -1;
+	int32_t	normal_tex_id = INVALID_ID;				// Texture used for normal mapping
+	int32_t	occlusion_tex_id = INVALID_ID;			// Texture used for ambient occlusion.
+	int32_t	emissive_tex_id = INVALID_ID;
+	int32_t clearcoat_tex_id = INVALID_ID;
 
-	int clearcoat_roughness_tex_id = -1;
-	int clearcoat_normal_tex_id = -1;
-	int sheen_color_tex_id = -1;
-	int sheen_roughness_tex_id = -1;
+	int32_t clearcoat_roughness_tex_id = INVALID_ID;
+	int32_t clearcoat_normal_tex_id = INVALID_ID;
+	int32_t sheen_color_tex_id = INVALID_ID;
+	int32_t sheen_roughness_tex_id = INVALID_ID;
 
-	int transmission_tex_id = -1;
-	int thickness_tex_id = -1;
-	int specular_gloss_diffuse_tex_id = -1;
-	int specular_gloss_tex_id = -1;
+	int32_t transmission_tex_id = INVALID_ID;
+	int32_t thickness_tex_id = INVALID_ID;
+	int32_t specular_gloss_diffuse_tex_id = INVALID_ID;
+	int32_t specular_gloss_tex_id = INVALID_ID;
+
+	// UV map IDs (tex_coord)
+	int32_t	ambient_uv_id = 0;
+	int32_t	base_color_uv_id = 0;
+	int32_t	specular_uv_id = 0;
+	int32_t	specular_color_uv_id = 0;
+
+	int32_t	displacement_uv_id = 0;
+	int32_t	alpha_uv_id = 0;
+	int32_t	reflection_uv_id = 0;
+	int32_t	metallic_roughness_uv_id = 0;
+
+	int32_t	normal_uv_id = 0;
+	int32_t	occlusion_uv_id = 1;
+	int32_t	emissive_uv_id = 0;
+	int32_t clearcoat_uv_id = 0;
+
+	int32_t clearcoat_roughness_uv_id = 0;
+	int32_t clearcoat_normal_uv_id = 0;
+	int32_t sheen_color_uv_id = 0;
+	int32_t sheen_roughness_uv_id = 0;
+
+	int32_t transmission_uv_id = 0;
+	int32_t thickness_uv_id = 0;
+	int32_t specular_gloss_diffuse_uv_id = 0;
+	int32_t specular_gloss_uv_id = 0;
 };
 
 // +=================================+   
@@ -1952,30 +2082,47 @@ struct MaterialTexIDs {
 // +=================================+
 
 struct Material {
-
-	// Basic Properties
-	glm::vec4	ambient = { 0.1f, 0.1f, 0.1f, AlphaMode::OPAQUE_MODE };	// ambient.w is used for the alphaMode: 0=OPAQUE, 1=MASK, 2=BLEND
+	// 16-byte aligned blocks:
+	glm::vec4	ambient = { 0.1f, 0.1f, 0.1f, 1.0f };
 	glm::vec4	specular = { 0.1f, 0.1f, 0.1f, 1.0f };
 	glm::vec4	transmittance = { 0.0f, 0.0f, 0.0f, 0.0f };
 	glm::vec4	emission = { 0.0f, 0.0f, 0.0f, 1.0f };
 	glm::vec4	base_color = { 1.0f, 1.0f, 1.0f, 1.0f };
-
+	glm::vec4	uv_transform = { 0.0, 0.0f, 1.0f, 1.0f }; // xy = offset, zw = scale
+	glm::vec4   attenuation_color = { 1.0f, 1.0f, 1.0f, 1.0f }; // RGB attenuation color (KHR_materials_volume), A = padding
+	
+	// Scalar block 1 (Total 16 bytes)
+	float_t		uv_rotation = 0.0f;
 	float_t		shininess = 32.0f;
-	float_t		ior = 1.5f;
+	float_t		ior = 1.5f;	
 	float_t		dissolve = 1.0f;
-	float_t		roughness = 0.6f;
 
+	// Scalar block 2 (Total 16 bytes)
+	float_t		roughness = 0.6f;
 	float_t		metallic = 0.0f;
 	float_t		diffuse_factor = 1.0f;
 	float_t		glossiness_factor = 1.0f;
+
+	// Scalar block 3 (Total 16 bytes)
 	float_t		specular_factor = 1.0f;
-
 	float_t		clearcoat_factor = 0.0f;
-	float_t		alpha_cutoff = 0.0f;
-	int 		illum = 4;
-	int			unique_ID = -1;	// unique GLOBAL(!) material index
+	float_t		clearcoat_roughness = 0.2f;
+	float_t		sheen_factor = 0.0f;
 
-	MaterialTexIDs texIDs; // global texture IDs
+	// Scalar block 4 (Total 16 bytes)
+	float_t		alpha_cutoff = 0.0f;
+	float_t		transmission_factor = 0.0f;
+	float_t		thickness_factor = 0.0f; // = thin-walled
+	float_t     attenuation_distance = 65504.0f; // = essentially infinite by default; (KHR_materials_volume)
+
+	// Scalar block 5 (Total 16 bytes)
+	int32_t		illum = 4;
+	int32_t		alpha_mode = AlphaMode::OPAQUE_MODE;
+	int32_t		unique_ID = INVALID_ID;	// unique GLOBAL(!) material index
+	int32_t		padding0 = 0;
+
+	// global(!) Texture IDs (5 blocks of 16 bytes each)
+	alignas(16) MaterialTexIDs texIDs;
 
 	inline static int next_unique_ID = 0;
 
@@ -2046,8 +2193,8 @@ class Texture {
 	friend class Scene;
 public:
 	// Parametric constructor
-	Texture(Device& device, const std::string& filepath, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::SRGB_TEXTYPE, int force_mip_levels = -1);
-	Texture(Device& device, const tinygltf::Image& gltf_image, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::SRGB_TEXTYPE, int force_mip_levels = -1);
+	Texture(Device& device, const std::string& relative_filepath, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::SRGB_TEXTYPE, int force_mip_levels = -1);
+	Texture(Device& device, const const tinygltf::Image& gltf_image, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::SRGB_TEXTYPE, int force_mip_levels = -1);
 	Texture(Device& device, uint32_t width, uint32_t height, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::SRGB_TEXTYPE, int force_mip_levels = -1);
 
 	// Deleted copy constructor and assignment
@@ -2067,7 +2214,6 @@ public:
 	Image& get_image() const;
 	const uint32_t get_unique_ID() const;
 	const StringHash& get_hash() const;
-	static int get_unique_ID(std::string texture_stringname);
 	static int get_unique_ID(StringHash texture_hash);
 	static uint32_t get_next_unique_ID();
 	static const int get_unique_IDs_count();
@@ -2088,13 +2234,19 @@ protected:
 // | SubMesh                         |
 // +=================================+
 struct SubMesh {
-	uint32_t parent_mesh_local_material_index = 0;
-	uint32_t scene_local_material_index = 0;
-	uint32_t global_material_index = 0;
+	int32_t parent_mesh_local_material_index = INVALID_ID;
+	int32_t scene_local_material_index = INVALID_ID;
+	int32_t global_material_index = INVALID_ID;
 	uint32_t first_index;
 	uint32_t index_count;
 	uint32_t vertex_count;
 	uint32_t vertex_offset;
+
+	// Bounding box for depth sorting and culling
+	glm::vec3 bbox_min = glm::vec3(FLT_MAX);
+	glm::vec3 bbox_max = glm::vec3(-FLT_MAX);
+
+	glm::vec3 get_center() const { return (bbox_min + bbox_max) * 0.5f; }
 };
 
 // +=================================+   
@@ -2107,7 +2259,7 @@ public:
 	Mesh() = delete;
 
 	// parametric constructors
-	Mesh(Device& device, const std::string& relative_path, Semaphore& timeline_semaphore, bool default_to_pbr = false, bool generate_mikktspace_tangents = true);
+	Mesh(Device& device, const std::string& relative_path, Semaphore& timeline_semaphore, bool default_to_pbr = false, bool generate_mikktspace_tangents = true, int variant_id = 0, UpAxis src_up_axis = UpAxis::Y_UP);
 	Mesh(Device& device, const std::string& text, glm::vec2 cursor_pos,	glm::vec2 scale, Semaphore& timeline_semaphore, Material* material = nullptr);
 
 	// destructor
@@ -2134,6 +2286,24 @@ public:
 	uint32_t get_material_count() const;
 	uint32_t get_texture_count() const;
 
+	// boundary box
+	glm::vec3 get_bbox_min() const;
+	glm::vec3 get_bbox_max() const;
+	glm::vec3 get_bbox_center() const;
+
+	// physics
+	void set_mass_kg(float_t mass_kg);
+	void set_drag_coefficient(float_t value);
+	void set_surface_friction(float_t value);
+	void set_bounce_restitution(float_t value);
+	
+	float_t get_mass_kg() const;
+	float_t get_drag_coefficient() const;
+	float_t get_surface_friction() const;
+	float_t get_bounce_restitution() const;
+	
+	void make_solid(bool mesh_is_solid);
+
 	// getters for textures
 	const std::vector<Texture>& get_textures() const;
 
@@ -2148,10 +2318,15 @@ public:
 
 private:
 	// Helper Functions
+	void load_obj(const std::filesystem::path& full_path, Semaphore& timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents);
+	void load_gltf(const std::filesystem::path& full_path, Semaphore& timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents);
 	void create_default_textures(Semaphore& timeline_semaphore);
-
 	void compute_obj_normals(tinyobj::attrib_t& attrib_tinyobj, std::vector<tinyobj::shape_t>& shapes_tinyobj);
-
+	void process_obj_tangents(bool generate_mikktspace_tangents);
+	void process_obj_vertices(
+		std::vector<tinyobj::shape_t>& shapes_tinyobj,
+		tinyobj::attrib_t& attrib_tinyobj
+	);
 	void load_obj_textures_and_materials(
 		const std::filesystem::path& full_path,
 		std::vector<tinyobj::shape_t>& shapes_tinyobj,
@@ -2159,24 +2334,7 @@ private:
 		bool default_to_pbr,
 		Semaphore& timeline_semaphore
 	);
-
-	void process_obj_vertices(
-		std::vector<tinyobj::shape_t>& shapes_tinyobj,
-		tinyobj::attrib_t& attrib_tinyobj
-	);
-
-	void process_obj_tangents(bool generate_mikktspace_tangents);
-
-	void write_buffers(Semaphore& timeline_semaphore);
-
-	void load_obj(const std::filesystem::path& full_path, Semaphore& timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents);
-
 	void load_gltf_textures_and_materials(tinygltf::Model& model, bool default_to_pbr, Semaphore& timeline_semaphore);
-
-	std::string get_gltf_texture_uri(const tinygltf::Model& model, int gltf_texture_index);
-
-	glm::mat4 get_gltf_node_transform(const tinygltf::Node& node);
-
 	void process_gltf_node(
 		const tinygltf::Model& model,
 		int node_index,
@@ -2184,8 +2342,10 @@ private:
 		bool default_to_pbr,
 		bool generate_mikktspace_tangents
 	);
+	std::string get_gltf_texture_uri(const tinygltf::Model& model, int gltf_texture_index);
+	glm::mat4 get_gltf_node_transform(const tinygltf::Node& node);
+	void transform_vertices_axis();
 	
-	void load_gltf(const std::filesystem::path& full_path, Semaphore& timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents);
 
 	Device* device;
 	std::vector<Vertex> vertices;
@@ -2209,21 +2369,35 @@ private:
 	uint32_t lights_count = 0;
 	uint32_t texture_count = 0;
 
+	// bounding box
+	glm::vec3 bbox_min = glm::vec3(FLT_MAX);;
+	glm::vec3 bbox_max = glm::vec3(-FLT_MAX);
+
+	// physics
+	float_t mass_kg = 1;
+	float_t drag_coefficient = 0.7f;
+	float_t surface_friction = 0.95f;
+	float_t bounce_restitution = 1.0f; // 0 = no bounce, 1 = perfect bounce
+	bool is_solid = true;
+
 	VkIndexType index_type;
 	std::string base_dir = "";
+	bool gltf_provided_tangents = false;
 	StringHash mesh_hash;
+	int variant_id = 0;
+	UpAxis src_up_axis = UpAxis::Y_UP;
 	uint32_t unique_ID = UINT32_MAX; // = invalid
 	static inline uint32_t next_unique_mesh_id = 0;
 
 	//  default textures & images
 	static inline std::vector<DefaultImage> default_tex_images = {};
 	static struct DefaultTextureID {
-		int white_unorm = -1;
-		int white_srgb = -1;
-		int black_unorm = -1;
-		int black_srgb = -1;
-		int normal_unorm = -1;
-		int metallic_roughness_unorm = -1;
+		int white_unorm = INVALID_ID;
+		int white_srgb = INVALID_ID;
+		int black_unorm = INVALID_ID;
+		int black_srgb = INVALID_ID;
+		int normal_unorm = INVALID_ID;
+		int metallic_roughness_unorm = INVALID_ID;
 	};
 	static inline DefaultTextureID default_texID = DefaultTextureID();	
 };
@@ -2247,14 +2421,14 @@ public:
 	Entity(Entity&& other) noexcept;
 	Entity& operator=(Entity&& other) noexcept;
 
-	// deleted copy constructor and copy assignment
-	Entity(const Entity& other) = delete;
-	Entity& operator=(const Entity& other) = delete;
+	// copy constructor and copy assignment
+	Entity(const Entity& other);
+	Entity& operator=(const Entity& other);
 
 	// Calculates the model matrix, applying the transformations in the correct order: scale, rotate, then translate.
 	glm::mat4 get_model_matrix();
 
-	// Public setter methods for transformations.
+	// Public methods for transformations & physics
 	glm::vec3& set_position(const glm::vec3& position);
 	glm::vec3& set_rotation(const glm::vec3& rotation);
 	glm::vec3& set_scale(const glm::vec3& scale);
@@ -2264,28 +2438,65 @@ public:
 	glm::vec3& scale_add(const glm::vec3& scale_delta);
 	glm::vec3& scale_factor(const glm::vec3& scale_multiplier);
 
-	// Public getters
-	Mesh& get_mesh() const;
+	void set_lin_velocity(glm::vec3 velocity_xyz);
+	void set_spin_velocity(glm::vec3 spin_velocity_xzy);
+	void set_scale_velocity(glm::vec3 scale_velocity);
+
+	void set_lin_thrust(glm::vec3 lin_thrust_xzy);
+	void set_spin_thrust(glm::vec3 spin_thrust_xyz);
+	void set_scale_accelaration(glm::vec3 scale_acceleration_xyz);
+
+	glm::vec3 get_lin_velocity() const;
+	glm::vec3 get_spin_velocity() const;
+
+	void set_environment_density(float_t rho);
+	void set_tumble_strength(float_t value);
+
 	const glm::vec3& get_position() const;
 	const glm::vec3& get_rotation() const;
 	const glm::vec3& get_scale() const;
-	bool is_visible() const;
-	int get_unique_ID() const;
 
+	void enable_physics(bool linear = true, bool gravity = true, bool rotation = true, bool tumble = true);
+
+	// Other public methods
+	Mesh& get_mesh() const;
+	int get_unique_ID() const;
+	bool is_visible() const;
 	void set_visible(bool is_visible = true);
 
 private:
-	// Transformation properties.
+	// Transformation properties
 	glm::vec3 position = glm::vec3(0.0f);
 	glm::vec3 rotation = glm::vec3(0.0f);
 	glm::vec3 scale = glm::vec3(1.0f);
 
-	int unique_ID = -1;
+	int unique_ID = INVALID_ID;
 	static int next_unique_ID;
 	Mesh* mesh = nullptr; // externally owned -> don't destroy
-	bool visible = true;
 
-	void move_resources(Entity& other);
+	// physics
+	bool visible = true;
+	bool lin_physics_enabled = false;
+	bool rot_physics_enabled = false;
+	bool gravity_enabled = false;
+	bool tumbling_enabled = false;
+	glm::vec3 inertia = { 0.0f, 0.0f, 0.0f };			// moment of inertia for each axis
+	
+	glm::vec3 lin_velocity = { 0.0f, 0.0f, 0.0f };			// units per second
+	glm::vec3 spin_velocity = { 0.0f, 0.0f, 0.0f };		// degrees per second
+	glm::vec3 scale_velocity = { 0.0f, 0.0f, 0.0f };	// scale factor increase per second
+
+	glm::vec3 lin_thrust = { 0.0f, 0.0f, 0.0f };		// updated via user input or via collisions; automatically reset during model_matrix update
+	glm::vec3 spin_thrust = { 0.0f, 0.0f, 0.0f };		// ""
+	glm::vec3 scale_acceleration = { 0.0f, 0.0f, 0.0f };// scale factor acceleration (per second^2)
+
+	float_t rho = 1.225f;								// default: air density at sea level
+	float_t tumble_strength = 0.01f;					// Adjust this for "flutteryness" (0.01 is subtle)
+	inline static glm::vec3 gravity = { 0.0f, -9.81f, 0.0f };
+	
+	// timer
+	std::chrono::steady_clock::time_point last_update;
+	bool first_update = true;
 };
 
 // initialize static member
@@ -2302,7 +2513,7 @@ public:
 	// Constructor with vectors
 	Camera(
 		glm::vec3 camera_position = CAMERA_DEFAULT_POSITION,
-		glm::vec3 camera_up = CAMERA_DEFAULT_UP,
+		UpAxis camera_up = CAMERA_DEFAULT_UP,
 		float camera_yaw = CAMERA_DEFAULT_YAW,
 		float camera_pitch = CAMERA_DEFAULT_PITCH
 	);
@@ -2312,13 +2523,15 @@ public:
 	glm::mat4 get_view_matrix();
 	glm::mat4 get_projection_matrix();
 	glm::vec3 get_position() const;
+	float_t get_distance(glm::vec3 position) const;
+	float_t get_distance(const Entity& entity) const;
 	glm::vec3 get_front() const;
 
 	// Setters for camera attributes
 	glm::vec3 set_position(const glm::vec3& new_position);
 	glm::vec3 translate(const glm::vec3& delta);
 	void rotate(float_t delta_pitch, float_t delta_yaw, float_t delta_roll);
-	void set_world_up(const glm::vec3& new_world_up);
+	void set_world_up(const UpAxis& new_world_up);
 	void set_yaw(float new_yaw);
 	void set_pitch(float new_pitch);
 	void set_roll(float new_roll);
@@ -2340,15 +2553,15 @@ public:
 private:
 	void update_camera_vectors();
 
-	int unique_ID = -1;
+	int unique_ID = INVALID_ID;
 	inline static int next_unique_ID = 0;
 
 	// Camera Attributes
 	glm::vec3 position = CAMERA_DEFAULT_POSITION;
 	glm::vec3 front;
 	glm::vec3 right;
-	glm::vec3 up = CAMERA_DEFAULT_UP;
-	glm::vec3 world_up = DEFAULT_WORLD_UP;
+	glm::vec3 up = up_axis_as_vec3(CAMERA_DEFAULT_UP);
+	glm::vec3 world_up =up_axis_as_vec3(DEFAULT_WORLD_UP);
 
 	// Euler Angles
 	float yaw = CAMERA_DEFAULT_YAW;
@@ -2391,7 +2604,7 @@ public:
 	// Resource Management
 	uint32_t add_entity(Mesh& mesh, glm::vec3 position = { 0.0f, 0.0f, 0.0f }, bool visible = true);
 	uint32_t add_scene_light(LightType type, glm::vec3 position, glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f));
-	uint32_t add_camera(glm::vec3 position = CAMERA_DEFAULT_POSITION, glm::vec3 up = CAMERA_DEFAULT_UP, float yaw = CAMERA_DEFAULT_YAW, float pitch = CAMERA_DEFAULT_PITCH);
+	uint32_t add_camera(glm::vec3 position = CAMERA_DEFAULT_POSITION, UpAxis up = CAMERA_DEFAULT_UP, float yaw = CAMERA_DEFAULT_YAW, float pitch = CAMERA_DEFAULT_PITCH);
 	void add_cubemap(Device& device, const std::string& filepath, Semaphore& tl_semaphore, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::EQUIRECTANGULAR_HDR_TEXTYPE, uint32_t cubemap_resolution = 1024, VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT);
 
 	// Removal & Cleanup
@@ -2919,7 +3132,7 @@ struct PipelineProperties {
 	VkBool32 rasterization_discard_enable = VK_FALSE;			// Should be OFF by default (ON only for special passes like transform feedback)
 	VkPolygonMode polygon_mode = VK_POLYGON_MODE_FILL;			// Standard: render as solid objects
 	VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;			// Standard: backface culling for performance
-	VkFrontFace front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;	// Standard: CCW winding order
+	VkFrontFace front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;	// Standard: CCW winding order; CW for inverted projection matrix
 	VkBool32 rasterization_depth_bias_enable = VK_FALSE;		// Should be OFF by default (only ON for shadow maps)
 	float_t depth_bias_constant_factor = 0.0f;					// Safe initialization
 	float_t depth_bias_clamp = 0.0f;							// Safe initialization
@@ -2975,6 +3188,7 @@ public:
 		uint32_t subpass_index,
 		const GraphicsPipelineLayout& pipeline_layout,
 		const PipelineProperties& pipeline_properties,
+		const ColorBlendState& color_blend_state,
 		const ShaderModule& vertex_shader,
 		const ShaderModule& fragment_shader = NULL_SHADER,
 		const ShaderModule& hull_shader = NULL_SHADER,
@@ -3370,6 +3584,7 @@ public:
 		uint32_t subpass_index,
 		const GraphicsPipelineLayout& pipeline_layout,
 		const PipelineProperties& pipeline_properties,
+		const ColorBlendState& color_blend_state,
 		const ShaderModule& vertex_shader,
 		const ShaderModule& fragment_shader = NULL_SHADER,
 		const ShaderModule& hull_shader = NULL_SHADER,
@@ -3573,7 +3788,7 @@ public:
 	// resource creation
 	static Material& create_material();
 	static Material& create_material(const std::string& relative_filepath);
-	static Texture& create_texture(const std::string& filepath, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::SRGB_TEXTYPE, int force_mip_levels = -1);
+	static Texture& create_texture(const std::string& relative_filepath, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::SRGB_TEXTYPE, int force_mip_levels = -1);
 	static Texture& create_texture(const tinygltf::Image& gltf_image, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::SRGB_TEXTYPE, int force_mip_levels = -1);
 	static Texture& create_texture(uint32_t width, uint32_t height, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level = 16.0f, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::SRGB_TEXTYPE, int force_mip_levels = -1);
 	static Light& create_light();
@@ -3643,8 +3858,10 @@ public:
 	void set_renderpass(RenderPass& renderpass);
 	void set_subpass(SubPass& subpass);
 	void set_pipeline_layout(GraphicsPipelineLayout& pipeline_layout);
-	void set_pipeline_properties(PipelineProperties& pipeline_properties);
-	void set_pipeline(GraphicsPipeline& pipeline);
+	void set_opaque_pass_pipeline_properties(PipelineProperties& pipeline_properties);
+	void set_alpha_pass_pipeline_properties(PipelineProperties& pipeline_properties);
+	void set_opaque_pass_pipeline(GraphicsPipeline& pipeline);
+	void set_alpha_pass_pipeline(GraphicsPipeline& pipeline);
 	void set_push_constants(PushConstants& push_constants);
 	void set_vertex_shader(ShaderModule& vertex_shader);
 	void set_fragment_shader(ShaderModule& fragment_shader);
@@ -3658,8 +3875,10 @@ public:
 	RenderPass& get_renderpass();
 	SubPass& get_subpass();
 	GraphicsPipelineLayout& get_pipeline_layout();
-	PipelineProperties& get_pipeline_properties();
-	GraphicsPipeline& get_pipeline();
+	PipelineProperties& get_opaque_pass_pipeline_properties();
+	PipelineProperties& get_alpha_pass_pipeline_properties();
+	GraphicsPipeline& get_opaque_pass_pipeline();
+	GraphicsPipeline& get_alpha_pass_pipeline();
 	ShaderModule& get_vertex_shader();
 	ShaderModule& get_fragment_shader();
 	DescriptorSetLayout& get_descriptor_set_layout();
@@ -3674,8 +3893,10 @@ private:
 	std::unique_ptr<RenderPass> m_renderpass = nullptr;
 	std::unique_ptr<SubPass> m_subpass = nullptr;
 	std::unique_ptr<GraphicsPipelineLayout> m_pipeline_layout = nullptr;
-	std::unique_ptr<PipelineProperties> m_pipeline_properties = nullptr;
-	std::unique_ptr<GraphicsPipeline> m_pipeline = nullptr;
+	std::unique_ptr<PipelineProperties> m_pipeline_properties_opaque = nullptr;
+	std::unique_ptr<PipelineProperties> m_pipeline_properties_alpha = nullptr;
+	std::unique_ptr<GraphicsPipeline> m_pipeline_opaque = nullptr;
+	std::unique_ptr<GraphicsPipeline> m_pipeline_alpha = nullptr;
 	std::unique_ptr<ShaderModule> m_vertex_shader = nullptr;
 	std::unique_ptr<ShaderModule> m_fragment_shader = nullptr;
 	std::unique_ptr<DescriptorSetLayout> m_descriptor_set_layout = nullptr;
@@ -3692,8 +3913,10 @@ private:
 	RenderPass* renderpass = nullptr;
 	SubPass* subpass = nullptr;
 	GraphicsPipelineLayout* pipeline_layout = nullptr;
-	PipelineProperties* pipeline_properties = nullptr;
-	GraphicsPipeline* pipeline = nullptr;
+	PipelineProperties* pipeline_properties_opaque = nullptr;
+	PipelineProperties* pipeline_properties_alpha = nullptr;
+	GraphicsPipeline* pipeline_opaque = nullptr;
+	GraphicsPipeline* pipeline_alpha = nullptr;
 	ShaderModule* vertex_shader = nullptr;
 	ShaderModule* fragment_shader = nullptr;
 	DescriptorSetLayout* descriptor_set_layout = nullptr;
@@ -4777,7 +5000,6 @@ RenderPass::RenderPass(RenderPass&& other) noexcept :
 	color_attachment_flag(other.color_attachment_flag),
 	attachment_description(std::move(other.attachment_description)),
 	attachment_type(std::move(other.attachment_type)),
-	blend_states(std::move(other.blend_states)),
 	subpass_description(std::move(other.subpass_description)),
 	subpass_dependency(std::move(other.subpass_dependency)),
 	finalized(other.finalized) {
@@ -4807,7 +5029,6 @@ RenderPass& RenderPass::operator=(RenderPass&& other) noexcept {
 		this->color_attachment_flag = other.color_attachment_flag;
 		this->attachment_description = std::move(other.attachment_description);
 		this->attachment_type = std::move(other.attachment_type);
-		this->blend_states = std::move(other.blend_states);
 		this->subpass_description = std::move(other.subpass_description);
 		this->subpass_dependency = std::move(other.subpass_dependency);
 		this->finalized = other.finalized;
@@ -4826,7 +5047,6 @@ RenderPass::~RenderPass() {
 // adds an attachment description (=owned by this main RenderPass) and returns its index
 uint32_t RenderPass::add_attachment(
 	AttachmentType type,
-	const ColorBlendState& blend_state,
 	VkImageLayout initial_layout,
 	VkImageLayout final_layout,
 	VkAttachmentLoadOp load_op,
@@ -4839,7 +5059,6 @@ uint32_t RenderPass::add_attachment(
 
 	uint32_t id = static_cast<uint32_t>(attachment_description.size());
 	attachment_type.push_back(type);
-	blend_states.push_back(blend_state);
 	attachment_description.resize(id + 1);
 	attachment_description[id] = {};
 	attachment_description[id].flags = 0; // or: VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT
@@ -4947,7 +5166,6 @@ uint32_t RenderPass::get_subpass_count() const { return static_cast<uint32_t>(su
 bool RenderPass::has_depth_stencil() const { return depth_stencil_flag; }
 bool RenderPass::has_color_attachment() const { return color_attachment_flag; }
 const std::vector<VkAttachmentDescription>& RenderPass::get_attachment_descriptions() { return attachment_description; }
-const std::vector<ColorBlendState>& RenderPass::get_blend_states() const { return this->blend_states; }
 const AttachmentType RenderPass::get_attachment_type(uint32_t index) const { return attachment_type[index]; }
 
 // +=================================+   
@@ -7347,6 +7565,9 @@ Material::Material(Material&& other) noexcept :
 	transmittance(std::move(other.transmittance)),
 	emission(std::move(other.emission)),
 	base_color(std::move(other.base_color)),
+	uv_transform(std::move(other.uv_transform)),
+	attenuation_color(other.attenuation_color),
+	uv_rotation(other.uv_rotation),
 	shininess(other.shininess),
 	ior(other.ior),
 	dissolve(other.dissolve),
@@ -7356,8 +7577,14 @@ Material::Material(Material&& other) noexcept :
 	glossiness_factor(other.glossiness_factor),
 	specular_factor(other.specular_factor),
 	clearcoat_factor(other.clearcoat_factor),
+	clearcoat_roughness(other.clearcoat_roughness),
+	sheen_factor(other.sheen_factor),
 	alpha_cutoff(other.alpha_cutoff),
+	transmission_factor(other.transmission_factor),
+	thickness_factor(other.thickness_factor),
+	attenuation_distance(other.attenuation_distance),
 	illum(other.illum),
+	alpha_mode(other.alpha_mode),
 	unique_ID(other.unique_ID),
 	texIDs(std::move(other.texIDs)) {
 	Log::debug("Material move constructor invoked. Moving from '&other' = ", &other, ", constructing at 'this' = ", this, ", unique_ID = ", unique_ID, ".");
@@ -7372,6 +7599,9 @@ Material& Material::operator=(Material&& other) noexcept {
 		this->transmittance = std::move(other.transmittance);
 		this->emission = std::move(other.emission);
 		this->base_color = std::move(other.base_color);
+		this->uv_transform = std::move(other.uv_transform);
+		this->attenuation_color = std::move(other.attenuation_color);
+		this->uv_rotation = other.uv_rotation;
 		this->shininess = other.shininess;
 		this->ior = other.ior;
 		this->dissolve = other.dissolve;
@@ -7381,8 +7611,14 @@ Material& Material::operator=(Material&& other) noexcept {
 		this->glossiness_factor = other.glossiness_factor;
 		this->specular_factor = other.specular_factor;
 		this->clearcoat_factor = other.clearcoat_factor;
+		this->clearcoat_roughness = other.clearcoat_roughness;
+		this->sheen_factor = other.sheen_factor;
 		this->alpha_cutoff = other.alpha_cutoff;
+		this->transmission_factor = other.transmission_factor;
+		this->thickness_factor = other.thickness_factor;
+		this->attenuation_distance = other.attenuation_distance;
 		this->illum = other.illum;
+		this->alpha_mode = other.alpha_mode;
 		this->unique_ID = other.unique_ID;
 		this->texIDs = std::move(other.texIDs);
 	}
@@ -7522,10 +7758,11 @@ const VkSampler* Sampler::get_ptr() const { return &sampler; }
 // | Texture                         |
 // +=================================+
 
-// Constructor
+// Constructor for a texture loaded from file
+// (its unique hash is computed from the corresponding absolute filepath)
 Texture::Texture(
 	Device& device,
-	const std::string& filepath,
+	const std::string& relative_filepath,
 	VkFormat format, // output format
 	Semaphore& tl_semaphore,
 	float_t max_anisotropy_level,
@@ -7534,10 +7771,7 @@ Texture::Texture(
 	TextureType type, // source type
 	int force_mip_levels) : device(&device) {
 
-	std::filesystem::path project_root = get_executable_directory() / "..";
-	std::filesystem::path full_filepath = project_root / filepath;
-	std::filesystem::path resolved_path = std::filesystem::absolute(full_filepath);
-	std::string full_filepath_str = resolved_path.generic_string();
+	std::string full_filepath_str = abs_filepath(relative_filepath);
 
 	int src_width, src_height;
 	int src_channels; // color channels per pixel in the result from STBI or TinyEXR
@@ -8083,12 +8317,13 @@ Texture::Texture(
 
 	this->unique_ID = next_unique_ID++;
 	texture_ID_map[this->unique_ID] = this;
-	this->texture_hash = StringHash("TextureType" + std::to_string(type) + "_" + full_filepath_str);
+	this->texture_hash = StringHash(full_filepath_str);
 	Texture::tex_list[this->texture_hash] = this->unique_ID;
 	Log::debug("Texture resource creation complete.");
 }
 
 // Constructor for creating the resource from a glTF texture
+// (its unique hash is automatically derived from model.asset.generator + image.uri + image.name)
 Texture::Texture(
 	Device& device,
 	const tinygltf::Image& gltf_image,
@@ -8257,13 +8492,25 @@ Texture::Texture(
 	this->unique_ID = next_unique_ID++;
 	texture_ID_map[this->unique_ID] = this;
 	// different models may use the same glTF textures names, therefore, in order to make sure the hash is unique, we also encode the unique_ID
-	this->texture_hash = StringHash("TextureType" + std::to_string(type) + "_" + gltf_image.name + "_glTF_GlobalTexID" + std::to_string(this->unique_ID));
+	this->texture_hash = StringHash(gltf_image);
 	Texture::tex_list[this->texture_hash] = this->unique_ID;
 	Log::debug("Texture resource creation from glTF image complete (global unique texture ID: ", this->unique_ID);
 }
 
 // create empty texture resource
-Texture::Texture(Device& device, uint32_t width, uint32_t height, VkFormat format, Semaphore& tl_semaphore, float_t max_anisotropy_level, VkSamplerAddressMode sampler_address_mode_U, VkSamplerAddressMode sampler_address_mode_V, TextureType type, int force_mip_levels) {
+Texture::Texture(
+	Device& device,
+	uint32_t width,
+	uint32_t height,
+	VkFormat format,
+	Semaphore& tl_semaphore,
+	float_t max_anisotropy_level,
+	VkSamplerAddressMode sampler_address_mode_U,
+	VkSamplerAddressMode sampler_address_mode_V,
+	TextureType type,
+	int force_mip_levels
+) :	device(&device) {
+
 	uint32_t mip_levels = 1;		// use as starting point -> will be modified based on texture type
 	VkImageCreateFlags flags = 0;	//  "       "       "        "       "       "       "
 	uint32_t array_layers = 1;		//  "       "       "        "       "       "       "
@@ -8523,10 +8770,6 @@ Texture* Texture::get_texture_by_ID(uint32_t unique_texID) {
 	}
 }
 
-int Texture::get_unique_ID(std::string texture_stringname) {
-	return get_unique_ID(StringHash(texture_stringname));
-}
-
 const StringHash& Texture::get_hash() const {
 	return texture_hash;
 }
@@ -8534,7 +8777,7 @@ const StringHash& Texture::get_hash() const {
 int Texture::get_unique_ID(StringHash texture_hash) {
 	auto it = tex_list.find(texture_hash);
 	if (it == tex_list.end()) {
-		return -1;
+		return INVALID_ID;
 	}
 	else {
 		return it->second;
@@ -8561,7 +8804,10 @@ namespace std {
 
 			// Apply the combination logic sequentially for the remaining members
 			combine(vertex.normal);
-			combine(vertex.tex_coord);
+			combine(vertex.tex_coord_0);
+			combine(vertex.tex_coord_1);
+			combine(vertex.tex_coord_2);
+			combine(vertex.tex_coord_3);
 
 			return seed;
 		}
@@ -8591,10 +8837,13 @@ bool Vertex::operator==(const Vertex& other) const {
 		IsNear3(this->position, other.position) &&
 		IsNear3(this->normal, other.normal) &&
 		IsNear3(this->color, other.color) &&
-		IsNear3(this->tangent, other.tangent) &&
+		IsNear3(glm::vec3(this->tangent), glm::vec3(other.tangent)) && // ignore the w component (handedness)
 
 		// 2D Comparison (Tex_Coord)
-		IsNear2(this->tex_coord, other.tex_coord);
+		IsNear2(this->tex_coord_0, other.tex_coord_0) &&
+		IsNear2(this->tex_coord_1, other.tex_coord_1) &&
+		IsNear2(this->tex_coord_2, other.tex_coord_2) &&
+		IsNear2(this->tex_coord_3, other.tex_coord_3);
 }
 
 // +=================================+   
@@ -8735,7 +8984,7 @@ void Mesh::load_obj_textures_and_materials(
 
 		// Map OBJ colors to PBR/Engine material properties
 		materials.back().base_color = glm::vec4(obj_mat.diffuse[0], obj_mat.diffuse[1], obj_mat.diffuse[2], 1.0f);
-		materials.back().ambient = glm::vec4(obj_mat.ambient[0], obj_mat.ambient[1], obj_mat.ambient[2], AlphaMode::BLEND_MODE);
+		materials.back().ambient = glm::vec4(obj_mat.ambient[0], obj_mat.ambient[1], obj_mat.ambient[2], 1.0f);
 		materials.back().specular = glm::vec4(obj_mat.specular[0], obj_mat.specular[1], obj_mat.specular[2], 1.0f);
 		materials.back().transmittance = glm::vec4(obj_mat.transmittance[0], obj_mat.transmittance[1], obj_mat.transmittance[2], 0.0f);
 		materials.back().emission = glm::vec4(obj_mat.emission[0], obj_mat.emission[1], obj_mat.emission[2], 1.0f);
@@ -8749,12 +8998,12 @@ void Mesh::load_obj_textures_and_materials(
 
 		// Helper Lambda for Texture Loading; returns the unique global texID
 		auto load_tex = [&](const std::string& tex_name, bool srgb) -> uint32_t {
-			if (tex_name.empty()) return srgb ? default_texID.white_srgb : default_texID.white_unorm;
+			if (tex_name.empty()) return INVALID_ID;
 
 			std::filesystem::path tex_path = base_dir / tex_name;
 			if (!std::filesystem::exists(tex_path)) {
 				Log::warning("OBJ Texture not found: ", tex_path.string());
-				return srgb ? default_texID.white_srgb : default_texID.white_unorm;
+				return INVALID_ID;
 			}
 
 			this->textures.emplace_back(
@@ -8773,23 +9022,10 @@ void Mesh::load_obj_textures_and_materials(
 
 		// Assign unique global texIDs to corresponding slots in Material
 		materials.back().texIDs.base_color_tex_id = load_tex(obj_mat.diffuse_texname, true);
-		if (materials.back().texIDs.base_color_tex_id == -1) { materials.back().texIDs.base_color_tex_id = default_texID.white_srgb; }
-
+		if (materials.back().texIDs.base_color_tex_id == INVALID_ID) { materials.back().texIDs.base_color_tex_id = default_texID.white_srgb; }
 		materials.back().texIDs.normal_tex_id = load_tex(obj_mat.bump_texname, false);
-		if (materials.back().texIDs.normal_tex_id == -1) { materials.back().texIDs.normal_tex_id = default_texID.normal_unorm; }
-
 		materials.back().texIDs.metallic_roughness_tex_id = load_tex(obj_mat.metallic_texname, false);
-		if (materials.back().texIDs.metallic_roughness_tex_id == -1) { materials.back().texIDs.metallic_roughness_tex_id = default_texID.metallic_roughness_unorm; }
-
-		// Handle Specular/Glossy fallback if not PBR
-		if (!default_to_pbr && !obj_mat.specular_texname.empty()) {
-			materials.back().texIDs.specular_gloss_tex_id = load_tex(obj_mat.specular_texname, true);
-		}
-
-		// use defaults for other textures
-		this->materials.back().texIDs.occlusion_tex_id = default_texID.white_unorm;
-		this->materials.back().texIDs.emissive_tex_id = default_texID.black_srgb;
-		this->materials.back().texIDs.alpha_tex_id = default_texID.white_srgb;
+		materials.back().texIDs.specular_gloss_tex_id = load_tex(obj_mat.specular_texname, true);
 	}
 
 	// Default material fallback
@@ -8801,6 +9037,7 @@ void Mesh::load_obj_textures_and_materials(
 		this->materials.back().texIDs.metallic_roughness_tex_id = default_texID.metallic_roughness_unorm;
 		this->materials.back().texIDs.occlusion_tex_id = default_texID.white_unorm;
 		this->materials.back().texIDs.emissive_tex_id = default_texID.black_srgb;
+		/*
 		this->materials.back().texIDs.alpha_tex_id = default_texID.white_srgb;
 		if (default_to_pbr) {
 			this->materials.back().texIDs.clearcoat_tex_id = default_texID.black_srgb;
@@ -8815,6 +9052,7 @@ void Mesh::load_obj_textures_and_materials(
 			this->materials.back().texIDs.specular_gloss_diffuse_tex_id = default_texID.white_srgb;
 			this->materials.back().texIDs.specular_gloss_tex_id = default_texID.white_unorm;
 		}
+		*/
 	}
 
 	this->material_count = static_cast<uint32_t>(this->materials.size());
@@ -8884,10 +9122,15 @@ void Mesh::process_obj_vertices(
 
 				// UV
 				if (idx.texcoord_index >= 0) {
-					current_vert.tex_coord = {
+					// Assign primary UV channel (tex_coord_0)
+					current_vert.tex_coord_0 = {
 						attrib_tinyobj.texcoords[2 * idx.texcoord_index + 0],
-						1.0f - attrib_tinyobj.texcoords[2 * idx.texcoord_index + 1]
+						attrib_tinyobj.texcoords[2 * idx.texcoord_index + 1]	// no V-flip here because this is already handle via "negative viewport height"
 					};
+					// Assign secondary UVs as a fallback -> OBJ doesn't support dual UVs natively, so we duplicate the primary set
+					current_vert.tex_coord_1 = current_vert.tex_coord_0;
+					current_vert.tex_coord_2 = current_vert.tex_coord_0;
+					current_vert.tex_coord_3 = current_vert.tex_coord_0;
 				}
 
 				// Color
@@ -8939,7 +9182,7 @@ void Mesh::process_obj_tangents(bool generate_mikktspace_tangents) {
 		bool has_tex_coords = false;
 		for (const auto& v : vertices) {
 			// Use length2 for a quick check against zero
-			if (glm::length2(v.tex_coord) > 1e-6f) {
+			if (glm::length2(v.tex_coord_0) > 1e-6f) {
 				has_tex_coords = true;
 				break;
 			}
@@ -8968,8 +9211,8 @@ void Mesh::process_obj_tangents(bool generate_mikktspace_tangents) {
 
 			glm::vec3 edge1 = v1.position - v0.position;
 			glm::vec3 edge2 = v2.position - v0.position;
-			glm::vec2 deltaUV1 = v1.tex_coord - v0.tex_coord;
-			glm::vec2 deltaUV2 = v2.tex_coord - v0.tex_coord;
+			glm::vec2 deltaUV1 = v1.tex_coord_0 - v0.tex_coord_0;
+			glm::vec2 deltaUV2 = v2.tex_coord_0 - v0.tex_coord_0;
 
 			float_t determinant = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
 
@@ -9013,33 +9256,12 @@ void Mesh::process_obj_tangents(bool generate_mikktspace_tangents) {
 			// 2. Determine handedness/sign
 			// Check if (N x T_ortho) points in the same direction as the accumulated B_temp.
 			// The result is 1.0f or -1.0f.
-			float_t handedness = glm::dot(glm::cross(n, orthogonal_tangent_3d), b_temp) < 0.0f ? -1.0f : 1.0f;
+			float_t handedness = glm::dot(glm::cross(n, orthogonal_tangent_3d), b_temp) < 0.0f ? Handedness::Left : Handedness::Right;
 
 			// 3. Store the result in the glm::vec4 tangent (T.xyz = vector, T.w = handedness)
 			vertices[i].tangent = glm::vec4(orthogonal_tangent_3d, handedness);
 		}
 	}
-}
-
-// helper method to write to device-local buffers (shared by load_gltf and load_obj)
-void Mesh::write_buffers(Semaphore& timeline_semaphore) {
-	// Vulkan Buffer Creation and Transfer
-	Log::debug(
-		"... writing mesh data (", this->vertex_count, " vertices, ", this->index_count, " indices, ", material_count,
-		" materials, ", lights_count, " lights) to device-local memory (via staging buffers)."
-	);
-
-	// initialize device_local buffers
-	this->vertex_buffer = new Buffer<Vertex>(*device, VERTEX_BUFFER, vertex_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	this->index_buffer = new Buffer<uint32_t>(*device, INDEX_BUFFER, index_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	this->material_buffer = new Buffer<Material>(*device, STORAGE_BUFFER, material_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	this->light_buffer = new Buffer<Light>(*device, STORAGE_BUFFER, lights_count, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	// write mesh data to device-local memory (via staging buffers)
-	this->vertex_buffer->write(vertices, 0, 0, 0, timeline_semaphore, GRAPHICS_QUEUE);
-	this->index_buffer->write(indices, 0, 0, 0, timeline_semaphore, GRAPHICS_QUEUE);
-	this->material_buffer->write(materials, 0, 0, 0, timeline_semaphore, GRAPHICS_QUEUE);
-	this->light_buffer->write(lights, 0, 0, 0, timeline_semaphore, GRAPHICS_QUEUE);
 }
 
 // private helper method to load a mesh in obj format
@@ -9078,6 +9300,7 @@ void Mesh::load_obj(const std::filesystem::path& full_path, Semaphore& timeline_
 	compute_obj_normals(attrib_tinyobj, shapes_tinyobj);
 	load_obj_textures_and_materials(full_path, shapes_tinyobj, materials_tinyobj, default_to_pbr, timeline_semaphore);
 	process_obj_vertices(shapes_tinyobj, attrib_tinyobj);
+	transform_vertices_axis(); // required transformation in case the source isn't right-handed Y_UP
 	process_obj_tangents(generate_mikktspace_tangents);
 
 	// write index and vertex buffers to device-local memory
@@ -9225,21 +9448,68 @@ void Mesh::process_gltf_node(
 			if (primitive.mode != TINYGLTF_MODE_TRIANGLES) { continue; }
 
 			SubMesh submesh{};
-			submesh.parent_mesh_local_material_index = (primitive.material == -1) ? 0 : (uint32_t)primitive.material;
-			submesh.global_material_index = this->materials[submesh.parent_mesh_local_material_index].get_unique_ID();
+
+			// --- VARIANT HANDLING ---   (determine the active material for this submesh primitive based on variant_id)
+			int active_material_id = (primitive.material == INVALID_ID) ? 0 : primitive.material; // Default material index defined at the primitive level
+
+			if (primitive.extensions.count("KHR_materials_variants")) {
+				const auto& ext = primitive.extensions.at("KHR_materials_variants");
+				if (ext.Has("mappings") && ext.Get("mappings").IsArray()) {
+					const tinygltf::Value& mappings = ext.Get("mappings");
+
+					for (size_t m = 0; m < mappings.Size(); ++m) {
+						const auto& mapping = mappings.Get((int)m);
+						if (mapping.Has("variants") && mapping.Get("variants").IsArray()) {
+							const tinygltf::Value& variant_indices = mapping.Get("variants");
+
+							bool match = false;
+							for (size_t v = 0; v < variant_indices.Size(); ++v) {
+								if (variant_indices.Get((int)v).GetNumberAsInt() == this->variant_id) {
+									match = true;
+									break;
+								}
+							}
+
+							if (match && mapping.Has("material")) {
+								int material_to_use = mapping.Get("material").GetNumberAsInt();
+								active_material_id = (material_to_use == INVALID_ID) ? 0 : material_to_use;
+								break;
+							}
+						}
+					}
+				}
+			}
+			
+			submesh.parent_mesh_local_material_index = active_material_id;
+			submesh.global_material_index = this->materials[active_material_id].get_unique_ID();
 			submesh.vertex_offset = static_cast<uint32_t>(this->vertices.size());
 			submesh.first_index = static_cast<uint32_t>(this->indices.size());
 
+			// update bounding box from for primitive and parent mesh from POSITION accessor
 			const auto& attribs = primitive.attributes;
-			if (attribs.find("POSITION") == attribs.end()) { continue; }
+			if (attribs.find("POSITION") == attribs.end()) {
+				continue;
+			}
+			else {
+				const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.at("POSITION")];
+				if (accessor.minValues.size() == 3) {
+					submesh.bbox_min = glm::vec3(accessor.minValues[0], accessor.minValues[1], accessor.minValues[2]);
+					this->bbox_min = glm::min(this->bbox_min, submesh.bbox_min);
+				}
+				if (accessor.maxValues.size() == 3) {
+					submesh.bbox_max = glm::vec3(accessor.maxValues[0], accessor.maxValues[1], accessor.maxValues[2]);
+					this->bbox_max = glm::max(this->bbox_max, submesh.bbox_max);
+				}
+			}
 
-			// Define Helper Lambdas
+			// Helper Lambdas
+			// ==========================================================================================================================
 			auto get_effective_stride = [&](const tinygltf::Accessor& accessor) -> size_t {
 				const tinygltf::BufferView& bv = model.bufferViews[accessor.bufferView];
 				return (bv.byteStride > 0) ? bv.byteStride :
 					tinygltf::GetNumComponentsInType(accessor.type) * tinygltf::GetComponentSizeInBytes(accessor.componentType);
 			};
-
+			// ==========================================================================================================================
 			auto read_normal_data = [&](const tinygltf::Accessor& accessor, const uint8_t* data) -> glm::vec3 {
 				if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
 					return glm::make_vec3(reinterpret_cast<const float*>(data));
@@ -9250,7 +9520,7 @@ void Mesh::process_gltf_node(
 				}
 				return { 0.0f, 1.0f, 0.0f };
 			};
-
+			// ==========================================================================================================================
 			auto read_texcoord_data = [&](const tinygltf::Accessor& accessor, const uint8_t* buffer_data_ptr) -> glm::vec2 {
 				glm::vec2 tex_coord = { 0.0f, 0.0f };
 
@@ -9304,11 +9574,26 @@ void Mesh::process_gltf_node(
 
 				return tex_coord;
 			};
+			// ==========================================================================================================================
+			auto read_tangent_data = [](const tinygltf::Accessor& accessor, const uint8_t* data) -> glm::vec4 {
+				if (accessor.type == TINYGLTF_TYPE_VEC4) {
+					if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
+						return glm::make_vec4(reinterpret_cast<const float*>(data));
+					}
+				}
+				return glm::vec4(0.0f);
+			};
+			// ==========================================================================================================================
+
 
 			int pos_idx = attribs.at("POSITION");
 			int norm_idx = attribs.count("NORMAL") ? attribs.at("NORMAL") : -1;
-			int uv_idx = attribs.count("TEXCOORD_0") ? attribs.at("TEXCOORD_0") : -1;
 			int tan_idx = attribs.count("TANGENT") ? attribs.at("TANGENT") : -1;
+
+			// If any primitive has tangents, we flag that the file provides them -> MikkTSpace not needed
+			if (tan_idx != -1) {
+				gltf_provided_tangents = true;
+			}
 
 			bool needs_deindexing = generate_mikktspace_tangents && (tan_idx == -1);
 
@@ -9336,14 +9621,35 @@ void Mesh::process_gltf_node(
 					v.normal = glm::normalize(normal_matrix * read_normal_data(acc, n_data));
 				}
 
-				// UVs (no transform needed)
-				if (uv_idx != -1) {
-					const auto& acc = model.accessors[uv_idx];
-					const auto& bv_u = model.bufferViews[acc.bufferView];
-					const uint8_t* u_data = &model.buffers[bv_u.buffer].data[bv_u.byteOffset + acc.byteOffset + i * get_effective_stride(acc)];
-					v.tex_coord = read_texcoord_data(acc, u_data);
+				// UVs (supporting 4 channels; no transform needed)
+				auto get_uv = [&](const std::string& attr_name) -> glm::vec2 {
+					if (attribs.count(attr_name)) {
+						const auto& acc = model.accessors[attribs.at(attr_name)];
+						const auto& bv = model.bufferViews[acc.bufferView];
+						const uint8_t* data = &model.buffers[bv.buffer].data[bv.byteOffset + acc.byteOffset + i * get_effective_stride(acc)];
+						return read_texcoord_data(acc, data);
+					}
+					return glm::vec2(0.0f);
+				};
+				v.tex_coord_0 = get_uv("TEXCOORD_0");
+				v.tex_coord_1 = get_uv("TEXCOORD_1");
+				v.tex_coord_2 = get_uv("TEXCOORD_2");
+				v.tex_coord_3 = get_uv("TEXCOORD_3");
+
+				// Standard glTF fallback: if TEXCOORD_1 is missing, duplicate TEXCOORD_0
+				if (!attribs.count("TEXCOORD_1")) {
+					v.tex_coord_1 = v.tex_coord_0;
 				}
 
+				// Tangents: If the glTF already has tangents, load them.
+				if (tan_idx != -1) {
+					const auto& acc = model.accessors[tan_idx];
+					const auto& bv_t = model.bufferViews[acc.bufferView];
+					const uint8_t* t_data = &model.buffers[bv_t.buffer].data[bv_t.byteOffset + acc.byteOffset + i * get_effective_stride(acc)];
+					v.tangent = read_tangent_data(acc, t_data);
+				}
+
+				// Ensure the vertex knows which material it belongs to
 				v.material_index = submesh.global_material_index;
 
 				if (needs_deindexing) {
@@ -9405,27 +9711,47 @@ void Mesh::load_gltf_textures_and_materials(tinygltf::Model& model, bool default
 	this->materials.reserve(model.materials.size());
 
 	// Determine which glTF textures are color (SRGB) vs. non-color (UNORM)
-	// Initialize all to non-color (UNORM) by default.
+	// Default: Initialize to non-color (UNORM).
 	std::vector<bool> texture_is_srgb(model.textures.size(), false);
+
+	// Pre-pass: Identify SRGB textures used by ANY material (including variants)
+	for (const auto& gltf_mat : model.materials) {
+		int bc_idx = gltf_mat.pbrMetallicRoughness.baseColorTexture.index;
+		if (bc_idx >= 0 && bc_idx < (int)model.textures.size()) texture_is_srgb[bc_idx] = true;
+
+		int em_idx = gltf_mat.emissiveTexture.index;
+		if (em_idx >= 0 && em_idx < (int)model.textures.size()) texture_is_srgb[em_idx] = true;
+	}
 
 	for (const auto& gltf_mat : model.materials) {
 		this->materials.emplace_back();
 		Material& material = this->materials.back();
 
 		// GlTF PBR Metallic-Roughness Model
-		material.metallic = gltf_mat.pbrMetallicRoughness.metallicFactor;
+		material.metallic = static_cast<float_t>(gltf_mat.pbrMetallicRoughness.metallicFactor);
+		material.roughness = static_cast<float_t>(gltf_mat.pbrMetallicRoughness.roughnessFactor);
 
-		// Base Color (Diffuse) (=primary surface color; RGBA)
+		// Base Color (Diffuse) & Alpha
 		material.base_color = {
 			(float)gltf_mat.pbrMetallicRoughness.baseColorFactor[0],
 			(float)gltf_mat.pbrMetallicRoughness.baseColorFactor[1],
 			(float)gltf_mat.pbrMetallicRoughness.baseColorFactor[2],
-			(float)gltf_mat.pbrMetallicRoughness.baseColorFactor[3] // opacity / dissolve
+			(float)gltf_mat.pbrMetallicRoughness.baseColorFactor[3]
 		};
-		material.alpha_cutoff = gltf_mat.alphaCutoff;
+		
+		material.alpha_mode =
+			gltf_mat.alphaMode.empty() ? AlphaMode::OPAQUE_MODE :		// default to OPAQUE if not specified
+			gltf_mat.alphaMode == "OPAQUE" ? AlphaMode::OPAQUE_MODE :
+			gltf_mat.alphaMode == "MASK" ? AlphaMode::MASK_MODE :
+			AlphaMode::OPAQUE_MODE;
 
-		// Emissive Color -> Emission
-		// Note: glTF emissiveFactor is a 3-component vector.
+		
+		material.alpha_cutoff =
+			(material.alpha_mode == AlphaMode::MASK_MODE) ?				// alphaCutoff is ONLY meaningful for MASK
+			static_cast<float>(gltf_mat.alphaCutoff > 0.0 ? gltf_mat.alphaCutoff : 0.5f) :
+			0.0f;
+
+		// Emission (note: glTF emissiveFactor is a 3-component vector)
 		material.emission = {
 			(float)gltf_mat.emissiveFactor[0],
 			(float)gltf_mat.emissiveFactor[1],
@@ -9433,56 +9759,74 @@ void Mesh::load_gltf_textures_and_materials(tinygltf::Model& model, bool default
 			1.0f
 		};
 
-		// Roughness (glTF PBR property)
-		material.roughness = (float)gltf_mat.pbrMetallicRoughness.roughnessFactor;
-
 		// PBR doesn't use explicit Ambient/Specular/Shininess/ior/transmittance -> using defaults or deriving them
 		material.ambient.r *= material.base_color.r;
 		material.ambient.g *= material.base_color.g;
 		material.ambient.b *= material.base_color.b;
-		material.ambient.w = gltf_mat.alphaMode == "OPAQUE" ? AlphaMode::OPAQUE_MODE : gltf_mat.alphaMode == "MASK" ? AlphaMode::MASK_MODE : AlphaMode::BLEND_MODE; // ambient.w is used for the alphaMode
 		material.specular = { glm::clamp(material.base_color * 2.0f, 0.0f, 1.0f) };
 		material.shininess = std::clamp((float)(1.0f / (material.roughness * material.roughness)), 1.0f, 1000.0f);
 		material.illum = default_to_pbr ? 4 : 2;
 
-		// Mark textures as SRGB if they are used in a color channel
-		int base_color_tex_idx = gltf_mat.pbrMetallicRoughness.baseColorTexture.index;
-		if (base_color_tex_idx >= 0 && base_color_tex_idx < model.textures.size()) {
-			texture_is_srgb[base_color_tex_idx] = true;
-		}
-		int emissive_tex_idx = gltf_mat.emissiveTexture.index;
-		if (emissive_tex_idx >= 0 && emissive_tex_idx < model.textures.size()) {
-			texture_is_srgb[emissive_tex_idx] = true;
+		// Handle Extensions
+		if (!gltf_mat.extensions.empty()) {
+			const auto& exts = gltf_mat.extensions;
+
+			// KHR_materials_transmission
+			if (exts.find("KHR_materials_transmission") != exts.end()) {
+				const auto& ext = exts.at("KHR_materials_transmission");
+				if (ext.Has("transmissionFactor")) {
+					material.transmission_factor = static_cast<float>(ext.Get("transmissionFactor").GetNumberAsDouble());
+				}
+			}
+
+			// KHR_materials_volume
+			if (exts.find("KHR_materials_volume") != exts.end()) {
+				const auto& ext = exts.at("KHR_materials_volume");
+				if (ext.Has("attenuationDistance")) {
+					material.attenuation_distance = static_cast<float>(ext.Get("attenuationDistance").GetNumberAsDouble());
+				}
+
+				
+				if (ext.Has("attenuationColor")) {	// array of 3 doubles
+					const auto& colorArr = ext.Get("attenuationColor");
+					material.attenuation_color.r = static_cast<float>(colorArr.Get(0).GetNumberAsDouble());
+					material.attenuation_color.g = static_cast<float>(colorArr.Get(1).GetNumberAsDouble());
+					material.attenuation_color.b = static_cast<float>(colorArr.Get(2).GetNumberAsDouble());
+				}
+				if (ext.Has("thicknessFactor")) {
+					material.thickness_factor = static_cast<float>(ext.Get("thicknessFactor").GetNumberAsDouble());
+				}
+			}
+
+			// KHR_materials_clearcoat
+			if (exts.find("KHR_materials_clearcoat") != exts.end()) {
+				const auto& ext = exts.at("KHR_materials_clearcoat");
+				if (ext.Has("clearcoatFactor")) material.clearcoat_factor = static_cast<float>(ext.Get("clearcoatFactor").GetNumberAsDouble());
+				if (ext.Has("clearcoatRoughnessFactor")) material.clearcoat_roughness = static_cast<float>(ext.Get("clearcoatRoughnessFactor").GetNumberAsDouble());
+			}
+
+			// KHR_materials_ior
+			if (exts.find("KHR_materials_ior") != exts.end()) {
+				const auto& ext = exts.at("KHR_materials_ior");
+				if (ext.Has("ior")) material.ior = static_cast<float>(ext.Get("ior").GetNumberAsDouble());
+			}
+
+			// KHR_texture_transform (Applied to Base Color by default)
+			const auto& bc_tex = gltf_mat.pbrMetallicRoughness.baseColorTexture;
+			if (bc_tex.index >= 0 && bc_tex.extensions.find("KHR_texture_transform") != bc_tex.extensions.end()) {
+				const auto& ext = bc_tex.extensions.at("KHR_texture_transform");
+				if (ext.Has("offset")) {
+					material.uv_transform.x = static_cast<float>(ext.Get("offset").Get(0).GetNumberAsDouble());
+					material.uv_transform.y = static_cast<float>(ext.Get("offset").Get(1).GetNumberAsDouble());
+				}
+				if (ext.Has("scale")) {
+					material.uv_transform.z = static_cast<float>(ext.Get("scale").Get(0).GetNumberAsDouble());
+					material.uv_transform.w = static_cast<float>(ext.Get("scale").Get(1).GetNumberAsDouble());
+				}
+				if (ext.Has("rotation")) material.uv_rotation = static_cast<float>(ext.Get("rotation").GetNumberAsDouble());
+			}
 		}
 	}
-
-	// Ensure at least one material exists (for objects without material properties)
-	if (this->materials.empty()) {
-		Log::debug("No materials found in glTF file. Creating a default material.");
-		this->materials.emplace_back();
-		materials.back().illum = default_to_pbr ? 4 : 2;
-		materials.back().texIDs.base_color_tex_id = default_texID.white_srgb;
-		materials.back().texIDs.normal_tex_id = default_texID.normal_unorm;
-		materials.back().texIDs.metallic_roughness_tex_id = default_texID.metallic_roughness_unorm;
-		materials.back().texIDs.occlusion_tex_id = default_texID.white_unorm;
-		materials.back().texIDs.emissive_tex_id = default_texID.black_srgb;
-		materials.back().texIDs.alpha_tex_id = default_texID.white_srgb;
-		if (default_to_pbr) {
-			this->materials.back().texIDs.clearcoat_tex_id = default_texID.black_srgb;
-			this->materials.back().texIDs.clearcoat_roughness_tex_id = default_texID.black_unorm;
-			this->materials.back().texIDs.clearcoat_normal_tex_id = default_texID.normal_unorm;
-			this->materials.back().texIDs.sheen_color_tex_id = default_texID.white_srgb;
-			this->materials.back().texIDs.sheen_roughness_tex_id = default_texID.black_unorm;
-			this->materials.back().texIDs.transmission_tex_id = default_texID.black_srgb;
-			this->materials.back().texIDs.thickness_tex_id = default_texID.white_unorm;
-			this->materials.back().texIDs.specular_tex_id = default_texID.black_unorm;
-			this->materials.back().texIDs.specular_color_tex_id = default_texID.white_srgb;
-			this->materials.back().texIDs.specular_gloss_diffuse_tex_id = default_texID.white_srgb;
-			this->materials.back().texIDs.specular_gloss_tex_id = default_texID.white_unorm;
-		}
-	}
-
-	this->material_count = static_cast<uint32_t>(this->materials.size());
 
 	// ----------------------------------------------------------------------------------
 	// 2. Process All Textures
@@ -9508,61 +9852,49 @@ void Mesh::load_gltf_textures_and_materials(tinygltf::Model& model, bool default
 
 	for (size_t local_texID = 0; local_texID < model.textures.size(); ++local_texID) {
 		
-		// check if the same texture has already been loaded earlier
-		std::string tex_uri = get_gltf_texture_uri(model, local_texID);
-		int unique_texID = Texture::get_unique_ID(tex_uri);
-		if (unique_texID != -1) {
-			continue;
+		const auto& gltf_tex = model.textures[local_texID];
+		int image_idx = gltf_tex.source;
+
+		if (image_idx >= 0 && image_idx < model.images.size()) {
+			const auto& image = model.images[image_idx];
+
+			// DYNAMIC SAMPLER MODE DETERMINATION
+			// Start with the glTF default mode (REPEAT) for both U and V
+			int gltf_wrap_s = 10497;
+			int gltf_wrap_t = 10497;
+
+			// Check if the glTF texture refers to a valid sampler index
+			if (gltf_tex.sampler >= 0 && gltf_tex.sampler < model.samplers.size()) {
+				const auto& gltf_sampler = model.samplers[gltf_tex.sampler];
+				gltf_wrap_s = gltf_sampler.wrapS;
+				gltf_wrap_t = gltf_sampler.wrapT;
+			}
+
+			// Convert the glTF integer constants to Vulkan enums using the lambda
+			VkSamplerAddressMode addressModeU = get_vulkan_address_mode(gltf_wrap_s);
+			VkSamplerAddressMode addressModeV = get_vulkan_address_mode(gltf_wrap_t);
+
+			// Use the determined sRGB status for format selection
+			bool is_srgb = texture_is_srgb[local_texID];
+
+			Log::debug("... Loading glTF Texture #", local_texID, ": Image source index ", image_idx, " (sRGB: ", (is_srgb ? "true" : "false"), ").");
+
+			this->textures.emplace_back(
+				*device,
+				image,			// Pass by reference
+				get_texture_format(image.component, is_srgb),
+				timeline_semaphore,
+				16.0f,			// max anisotropy
+				addressModeU,	// Use the dynamically determined U mode (wrapS)
+				addressModeV,	// Use the dynamically determined V mode (wrapT)
+				is_srgb ? TextureType::SRGB_TEXTYPE : TextureType::LINEAR_TEXTYPE,
+				-1 // mip levels are calculated by the Texture constructor
+			);
 		}
 		else {
-			const auto& gltf_tex = model.textures[local_texID];
-			int image_idx = gltf_tex.source;
-
-			if (image_idx >= 0 && image_idx < model.images.size()) {
-				const auto& image = model.images[image_idx];
-
-				// DYNAMIC SAMPLER MODE DETERMINATION
-				// Start with the glTF default mode (REPEAT) for both U and V
-				int gltf_wrap_s = 10497;
-				int gltf_wrap_t = 10497;
-
-				// Check if the glTF texture refers to a valid sampler index
-				if (gltf_tex.sampler >= 0 && gltf_tex.sampler < model.samplers.size()) {
-					const auto& gltf_sampler = model.samplers[gltf_tex.sampler];
-					gltf_wrap_s = gltf_sampler.wrapS;
-					gltf_wrap_t = gltf_sampler.wrapT;
-				}
-
-				// Convert the glTF integer constants to Vulkan enums using the lambda
-				VkSamplerAddressMode addressModeU = get_vulkan_address_mode(gltf_wrap_s);
-				VkSamplerAddressMode addressModeV = get_vulkan_address_mode(gltf_wrap_t);
-
-				// Use the determined sRGB status for format selection
-				bool is_srgb = texture_is_srgb[local_texID];
-
-				Log::debug("Loading glTF Texture #", local_texID, ": Image source index ", image_idx, " (sRGB: ", (is_srgb ? "true" : "false"), ")");
-
-				this->textures.emplace_back(
-					*device,
-					image,			// Pass by reference
-					get_texture_format(image.component, is_srgb),
-					timeline_semaphore,
-					16.0f,			// max anisotropy
-					addressModeU,	// Use the dynamically determined U mode (wrapS)
-					addressModeV,	// Use the dynamically determined V mode (wrapT)
-					is_srgb ? TextureType::SRGB_TEXTYPE : TextureType::LINEAR_TEXTYPE,
-					-1 // mip levels are calculated by the Texture constructor
-				);
-			}
-			else {
-				Log::warning("Texture ", local_texID, " has an invalid image source index (", image_idx, "). Skipping.");
-			}
+			Log::warning("Texture ", local_texID, " has an invalid image source index (", image_idx, "). Skipping.");
 		}
 	}
-
-	this->texture_count = static_cast<uint32_t>(this->textures.size());
-
-
 
 	// ----------------------------------------------------------------------------------
 	// 2.1 Assign global unique texture IDs to corresponding slots in Materials
@@ -9570,23 +9902,65 @@ void Mesh::load_gltf_textures_and_materials(tinygltf::Model& model, bool default
 
 	Log::debug("Mapping local glTF texture IDs indices to global texIDs...");
 
-	// --- Helper Lambda for safely extracting local texture index from an extension ---
-	auto get_ext_tex_id = [&](const tinygltf::Value& ext_value, const std::string& property_name) -> int32_t {
-		// Check if the property name exists in the extension value
-		if (ext_value.Has(property_name)) {
-			const tinygltf::Value& tex_info = ext_value.Get(property_name);
-
-			// Ensure it's a valid textureInfo object and has an "index" key
-			if (tex_info.IsObject() && tex_info.Has("index")) {
-				// Retrieve the glTF local texture index
-				return tex_info.Get("index").Get<int>();
+	// --- Helper Lambdas for safely extracting local texID and UV id from an extension ---
+	auto resolve_tex = [&](const tinygltf::Value& tex_val, int32_t& out_tex_id, int32_t& out_uv_id) {
+		if (tex_val.IsObject() && tex_val.Has("index")) {
+			int local_idx = tex_val.Get("index").GetNumberAsInt();
+			if (local_idx >= 0 && local_idx < (int)this->textures.size()) {
+				out_tex_id = this->textures[local_idx].get_unique_ID();
+				out_uv_id = tex_val.Has("texCoord") ? tex_val.Get("texCoord").GetNumberAsInt() : 0;
 			}
 		}
-		return -1;
-	};
+		};
+
+	auto resolve_ext_tex = [&](const std::map<std::string, tinygltf::Value>& exts, const std::string& ext_name, const std::string& prop_name, int32_t& out_tex_id, int32_t& out_uv_id) {
+		auto it = exts.find(ext_name);
+		if (it != exts.end() && it->second.Has(prop_name)) {
+			resolve_tex(it->second.Get(prop_name), out_tex_id, out_uv_id);
+		}
+		};
+
+	// Helper for core PBR structs (which aren't tinygltf::Value)
+	auto resolve_core = [&](int gltf_idx, int gltf_uv, int32_t& out_id, int32_t& out_uv) {
+		if (gltf_idx >= 0) {
+			out_id = this->textures[gltf_idx].get_unique_ID();
+			out_uv = gltf_uv;
+		}
+		};
 
 	// create default textures AFTER glTF textures (IMPORTANT! otherwise the indices in this->textures don't match with the local texIDs of the glTF!)
 	create_default_textures(timeline_semaphore);
+
+	// Ensure at least one material exists (for objects without material properties);
+	// this must be done AFTER creating default textures to ensure proper texID assignment
+	if (this->materials.empty()) {
+		Log::debug("No materials found in glTF file. Creating a default material.");
+		this->materials.emplace_back();
+		materials.back().illum = default_to_pbr ? 4 : 2;
+		materials.back().texIDs.base_color_tex_id = default_texID.white_srgb;
+		materials.back().texIDs.normal_tex_id = default_texID.normal_unorm;
+		materials.back().texIDs.metallic_roughness_tex_id = default_texID.metallic_roughness_unorm;
+		materials.back().texIDs.occlusion_tex_id = default_texID.white_unorm;
+		materials.back().texIDs.emissive_tex_id = default_texID.black_srgb;
+		/*
+		materials.back().texIDs.alpha_tex_id = default_texID.white_srgb;
+		if (default_to_pbr) {
+			this->materials.back().texIDs.clearcoat_tex_id = default_texID.black_srgb;
+			this->materials.back().texIDs.clearcoat_roughness_tex_id = default_texID.black_unorm;
+			this->materials.back().texIDs.clearcoat_normal_tex_id = default_texID.normal_unorm;
+			this->materials.back().texIDs.sheen_color_tex_id = default_texID.white_srgb;
+			this->materials.back().texIDs.sheen_roughness_tex_id = default_texID.black_unorm;
+			this->materials.back().texIDs.transmission_tex_id = default_texID.black_srgb;
+			this->materials.back().texIDs.thickness_tex_id = default_texID.white_unorm;
+			this->materials.back().texIDs.specular_tex_id = default_texID.black_unorm;
+			this->materials.back().texIDs.specular_color_tex_id = default_texID.white_srgb;
+			this->materials.back().texIDs.specular_gloss_diffuse_tex_id = default_texID.white_srgb;
+			this->materials.back().texIDs.specular_gloss_tex_id = default_texID.white_unorm;
+		}
+		*/
+	}
+
+	this->material_count = static_cast<uint32_t>(this->materials.size());
 
 	// loop over materials and assign texID slots with global unique IDs
 	for (uint32_t matID = 0; matID < model.materials.size(); matID++) {
@@ -9597,6 +9971,7 @@ void Mesh::load_gltf_textures_and_materials(tinygltf::Model& model, bool default
 		this->materials[matID].texIDs.metallic_roughness_tex_id = default_texID.metallic_roughness_unorm;
 		this->materials[matID].texIDs.occlusion_tex_id = default_texID.white_unorm;
 		this->materials[matID].texIDs.emissive_tex_id = default_texID.black_srgb;
+		/*
 		if (default_to_pbr) {
 			this->materials[matID].texIDs.clearcoat_tex_id = default_texID.black_srgb;
 			this->materials[matID].texIDs.clearcoat_roughness_tex_id = default_texID.black_unorm;
@@ -9610,61 +9985,50 @@ void Mesh::load_gltf_textures_and_materials(tinygltf::Model& model, bool default
 			this->materials[matID].texIDs.specular_gloss_diffuse_tex_id = default_texID.white_srgb;
 			this->materials[matID].texIDs.specular_gloss_tex_id = default_texID.white_unorm;
 		}
+		*/
 
-		// loop over glTF textures
-		for (uint32_t local_texID = 0; local_texID < model.textures.size(); local_texID++) {
-		
-			// overwrite defaults with glTF textures in case they exist
-			if (local_texID == model.materials[matID].pbrMetallicRoughness.baseColorTexture.index) {
-				this->materials[matID].texIDs.base_color_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID == model.materials[matID].normalTexture.index) {
-				this->materials[matID].texIDs.normal_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID == model.materials[matID].pbrMetallicRoughness.metallicRoughnessTexture.index) {
-				this->materials[matID].texIDs.metallic_roughness_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID == model.materials[matID].occlusionTexture.index) {
-				this->materials[matID].texIDs.occlusion_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID == model.materials[matID].emissiveTexture.index) {
-				this->materials[matID].texIDs.emissive_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_clearcoat"), "clearcoatTexture")) {
-				this->materials[matID].texIDs.clearcoat_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_clearcoat"), "clearcoatRoughnessTexture")) {
-				this->materials[matID].texIDs.clearcoat_roughness_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_clearcoat"), "clearcoatNormalTexture")) {
-				this->materials[matID].texIDs.clearcoat_normal_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_sheen"), "sheenColorTexture")) {
-				this->materials[matID].texIDs.sheen_color_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_sheen"), "sheenRoughTexture")) {
-				this->materials[matID].texIDs.sheen_roughness_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_transmission"), "transmissionTexture")) {
-				this->materials[matID].texIDs.transmission_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_volume"), "thicknessTexture")) {
-				this->materials[matID].texIDs.thickness_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_specular"), "specularTexture")) {
-				this->materials[matID].texIDs.specular_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_specular"), "specularColorTexture")) {
-				this->materials[matID].texIDs.specular_color_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_pbrSpecularGlossiness"), "diffuseTexture")) {
-				this->materials[matID].texIDs.specular_gloss_diffuse_tex_id = this->textures[local_texID].get_unique_ID();
-			}
-			else if (local_texID = get_ext_tex_id(model.materials[matID].extensions.at("KHR_materials_pbrSpecularGlossiness"), "specularGlossinessTexture")) {
-				this->materials[matID].texIDs.specular_gloss_tex_id = this->textures[local_texID].get_unique_ID();
-			}
+		// --- Core PBR ---
+		resolve_core(model.materials[matID].pbrMetallicRoughness.baseColorTexture.index, model.materials[matID].pbrMetallicRoughness.baseColorTexture.texCoord, this->materials[matID].texIDs.base_color_tex_id, this->materials[matID].texIDs.base_color_uv_id);
+		resolve_core(model.materials[matID].pbrMetallicRoughness.metallicRoughnessTexture.index, model.materials[matID].pbrMetallicRoughness.metallicRoughnessTexture.texCoord, this->materials[matID].texIDs.metallic_roughness_tex_id, this->materials[matID].texIDs.metallic_roughness_uv_id);
+		resolve_core(model.materials[matID].normalTexture.index, model.materials[matID].normalTexture.texCoord, this->materials[matID].texIDs.normal_tex_id, this->materials[matID].texIDs.normal_uv_id);
+		resolve_core(model.materials[matID].emissiveTexture.index, model.materials[matID].emissiveTexture.texCoord, this->materials[matID].texIDs.emissive_tex_id, this->materials[matID].texIDs.emissive_uv_id);
+
+		// Occlusion/Ambient
+		if (model.materials[matID].occlusionTexture.index >= 0) {
+			int32_t id = this->textures[model.materials[matID].occlusionTexture.index].get_unique_ID();
+			int32_t uv = model.materials[matID].occlusionTexture.texCoord;
+			this->materials[matID].texIDs.occlusion_tex_id = id;
+			this->materials[matID].texIDs.ambient_tex_id = id;
+			this->materials[matID].texIDs.occlusion_uv_id = uv;
+			this->materials[matID].texIDs.ambient_uv_id = uv;
 		}
+
+		// --- Extensions ---
+		const auto& exts = model.materials[matID].extensions;
+
+		// Clearcoat (The Watch often uses this for the sapphire crystal)
+		resolve_ext_tex(exts, "KHR_materials_clearcoat", "clearcoatTexture", this->materials[matID].texIDs.clearcoat_tex_id, this->materials[matID].texIDs.clearcoat_uv_id);
+		resolve_ext_tex(exts, "KHR_materials_clearcoat", "clearcoatRoughnessTexture", this->materials[matID].texIDs.clearcoat_roughness_tex_id, this->materials[matID].texIDs.clearcoat_roughness_uv_id);
+		resolve_ext_tex(exts, "KHR_materials_clearcoat", "clearcoatNormalTexture", this->materials[matID].texIDs.clearcoat_normal_tex_id, this->materials[matID].texIDs.clearcoat_normal_uv_id);
+
+		// Sheen (For straps or fabric elements)
+		resolve_ext_tex(exts, "KHR_materials_sheen", "sheenColorTexture", this->materials[matID].texIDs.sheen_color_tex_id, this->materials[matID].texIDs.sheen_color_uv_id);
+		resolve_ext_tex(exts, "KHR_materials_sheen", "sheenRoughnessTexture", this->materials[matID].texIDs.sheen_roughness_tex_id, this->materials[matID].texIDs.sheen_roughness_uv_id);
+
+		// Transmission/Volume (For glass/liquids)
+		resolve_ext_tex(exts, "KHR_materials_transmission", "transmissionTexture", this->materials[matID].texIDs.transmission_tex_id, this->materials[matID].texIDs.transmission_uv_id);
+		resolve_ext_tex(exts, "KHR_materials_volume", "thicknessTexture", this->materials[matID].texIDs.thickness_tex_id, this->materials[matID].texIDs.thickness_uv_id);
+
+		// Specular (PBR Specular extension, not legacy)
+		resolve_ext_tex(exts, "KHR_materials_specular", "specularTexture", this->materials[matID].texIDs.specular_tex_id, this->materials[matID].texIDs.specular_uv_id);
+		resolve_ext_tex(exts, "KHR_materials_specular", "specularColorTexture", this->materials[matID].texIDs.specular_color_tex_id, this->materials[matID].texIDs.specular_color_uv_id);
+
+		// Specular Glossiness workflow overrides
+		resolve_ext_tex(exts, "KHR_materials_pbrSpecularGlossiness", "diffuseTexture", this->materials[matID].texIDs.specular_gloss_diffuse_tex_id, this->materials[matID].texIDs.specular_gloss_diffuse_uv_id);
+		resolve_ext_tex(exts, "KHR_materials_pbrSpecularGlossiness", "specularGlossinessTexture", this->materials[matID].texIDs.specular_gloss_tex_id, this->materials[matID].texIDs.specular_gloss_uv_id);
+
 	}
+	this->texture_count = static_cast<uint32_t>(this->textures.size());
 }
 
 // private helper method to load a mesh in gltf format
@@ -9699,7 +10063,7 @@ void Mesh::load_gltf(const std::filesystem::path& full_path, Semaphore& timeline
 	if (!res) {
 		Log::error("Failed to load glTF/GLB file: ", full_path.string().c_str());
 	}
-	
+
 	load_gltf_textures_and_materials(model, default_to_pbr, timeline_semaphore);
 
 	const tinygltf::Scene& scene = model.scenes[model.defaultScene > -1 ? model.defaultScene : 0];
@@ -9707,11 +10071,18 @@ void Mesh::load_gltf(const std::filesystem::path& full_path, Semaphore& timeline
 		process_gltf_node(model, node_idx, glm::mat4(1.0f), default_to_pbr, generate_mikktspace_tangents);
 	}
 
-	if (generate_mikktspace_tangents) {
+	transform_vertices_axis(); // does nothing in case the mesh is loaded as Y_UP (which is glTF 2.0 standard)
+
+	// Generate tangents if the user requested them OR the file didn't have them
+	if (generate_mikktspace_tangents || !gltf_provided_tangents) {
+		Log::debug("... generating MikkTSpace tangents...");
 		MeshTangentGenerator::generate_tangents(this->vertices, this->indices);
 	}
+	else {
+		Log::debug("... Mesh: Using tangents provided by glTF file.");
+	}
 
-	// Final counts
+	// Final counts (AFTER processing all nodes)
 	this->index_count = static_cast<uint32_t>(indices.size());
 	this->vertex_count = static_cast<uint32_t>(vertices.size());
 	this->lights_count = static_cast<uint32_t>(lights.size());
@@ -9726,9 +10097,11 @@ void Mesh::load_gltf(const std::filesystem::path& full_path, Semaphore& timeline
 }
 
 // parametric constructor
-Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore& timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents) :
+Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore& timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents, int variant_id, UpAxis src_up_axis) :
 	device(&device),
-	unique_ID(next_unique_mesh_id++) {
+	unique_ID(next_unique_mesh_id++),
+	variant_id(variant_id),
+	src_up_axis(src_up_axis) {
 
 	// Dynamically construct the full absolute path to the file.
 	std::filesystem::path project_root = get_executable_directory() / "..";
@@ -9858,6 +10231,129 @@ Mesh::Mesh(
 	*/
 }
 
+void Mesh::transform_vertices_axis() {
+	switch (this->src_up_axis) {
+	case UpAxis::X_UP: {
+		// Source: X is Up, Y is Forward, Z is Right (Right-Handed)
+		// Target: Y is Up, Z is Forward, X is Right (Right-Handed)
+		// Transformation: (x, y, z) -> (z, x, y)
+		for (Vertex& vert : this->vertices) {
+			float old_x = vert.position.x;
+			float old_y = vert.position.y;
+			float old_z = vert.position.z;
+			vert.position = { old_z, old_x, old_y };
+
+			float old_nx = vert.normal.x;
+			float old_ny = vert.normal.y;
+			float old_nz = vert.normal.z;
+			vert.normal = { old_nz, old_nx, old_ny };
+
+			float old_tx = vert.tangent.x;
+			float old_ty = vert.tangent.y;
+			float old_tz = vert.tangent.z;
+			vert.tangent.x = old_tz;
+			vert.tangent.y = old_tx;
+			vert.tangent.z = old_ty;
+
+			// Handedness: No reflection (even permutation), so no flip
+		}
+		break;
+	}
+	case UpAxis::Z_UP: {
+		// Source: Z is Up, Y is Forward, X is Right (Right-Handed)
+		// Target: Y is Up, Z is Forward, X is Right (Right-Handed)
+		// Transformation: (x, y, z) -> (x, z, -y)
+		for (Vertex& vert : this->vertices) {
+			float old_y = vert.position.y;
+			float old_z = vert.position.z;
+			vert.position.y = old_z;
+			vert.position.z = -old_y;
+
+			float old_ny = vert.normal.y;
+			float old_nz = vert.normal.z;
+			vert.normal.y = old_nz;
+			vert.normal.z = -old_ny;
+
+			float old_ty = vert.tangent.y;
+			float old_tz = vert.tangent.z;
+			vert.tangent.y = old_tz;
+			vert.tangent.z = -old_ty;
+
+			// Handedness: Reflection (odd permutation/negation), flip tangent.w
+			vert.tangent.w *= -1.0f;
+		}
+		break;
+	}
+	case UpAxis::X_DOWN: {
+		// Transformation: (x, y, z) -> (z, -x, -y)
+		for (Vertex& vert : this->vertices) {
+			float old_x = vert.position.x;
+			float old_y = vert.position.y;
+			float old_z = vert.position.z;
+			vert.position = { old_z, -old_x, -old_y };
+
+			float old_nx = vert.normal.x;
+			float old_ny = vert.normal.y;
+			float old_nz = vert.normal.z;
+			vert.normal = { old_nz, -old_nx, -old_ny };
+
+			float old_tx = vert.tangent.x;
+			float old_ty = vert.tangent.y;
+			float old_tz = vert.tangent.z;
+			vert.tangent.x = old_tz;
+			vert.tangent.y = -old_ty;
+			vert.tangent.z = -old_tx;
+
+			// Handedness: Flip (negation of two axes + swap)
+			vert.tangent.w *= -1.0f;
+		}
+		break;
+	}
+	case UpAxis::Y_DOWN: {
+		// Transformation: (x, y, z) -> (x, -y, -z)
+		for (Vertex& vert : this->vertices) {
+			vert.position.y *= -1.0f;
+			vert.position.z *= -1.0f;
+
+			vert.normal.y *= -1.0f;
+			vert.normal.z *= -1.0f;
+
+			vert.tangent.y *= -1.0f;
+			vert.tangent.z *= -1.0f;
+
+			// Handedness: No flip (two negations)
+		}
+		break;
+	}
+	case UpAxis::Z_DOWN: {
+		// Transformation: (x, y, z) -> (x, -z, y)
+		for (Vertex& vert : this->vertices) {
+			float old_y = vert.position.y;
+			float old_z = vert.position.z;
+			vert.position.y = -old_z;
+			vert.position.z = old_y;
+
+			float old_ny = vert.normal.y;
+			float old_nz = vert.normal.z;
+			vert.normal.y = -old_nz;
+			vert.normal.z = old_ny;
+
+			float old_ty = vert.tangent.y;
+			float old_tz = vert.tangent.z;
+			vert.tangent.y = -old_tz;
+			vert.tangent.z = old_ty;
+
+			// Handedness: Flip (one negation + swap)
+			vert.tangent.w *= -1.0f;
+		}
+		break;
+	}
+	default:
+		// assuming Y-UP (=standard) -> do nothing
+		break;
+	}
+}
+
 // destructor
 Mesh::~Mesh() {
 	if (this->vertex_buffer) {
@@ -9977,6 +10473,18 @@ uint32_t Mesh::get_vertex_count() const { return this->vertex_count; }
 uint32_t Mesh::get_lights_count() const { return this->lights_count; }
 uint32_t Mesh::get_material_count() const { return this->material_count; }
 uint32_t Mesh::get_texture_count() const { return this->texture_count; }
+glm::vec3 Mesh::get_bbox_min() const { return this->bbox_min; }
+glm::vec3 Mesh::get_bbox_max() const { return this->bbox_max; }
+glm::vec3 Mesh::get_bbox_center() const { return (this->bbox_min + this->bbox_max) * 0.5f; }
+void Mesh::set_mass_kg(float_t mass_kg) { this->mass_kg = mass_kg; }
+float_t Mesh::get_mass_kg() const { return this->mass_kg; }
+void Mesh::set_drag_coefficient(float_t value) { this->drag_coefficient = value; }
+float_t Mesh::get_drag_coefficient() const { return this->drag_coefficient; }
+void Mesh::set_surface_friction(float_t value) { this->surface_friction = surface_friction; };
+float_t Mesh::get_surface_friction() const { return this->surface_friction; }
+void Mesh::set_bounce_restitution(float_t value) { this->bounce_restitution = std::max(0.0f, std::min(value, 1.0f)); }
+float_t Mesh::get_bounce_restitution() const { return this->bounce_restitution; }
+void Mesh::make_solid(bool mesh_is_solid) { this->is_solid = mesh_is_solid; }
 const std::vector<Texture>& Mesh::get_textures() const { return this->textures; };
 VkIndexType Mesh::get_index_type() const { return index_type; }
 std::vector<SubMesh>& Mesh::get_submeshes() { return submeshes; }
@@ -9994,6 +10502,108 @@ Entity::Entity(Mesh& mesh, glm::vec3 position, bool visible) : mesh(&mesh), posi
 
 // Calculates the model matrix, applying the transformations in the correct order: scale, rotate, then translate.
 glm::mat4 Entity::get_model_matrix() {
+	if (first_update) {
+		last_update = std::chrono::high_resolution_clock::now(); // initializer timer
+	}
+	else {
+		first_update = false;
+		std::chrono::steady_clock::time_point time_now = std::chrono::high_resolution_clock::now();
+		float_t sec = static_cast<float_t>(std::chrono::duration_cast<std::chrono::duration<double>>(time_now - last_update).count());
+		last_update = std::chrono::high_resolution_clock::now(); // reset timer
+
+		float speed = glm::length(lin_velocity);
+		float_t drag_coeff = this->mesh->get_drag_coefficient();
+		float_t mass = this->mesh->get_mass_kg() * (scale.x * scale.y * scale.z);
+		mass = glm::max(mass, 0.0001f);
+		glm::vec3 dim = (this->mesh->get_bbox_max() - this->mesh->get_bbox_min()) * scale;
+
+		// === LINEAR PHYSICS ===
+		if (lin_physics_enabled) {
+			glm::vec3 total_force =
+				(gravity_enabled ? (gravity * mass) : glm::vec3{ 0.0f, 0.0f, 0.0f }) +
+				lin_thrust;
+			if (speed > 0.0001) {
+				// Get local velocity by inverting the rotation
+				glm::mat4 R = glm::mat4(1.0f);
+				R = glm::rotate(R, glm::radians(-rotation.z), glm::vec3(0, 0, 1));
+				R = glm::rotate(R, glm::radians(-rotation.y), glm::vec3(0, 1, 0));
+				R = glm::rotate(R, glm::radians(-rotation.x), glm::vec3(1, 0, 0));
+				glm::vec3 local_v = glm::vec3(R * glm::vec4(lin_velocity, 0.0f));
+				glm::vec3 dir = glm::abs(glm::normalize(local_v));
+
+				// Project area of the boundary box as seen from the direction of movement
+				float area =
+					(dim.y * dim.z * dir.x) +
+					(dim.x * dim.z * dir.y) +
+					(dim.x * dim.y * dir.z);
+
+				// Calculate Drag Force Magnitude: F = 1/2 * rho * v^2 * Cd * A
+				float drag_mag = 0.5f * this->rho * (speed * speed) * drag_coeff * area;
+				float max_drag = (speed * mass) / sec;
+				drag_mag = glm::min(drag_mag, max_drag);
+				glm::vec3 drag_direction = -glm::normalize(lin_velocity);
+				total_force += drag_direction * drag_mag;
+			}
+			glm::vec3 lin_acceleration = total_force / mass;
+			lin_velocity += lin_acceleration * sec;
+		}
+		else {
+			lin_velocity += lin_thrust * sec;
+		}
+		position += lin_velocity * sec;
+
+		// === ROTATIONAL PHYSICS ===
+		if (rot_physics_enabled) {
+			
+			float angular_speed = glm::length(spin_velocity);
+
+			// Calculate Moment of Inertia for each axis
+			inertia.x = (1.0f / 12.0f) * mass * (dim.y * dim.y + dim.z * dim.z);
+			inertia.y = (1.0f / 12.0f) * mass * (dim.x * dim.x + dim.z * dim.z);
+			inertia.z = (1.0f / 12.0f) * mass * (dim.x * dim.x + dim.y * dim.y);
+
+			// Make sure inertia components never reach zero
+			inertia.x = glm::max(inertia.x, 0.0001f);
+			inertia.y = glm::max(inertia.y, 0.0001f);
+			inertia.z = glm::max(inertia.z, 0.0001f);
+
+			glm::vec3 spin_acceleration = spin_thrust / inertia;
+
+			if (tumbling_enabled && speed > 1.0f) {
+				float dynamic_pressure = 0.5f * this->rho * (speed * speed);
+				float area = (dim.y * dim.z) + (dim.x * dim.z) + (dim.x * dim.y); // total surface approx
+				glm::vec3 tumble_axis = glm::cross(glm::normalize(lin_velocity), glm::vec3(0, 1, 0));
+				float lever_arm = (dim.x + dim.y + dim.z) / 3.0f;
+				glm::vec3 tumbling_torque = tumble_axis * (dynamic_pressure * area * tumble_strength * lever_arm);
+				spin_acceleration += tumbling_torque / inertia;
+			}
+			if (angular_speed > 0.0001f) {
+				float rot_drag_mag = 0.5f * rho * (angular_speed * angular_speed) * drag_coeff;
+				glm::vec3 rot_drag_dir = -glm::normalize(spin_velocity);
+				glm::vec3 torque = rot_drag_dir * rot_drag_mag;
+				spin_acceleration += torque / inertia;
+			}
+			spin_velocity += spin_acceleration * sec;
+		}
+		else {
+			spin_velocity += spin_thrust * sec;
+		}
+		rotation += spin_velocity * sec;
+		
+		// === SCALE ===
+		scale_velocity += scale_acceleration * sec;
+		scale += scale_velocity * sec;
+		static const float_t MIN_SCALE = 0.0001;
+		if (scale.x <= MIN_SCALE) { scale.x = MIN_SCALE; this->visible = false; }
+		if (scale.y <= MIN_SCALE) { scale.y = MIN_SCALE; this->visible = false; }
+		if (scale.z <= MIN_SCALE) { scale.z = MIN_SCALE; this->visible = false; }
+
+		// === RESET THRUST ===
+		lin_thrust = glm::vec3(0.0f);
+		spin_thrust = glm::vec3(0.0f);
+	}
+
+	// calculate model matrix with updated transformation
 	glm::mat4 model = glm::mat4(1.0f);
 	model = glm::translate(model, position);
 	model = glm::rotate(model, glm::radians(rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -10004,13 +10614,28 @@ glm::mat4 Entity::get_model_matrix() {
 }
 
 // move constructor
-Entity::Entity(Entity&& other) noexcept :
-	position(other.position),
+Entity::Entity(Entity&& other) noexcept
+	: position(other.position),
 	rotation(other.rotation),
 	scale(other.scale),
-	unique_ID(std::exchange(other.unique_ID, UINT32_MAX)),
-	mesh(std::exchange(other.mesh, nullptr)),
-	visible(other.visible) {
+	unique_ID(std::exchange(other.unique_ID, INVALID_ID)),
+	mesh(std::exchange(other.mesh, nullptr)), // Transfer pointer
+	visible(other.visible),
+	lin_physics_enabled(other.lin_physics_enabled),
+	rot_physics_enabled(other.rot_physics_enabled),
+	gravity_enabled(other.gravity_enabled),
+	tumbling_enabled(other.tumbling_enabled),
+	inertia(other.inertia),
+	lin_velocity(other.lin_velocity),
+	spin_velocity(other.spin_velocity),
+	scale_velocity(other.scale_velocity),
+	lin_thrust(other.lin_thrust),
+	spin_thrust(other.spin_thrust),
+	scale_acceleration(other.scale_acceleration),
+	rho(other.rho),
+	tumble_strength(other.tumble_strength),
+	last_update(other.last_update),
+	first_update(other.first_update) {
 	Log::debug("Entity move constructor invoked. Moving from '&other' = ", &other, " to 'this' = ", this, ".");
 }
 
@@ -10018,12 +10643,86 @@ Entity::Entity(Entity&& other) noexcept :
 Entity& Entity::operator=(Entity&& other) noexcept {
 	Log::debug("Entity move assignment invoked. Moving from '&other' = ", &other, " to 'this' = ", this, ".");
 	if (this != &other) {
-		this->position = other.position;
-		this->rotation = other.rotation;
-		this->scale = other.scale;
-		this->unique_ID = other.unique_ID; other.unique_ID = -1;
-		this->mesh = std::exchange(other.mesh, nullptr);
-		this->visible = other.visible;
+		position = other.position;
+		rotation = other.rotation;
+		scale = other.scale;
+		unique_ID = other.unique_ID; other.unique_ID = INVALID_ID;
+		mesh = other.mesh; other.mesh = nullptr;
+
+		visible = other.visible;
+		lin_physics_enabled = other.lin_physics_enabled;
+		rot_physics_enabled = other.rot_physics_enabled;
+		gravity_enabled = other.gravity_enabled;
+		tumbling_enabled = other.tumbling_enabled;
+
+		inertia = other.inertia;
+		lin_velocity = other.lin_velocity;
+		spin_velocity = other.spin_velocity;
+		scale_velocity = other.scale_velocity;
+		lin_thrust = other.lin_thrust;
+		spin_thrust = other.spin_thrust;
+		scale_acceleration = other.scale_acceleration;
+
+		rho = other.rho;
+		tumble_strength = other.tumble_strength;
+		last_update = other.last_update;
+		first_update = other.first_update;
+	}
+	else {
+		Log::debug("... 'this' and '&other' are identical! Returning '*this' (unmodified).");
+	}
+	return *this;
+}
+
+// copy constructor
+Entity::Entity(const Entity& other)
+	: position(other.position),
+	rotation(other.rotation),
+	scale(other.scale),
+	unique_ID(next_unique_ID++),	// Assign a brand new ID to the copy
+	mesh(other.mesh),				// Copy the pointer to the externally owned mesh
+	visible(other.visible),
+	lin_physics_enabled(other.lin_physics_enabled),
+	rot_physics_enabled(other.rot_physics_enabled),
+	gravity_enabled(other.gravity_enabled),
+	tumbling_enabled(other.tumbling_enabled),
+	inertia(other.inertia),
+	lin_velocity(other.lin_velocity),
+	spin_velocity(other.spin_velocity),
+	scale_velocity(other.scale_velocity),
+	lin_thrust(other.lin_thrust),
+	spin_thrust(other.spin_thrust),
+	scale_acceleration(other.scale_acceleration),
+	rho(other.rho),
+	tumble_strength(other.tumble_strength),
+	first_update(true) {			// New instance needs its own timer start
+	Log::debug("Entity copy constructor invoked. Copying from '&other' = ", &other, " to 'this' = ", this, ".");
+}
+
+// copy assignment
+Entity& Entity::operator=(const Entity& other) {
+	Log::debug("Entity copy assignment invoked. Copying from '&other' = ", &other, " to 'this' = ", this, ".");
+	if (this != &other) {
+		// note: the unique_IDs are kept unmodified for both src and dst
+		position = other.position;
+		rotation = other.rotation;
+		scale = other.scale;
+		mesh = other.mesh;
+		visible = other.visible;
+		lin_physics_enabled = other.lin_physics_enabled;
+		rot_physics_enabled = other.rot_physics_enabled;
+		gravity_enabled = other.gravity_enabled;
+		tumbling_enabled = other.tumbling_enabled;
+		inertia = other.inertia;
+		lin_velocity = other.lin_velocity;
+		spin_velocity = other.spin_velocity;
+		scale_velocity = other.scale_velocity;
+		lin_thrust = other.lin_thrust;
+		spin_thrust = other.spin_thrust;
+		scale_acceleration = other.scale_acceleration;
+		rho = other.rho;
+		tumble_strength = other.tumble_strength;
+		first_update = true; // Reset timer for the "new" state of this object
 	}
 	else {
 		Log::debug("... 'this' and '&other' are identical! Returning '*this' (unmodified).");
@@ -10041,11 +10740,26 @@ glm::vec3& Entity::rotate(const glm::vec3& rotation_delta) { this->rotation += r
 glm::vec3& Entity::scale_add(const glm::vec3& scale_delta) { this->scale += scale_delta; return this->scale; }
 glm::vec3& Entity::scale_factor(const glm::vec3& scale_multiplier) { this->scale *= scale_multiplier; return this->scale; }
 
-// Public getters
+void Entity::set_lin_velocity(glm::vec3 velocity_xyz) { this->lin_velocity = velocity_xyz; }
+void Entity::set_lin_thrust(glm::vec3 lin_thrust_xyz) { this->lin_thrust = lin_thrust_xyz; }
+void Entity::set_spin_velocity(glm::vec3 spin_velocity_xyz) { this->spin_velocity = spin_velocity_xyz; }
+void Entity::set_spin_thrust(glm::vec3 spin_thrust_xyz) { this->spin_thrust = spin_thrust_xyz; }
+void Entity::set_scale_velocity(glm::vec3 scale_velocity) { this->scale_velocity = scale_velocity; }
+void Entity::set_scale_accelaration(glm::vec3 scale_acceleration) { this->scale_acceleration = scale_acceleration; }
+
+glm::vec3 Entity::get_lin_velocity() const { return this->lin_velocity; }
+glm::vec3 Entity::get_spin_velocity() const { return this->spin_velocity; }
+
+void Entity::set_environment_density(float_t rho) { this->rho = rho; }
+void Entity::set_tumble_strength(float_t value) { this->tumble_strength = value; }
+
 Mesh& Entity::get_mesh() const { return *mesh; }
 const glm::vec3& Entity::get_position() const { return this->position; }
 const glm::vec3& Entity::get_rotation() const { return this->rotation; }
 const glm::vec3& Entity::get_scale() const { return this->scale; }
+void Entity::enable_physics(bool linear, bool gravity, bool rotation, bool tumble) {
+	this->lin_physics_enabled = linear; this->gravity_enabled = gravity;  this->rot_physics_enabled = rotation; this->tumbling_enabled = tumble;
+}
 bool Entity::is_visible() const { return this->visible; }
 int Entity::get_unique_ID() const { return unique_ID; }
 void Entity::set_visible(bool is_visible) { this->visible = is_visible; }
@@ -10055,7 +10769,7 @@ void Entity::set_visible(bool is_visible) { this->visible = is_visible; }
 // +=================================+
 
 // Constructor
-Camera::Camera(glm::vec3 camera_position, glm::vec3 camera_up, float camera_yaw, float camera_pitch)  :
+Camera::Camera(glm::vec3 camera_position, UpAxis camera_up, float camera_yaw, float camera_pitch)  :
 	unique_ID(next_unique_ID++),
 	position(camera_position),
 	world_up(camera_up),
@@ -10083,6 +10797,14 @@ glm::mat4 Camera::get_projection_matrix() {
 // return the current camera position
 glm::vec3 Camera::get_position() const {
 	return position;
+}
+
+float_t Camera::get_distance(glm::vec3 position) const {
+	return glm::length(position - this->position);
+}
+
+float_t Camera::get_distance(const Entity& entity) const {
+	return glm::length(entity.get_position() - this->position);
 }
 
 glm::vec3 Camera::get_front() const {
@@ -10119,8 +10841,8 @@ void Camera::rotate(float_t delta_pitch, float_t delta_yaw, float_t delta_roll) 
 }
 
 // Sets the world up vector.
-void Camera::set_world_up(const glm::vec3& new_world_up) {
-	this->world_up = new_world_up;
+void Camera::set_world_up(const UpAxis& new_world_up) {
+	this->world_up = up_axis_as_vec3(new_world_up);
 	this->update_camera_vectors();
 }
 
@@ -10162,13 +10884,22 @@ void Camera::look_at(const glm::vec3& target, bool reset_roll) {
 	// Reconstruct Pitch and Yaw based on the new direction so 
 	// that subsequent mouse movement starts from the correct orientation.
 	// Different world_up cases are handled to find the correct angles.
-	if (glm::abs(world_up.z) > 0.9f) { // Z-UP
+	if (world_up.z > 0.9) {	// Z_UP
 		pitch = glm::degrees(asin(front.z));
 		yaw = glm::degrees(atan2(front.y, front.x));
 	}
-	else if (glm::abs(world_up.x) > 0.9f) { // X-UP
+	else if (world_up.x > 0.9) { // X_UP
 		pitch = glm::degrees(asin(front.x));
 		yaw = glm::degrees(atan2(front.z, front.y));
+	}
+	else if (world_up.x < -0.9) { // X_DOWN
+		// TODO
+	}
+	else if (world_up.y < -0.9) { // Y_DOWN
+		// TODO
+	}
+	else if (world_up.z < -0.9) { // Z_DOWN
+		// TODO
 	}
 	else { // Y-UP (Standard)
 		pitch = glm::degrees(asin(front.y));
@@ -10250,17 +10981,26 @@ void Camera::update_camera_vectors() {
 
 	// 1. Calculate the new Front vector based on Euler angles.
 	// We branch here based on World Up to ensure Yaw/Pitch "feel" correct to the user.
-	if (glm::abs(world_up.z) > 0.9f) {
+	if (world_up.z > 0.9) {
 		// Z-UP logic
 		new_front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
 		new_front.y = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
 		new_front.z = sin(glm::radians(pitch));
 	}
-	else if (glm::abs(world_up.x) > 0.9f) {
+	else if (world_up.x > 0.9) {
 		// X-UP logic: X is vertical
 		new_front.x = sin(glm::radians(pitch));
 		new_front.y = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
 		new_front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+	}
+	else if (world_up.x < -0.9) { // X_DOWN
+		// TODO
+	}
+	else if (world_up.y < -0.9) { // Y_DOWN
+		// TODO
+	}
+	else if (world_up.z < -0.9) { // Z_DOWN
+		// TODO
 	}
 	else {
 		// Y-UP logic
@@ -10561,7 +11301,7 @@ uint32_t Scene::add_scene_light(LightType type, glm::vec3 position, glm::vec3 co
 	return light_id;
 }
 
-uint32_t Scene::add_camera(glm::vec3 camera_position, glm::vec3 camera_up, float camera_yaw, float camera_pitch) {
+uint32_t Scene::add_camera(glm::vec3 camera_position, UpAxis camera_up, float camera_yaw, float camera_pitch) {
 	auto new_camera = std::make_unique<Camera>(camera_position, camera_up, camera_yaw, camera_pitch);
 	int camera_id = new_camera->get_unique_ID();
 	cameras.emplace(camera_id, std::move(new_camera));
@@ -10835,12 +11575,15 @@ void Scene::process_cubemap(Semaphore& tl_semaphore) {
 				glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),  // tangent
 				pos,                                // position (The required geometry)
 				glm::vec3(0.0f, 0.0f, 0.0f),        // normal
-				glm::vec2(0.0f, 0.0f),              // tex_coord
+				glm::vec2(0.0f, 0.0f),              // tex_coord_0
+				glm::vec2(0.0f, 0.0f),              // tex_coord_1
+				glm::vec2(0.0f, 0.0f),              // tex_coord_2
+				glm::vec2(0.0f, 0.0f),              // tex_coord_3
 				0u                                  // material_index
 				});
 		}
 		return vertices;
-		};
+	};
 
 	// Cube geometry is initialized and uploaded once
 	static std::unique_ptr<Buffer<Vertex>> cube_vbo = nullptr;
@@ -10884,7 +11627,6 @@ void Scene::process_cubemap(Semaphore& tl_semaphore) {
 	ibl_subpass.add_attachment_reference(
 		ibl_renderpass.add_attachment(
 			AttachmentType::COLOR_TYPE,
-			ColorBlendState::OPAQUE_BLEND,
 			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,		// initial_layout
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,			// final_layout
 			VK_ATTACHMENT_LOAD_OP_CLEAR,					// load_op
@@ -10918,6 +11660,7 @@ void Scene::process_cubemap(Semaphore& tl_semaphore) {
 		ibl_subpass_index,
 		ibl_pipeline_layout,
 		ibl_properties,
+		ColorBlendState::OPAQUE_BLEND,
 		cubemap_projection_vertex_shader,
 		irradiance_convolution_fragment_shader
 	);
@@ -10927,6 +11670,7 @@ void Scene::process_cubemap(Semaphore& tl_semaphore) {
 		ibl_subpass_index,
 		ibl_pipeline_layout,
 		ibl_properties,
+		ColorBlendState::OPAQUE_BLEND,
 		cubemap_projection_vertex_shader,
 		prefiltered_map_generation_fragment_shader
 	);
@@ -10957,7 +11701,6 @@ void Scene::process_cubemap(Semaphore& tl_semaphore) {
 		equirect_subpass.add_attachment_reference(
 			equirect_renderpass.add_attachment(
 				AttachmentType::COLOR_TYPE,
-				ColorBlendState::OPAQUE_BLEND,
 				VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,		// initial_layout
 				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,			// final_layout
 				VK_ATTACHMENT_LOAD_OP_CLEAR,					// load_op
@@ -10991,6 +11734,7 @@ void Scene::process_cubemap(Semaphore& tl_semaphore) {
 			equirect_subpass_index,
 			equirect_pipeline_layout,
 			equirect_properties,
+			ColorBlendState::OPAQUE_BLEND,
 			cubemap_projection_vertex_shader,
 			equirectangular_to_cubemap_fragment_shader
 		);
@@ -11466,7 +12210,13 @@ Buffer<Material>& Scene::get_unique_materials_buffer(Semaphore& timeline_semapho
 	// copy from staging buffer to device-local SSBO
 	CommandBuffer& cb = task.get_command_buffer();
 	cb.begin_recording();
-	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_HOST_BIT);
+	cb.add_buffer_memory_barrier(
+		staging_buffer,
+		VK_ACCESS_2_HOST_WRITE_BIT,
+		VK_ACCESS_2_TRANSFER_READ_BIT,
+		VK_PIPELINE_STAGE_2_HOST_BIT,
+		VK_PIPELINE_STAGE_2_TRANSFER_BIT
+	);
 	cb.record_barriers();
 	cb.copy_buffer(staging_buffer, *this->unique_materials_buffer);
 	cb.end_recording();
@@ -11567,7 +12317,13 @@ Buffer<Light>& Scene::get_lights_buffer(Semaphore& timeline_semaphore, bool forc
 
 	// copy from staging buffer to device-local SSBO
 	cb.begin_recording();
-	cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_HOST_BIT);
+	cb.add_buffer_memory_barrier(
+		staging_buffer,
+		VK_ACCESS_2_HOST_WRITE_BIT,
+		VK_ACCESS_2_TRANSFER_READ_BIT,
+		VK_PIPELINE_STAGE_2_HOST_BIT,
+		VK_PIPELINE_STAGE_2_TRANSFER_BIT
+	);
 	cb.record_barriers();
 	cb.copy_buffer(staging_buffer, *this->lights_buffer);
 	cb.end_recording();
@@ -11659,19 +12415,66 @@ Buffer<MaterialTexIDs>& Scene::get_scene_texIDs_buffer(Semaphore& tl_semaphore, 
 		return -1;
 	};
 
-	// Iterate over all unique materials and perform the translation from unique global ID to scene-local ID (using the lambda)
+	// Iterate over unique materials and copy both texture indices and UV indices
 	for (size_t i = 0; i < unique_materials_count; i++) {
-		scene_texIDs_vec[i].ambient_tex_id = translate_ID(unique_materials[i]->texIDs.ambient_tex_id);
-		scene_texIDs_vec[i].base_color_tex_id = translate_ID(unique_materials[i]->texIDs.base_color_tex_id);
-		scene_texIDs_vec[i].specular_tex_id = translate_ID(unique_materials[i]->texIDs.specular_tex_id);
-		scene_texIDs_vec[i].specular_color_tex_id = translate_ID(unique_materials[i]->texIDs.specular_color_tex_id);
-		scene_texIDs_vec[i].displacement_tex_id = translate_ID(unique_materials[i]->texIDs.displacement_tex_id);
-		scene_texIDs_vec[i].alpha_tex_id = translate_ID(unique_materials[i]->texIDs.alpha_tex_id);
-		scene_texIDs_vec[i].reflection_tex_id = translate_ID(unique_materials[i]->texIDs.reflection_tex_id);
-		scene_texIDs_vec[i].metallic_roughness_tex_id = translate_ID(unique_materials[i]->texIDs.metallic_roughness_tex_id);
-		scene_texIDs_vec[i].normal_tex_id = translate_ID(unique_materials[i]->texIDs.normal_tex_id);
-		scene_texIDs_vec[i].occlusion_tex_id = translate_ID(unique_materials[i]->texIDs.occlusion_tex_id);
-		scene_texIDs_vec[i].emissive_tex_id = translate_ID(unique_materials[i]->texIDs.emissive_tex_id);
+		auto& src = unique_materials[i]->texIDs;
+		auto& dst = scene_texIDs_vec[i];
+
+		// Base Color
+		dst.base_color_tex_id = translate_ID(src.base_color_tex_id);
+		dst.base_color_uv_id = src.base_color_uv_id;
+
+		// Normal
+		dst.normal_tex_id = translate_ID(src.normal_tex_id);
+		dst.normal_uv_id = src.normal_uv_id;
+
+		// Metallic Roughness
+		dst.metallic_roughness_tex_id = translate_ID(src.metallic_roughness_tex_id);
+		dst.metallic_roughness_uv_id = src.metallic_roughness_uv_id;
+
+		// Occlusion & Ambient
+		dst.occlusion_tex_id = translate_ID(src.occlusion_tex_id);
+		dst.occlusion_uv_id = src.occlusion_uv_id;
+		dst.ambient_tex_id = translate_ID(src.ambient_tex_id);
+		dst.ambient_uv_id = src.ambient_uv_id;
+
+		// Emissive
+		dst.emissive_tex_id = translate_ID(src.emissive_tex_id);
+		dst.emissive_uv_id = src.emissive_uv_id;
+
+		// Clearcoat
+		dst.clearcoat_tex_id = translate_ID(src.clearcoat_tex_id);
+		dst.clearcoat_uv_id = src.clearcoat_uv_id;
+		dst.clearcoat_roughness_tex_id = translate_ID(src.clearcoat_roughness_tex_id);
+		dst.clearcoat_roughness_uv_id = src.clearcoat_roughness_uv_id;
+		dst.clearcoat_normal_tex_id = translate_ID(src.clearcoat_normal_tex_id);
+		dst.clearcoat_normal_uv_id = src.clearcoat_normal_uv_id;
+
+		// Sheen
+		dst.sheen_color_tex_id = translate_ID(src.sheen_color_tex_id);
+		dst.sheen_color_uv_id = src.sheen_color_uv_id;
+		dst.sheen_roughness_tex_id = translate_ID(src.sheen_roughness_tex_id);
+		dst.sheen_roughness_uv_id = src.sheen_roughness_uv_id;
+
+		// Transmission & Volume
+		dst.transmission_tex_id = translate_ID(src.transmission_tex_id);
+		dst.transmission_uv_id = src.transmission_uv_id;
+		dst.thickness_tex_id = translate_ID(src.thickness_tex_id);
+		dst.thickness_uv_id = src.thickness_uv_id;
+
+		// Specular
+		dst.specular_tex_id = translate_ID(src.specular_tex_id);
+		dst.specular_uv_id = src.specular_uv_id;
+		dst.specular_color_tex_id = translate_ID(src.specular_color_tex_id);
+		dst.specular_color_uv_id = src.specular_color_uv_id;
+
+		// Misc / Legacy
+		dst.alpha_tex_id = translate_ID(src.alpha_tex_id);
+		dst.alpha_uv_id = src.alpha_uv_id;
+		dst.displacement_tex_id = translate_ID(src.displacement_tex_id);
+		dst.displacement_uv_id = src.displacement_uv_id;
+		dst.reflection_tex_id = translate_ID(src.reflection_tex_id);
+		dst.reflection_uv_id = src.reflection_uv_id;
 	}
 
 	// create the device-local SSBO in case it doesn't exist yet
@@ -13153,6 +13956,7 @@ GraphicsPipeline::GraphicsPipeline(
 	uint32_t subpass_index,
 	const GraphicsPipelineLayout& pipeline_layout,
 	const PipelineProperties& pipeline_properties,
+	const ColorBlendState& color_blend_state,
 	const ShaderModule& vertex_shader,
 	const ShaderModule& fragment_shader,
 	const ShaderModule& hull_shader,
@@ -13240,7 +14044,7 @@ GraphicsPipeline::GraphicsPipeline(
 	vertex_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 	vertex_binding_description.stride = sizeof(Vertex);
 
-	std::vector<VkVertexInputAttributeDescription> attribute_descriptions(6);
+	std::vector<VkVertexInputAttributeDescription> attribute_descriptions(9);
 
 	attribute_descriptions[0].binding = 0;
 	attribute_descriptions[0].location = 0;
@@ -13265,12 +14069,27 @@ GraphicsPipeline::GraphicsPipeline(
 	attribute_descriptions[4].binding = 0;
 	attribute_descriptions[4].location = 4;
 	attribute_descriptions[4].format = VK_FORMAT_R32G32_SFLOAT;
-	attribute_descriptions[4].offset = offsetof(Vertex, tex_coord);
+	attribute_descriptions[4].offset = offsetof(Vertex, tex_coord_0);
 
 	attribute_descriptions[5].binding = 0;
 	attribute_descriptions[5].location = 5;
-	attribute_descriptions[5].format = VK_FORMAT_R32_UINT;
-	attribute_descriptions[5].offset = offsetof(Vertex, material_index);
+	attribute_descriptions[5].format = VK_FORMAT_R32G32_SFLOAT;
+	attribute_descriptions[5].offset = offsetof(Vertex, tex_coord_1);
+
+	attribute_descriptions[6].binding = 0;
+	attribute_descriptions[6].location = 6;
+	attribute_descriptions[6].format = VK_FORMAT_R32G32_SFLOAT;
+	attribute_descriptions[6].offset = offsetof(Vertex, tex_coord_2);
+
+	attribute_descriptions[7].binding = 0;
+	attribute_descriptions[7].location = 7;
+	attribute_descriptions[7].format = VK_FORMAT_R32G32_SFLOAT;
+	attribute_descriptions[7].offset = offsetof(Vertex, tex_coord_3);
+
+	attribute_descriptions[8].binding = 0;
+	attribute_descriptions[8].location = 8;
+	attribute_descriptions[8].format = VK_FORMAT_R32_UINT;
+	attribute_descriptions[8].offset = offsetof(Vertex, material_index);
 
 	VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {};
 	vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -13349,8 +14168,7 @@ GraphicsPipeline::GraphicsPipeline(
 	std::vector<VkPipelineColorBlendAttachmentState> blend_attachment_states;
 	for (uint32_t i = 0; i < renderpass.get_attachment_count(); i++) {
 		if (renderpass.get_attachment_type(i) == AttachmentType::COLOR_TYPE) {
-			const ColorBlendState& blend_state = renderpass.get_blend_states()[i];
-			blend_attachment_states.push_back(blend_state.get_attachment());
+			blend_attachment_states.push_back(color_blend_state.get_attachment());
 		}
 	}
 	VkPipelineColorBlendStateCreateInfo color_blend_state_create_info = {};
@@ -13820,7 +14638,9 @@ void CommandBuffer::bind_mesh(Mesh& mesh) {
 	VkBuffer vertex_buffer[] = { mesh.get_vertex_buffer().get() }; // binding a single vertex buffer
 	VkDeviceSize offsets[] = { 0 };
 	vkCmdBindVertexBuffers(buffer, 0, 1, vertex_buffer, offsets);
-	vkCmdBindIndexBuffer(buffer, mesh.get_index_buffer().get(), 0, mesh.get_index_type());
+	if (mesh.get_index_count() > 0) {
+		vkCmdBindIndexBuffer(buffer, mesh.get_index_buffer().get(), 0, mesh.get_index_type());
+	}
 }
 
 // bind a vertex buffer to the command buffer
@@ -14921,6 +15741,7 @@ GraphicsPipeline& Task::make_pipeline(
 	uint32_t subpass_index,
 	const GraphicsPipelineLayout& pipeline_layout,
 	const PipelineProperties& pipeline_properties,
+	const ColorBlendState& color_blend_state,
 	const ShaderModule& vertex_shader,
 	const ShaderModule& fragment_shader,
 	const ShaderModule& hull_shader,
@@ -14934,6 +15755,7 @@ GraphicsPipeline& Task::make_pipeline(
 			subpass_index,
 			pipeline_layout,
 			pipeline_properties,
+			color_blend_state,
 			vertex_shader,
 			fragment_shader,
 			hull_shader,
@@ -15715,7 +16537,7 @@ Material& VulkanManager::create_material(const std::string& relative_filepath) {
 
 // create a Texture (managed by the VulkanManager singleton) from a file
 Texture& VulkanManager::create_texture(
-	const std::string& filepath,
+	const std::string& relative_filepath,
 	VkFormat format,
 	Semaphore& tl_semaphore,
 	float_t max_anisotropy_level,
@@ -15724,20 +16546,12 @@ Texture& VulkanManager::create_texture(
 	TextureType type,
 	int force_mip_levels
 ) {
-	// replicate the unique hash this Texture would receive (according to the Texture constructor) and check if a Texture with this hash already exists
-	std::filesystem::path project_root = get_executable_directory() / "..";
-	std::filesystem::path full_filepath = project_root / filepath;
-	std::filesystem::path resolved_path = std::filesystem::absolute(full_filepath);
-	std::string full_filepath_str = resolved_path.generic_string();
-	StringHash hash = StringHash("TextureType" + std::to_string(type) + "_" + full_filepath_str);
-	for (size_t i = 0; i < textures.size(); i++) {
-		if (textures[static_cast<uint32_t>(i)]->get_hash() == hash) {
-			return *textures[static_cast<uint32_t>(i)];
-		}
-	}
+	// replicate the unique texture hash and check if the texture already exists
+	Texture* existing_texture = Texture::get_texture_by_ID(Texture::get_unique_ID(StringHash(abs_filepath(relative_filepath))));
+	if (existing_texture) { return *existing_texture; }
 
 	// if the Texture hasn't been found: create it now
-	textures.emplace_back(std::make_unique<Texture>(*device, filepath, format, tl_semaphore, max_anisotropy_level, sampler_address_mode_U, sampler_address_mode_V, type, force_mip_levels));
+	textures.emplace_back(std::make_unique<Texture>(*device, relative_filepath, format, tl_semaphore, max_anisotropy_level, sampler_address_mode_U, sampler_address_mode_V, type, force_mip_levels));
 	return *textures.back();
 }
 
@@ -15751,8 +16565,10 @@ Texture& VulkanManager::create_texture(
 	VkSamplerAddressMode sampler_address_mode_V,
 	TextureType type,
 	int force_mip_levels) {
-	// note: we don't check the texture hash with glTF textures, 
-	// different meshes may use glTF images with the same names, even though the images are different!
+	// replicate the unique texture hash and check if the texture already exists
+	Texture* existing_texture = Texture::get_texture_by_ID(Texture::get_unique_ID(StringHash(gltf_image)));
+	if (existing_texture) { return *existing_texture; }
+	// if the Texture hasn't been found: create it now
 	textures.emplace_back(std::make_unique<Texture>(*device, gltf_image, format, tl_semaphore, max_anisotropy_level, sampler_address_mode_U, sampler_address_mode_V, type, force_mip_levels));
 	return *textures.back();
 }
@@ -15834,11 +16650,11 @@ void VulkanManager::release_texture(uint32_t texture_id) {
 void VulkanManager::release_texture(StringHash texture_hash) {
 	for (size_t i = 0; i < textures.size(); i++) {
 		if (textures[static_cast<uint32_t>(i)]->get_hash() == texture_hash) {
-			Log::debug("VulkanManager: releasing Texture ", textures[static_cast<uint32_t>(i)].get(), " with hash ", texture_hash.pre_calculated_hash, " (global texID: ", textures[static_cast<uint32_t>(i)]->get_unique_ID(), ").");
+			Log::debug("VulkanManager: releasing Texture ", textures[static_cast<uint32_t>(i)].get(), " with hash ", texture_hash.unique_hash, " (global texID: ", textures[static_cast<uint32_t>(i)]->get_unique_ID(), ").");
 			textures.erase(textures.begin() + i);
 		}
 	}
-	Log::info("VulkanManager: failed to release Texture with hash ", texture_hash.pre_calculated_hash, ": the VulkanManager currently doesn't own a Texture with this hash.");
+	Log::info("VulkanManager: failed to release Texture with hash ", texture_hash.unique_hash, ": the VulkanManager currently doesn't own a Texture with this hash.");
 }
 
 void VulkanManager::release_light(uint32_t light_id) {
@@ -15885,7 +16701,9 @@ Renderer::Renderer(Scene& scene, VkExtent2D extent, uint32_t frames_in_flight) :
 
 // destructor
 Renderer::~Renderer() {
-	// TODO
+#if defined(MAKE_RENDERDOC_CAPTURE)
+	VkDebug::capture_stop();
+#endif
 }
 
 // set externally owned resources
@@ -15893,8 +16711,10 @@ void Renderer::set_surface(Surface& surface) { this->surface = &surface; }
 void Renderer::set_renderpass(RenderPass& renderpass) { this->renderpass = &renderpass; }
 void Renderer::set_subpass(SubPass& subpass) { this->subpass = &subpass; }
 void Renderer::set_pipeline_layout(GraphicsPipelineLayout& pipeline_layout) { this->pipeline_layout = &pipeline_layout; }
-void Renderer::set_pipeline_properties(PipelineProperties& pipeline_properties) { this->pipeline_properties = &pipeline_properties; }
-void Renderer::set_pipeline(GraphicsPipeline& pipeline) { this->pipeline = &pipeline; }
+void Renderer::set_opaque_pass_pipeline_properties(PipelineProperties& pipeline_properties) { this->pipeline_properties_opaque = &pipeline_properties; }
+void Renderer::set_alpha_pass_pipeline_properties(PipelineProperties& pipeline_properties) { this->pipeline_properties_alpha = &pipeline_properties; }
+void Renderer::set_opaque_pass_pipeline(GraphicsPipeline& pipeline) { this->pipeline_opaque = &pipeline; }
+void Renderer::set_alpha_pass_pipeline(GraphicsPipeline& pipeline) { this->pipeline_alpha = &pipeline; }
 void Renderer::set_vertex_shader(ShaderModule& vertex_shader) { this->vertex_shader = &vertex_shader; }
 void Renderer::set_fragment_shader(ShaderModule& fragment_shader) { this->fragment_shader = &fragment_shader; }
 void Renderer::set_descriptor_set_layout(DescriptorSetLayout& descriptor_set_layout) { this->descriptor_set_layout = &descriptor_set_layout; }
@@ -15921,7 +16741,7 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 
 	// make sure a surface has been assigned
 	if (!this->surface) {
-		Log::debug("Renderer::finalize(): no surface has been assigned -> creating a default surface with extent ", this->extent.width, "x", this->extent.height);
+		Log::debug("... Renderer::finalize(): no surface has been assigned -> creating a default surface with extent ", this->extent.width, "x", this->extent.height);
 		this->surface = &vk_manager->get_surface(this->extent.width, this->extent.height, "Vulkan Renderer");
 	}
 	auto surface_format = vk_manager->get_device().select_surface_format(*this->surface);
@@ -15943,7 +16763,7 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 
 	// make sure a renderpass has been assigned
 	if (!this->renderpass) {
-		Log::debug("Renderer::finalize(): no renderpass has been assigned -> creating a default renderpass for the selected surface format (owned by the Renderer instance)");
+		Log::debug("... Renderer::finalize(): no renderpass has been assigned -> creating a default renderpass for the selected surface format (owned by the Renderer instance)");
 		uint32_t multisample_count = 1;
 		this->m_renderpass = std::make_unique<RenderPass>(vk_manager->get_device(), multisample_count);
 		this->renderpass = this->m_renderpass.get();
@@ -15951,18 +16771,17 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 
 	// make sure a subpass has been assigned
 	if (!this->subpass) {
-		Log::debug("Renderer::finalize(): no subpass has been assigned -> creating a default subpass for the selected surface format (owned by the Renderer instance)");
+		Log::debug("... Renderer::finalize(): no subpass has been assigned -> creating a default subpass for the selected surface format (owned by the Renderer instance)");
 		this->m_subpass = std::make_unique<SubPass>(*renderpass);
 		this->subpass = this->m_subpass.get();
 	}
 
 	// make sure the renderpass has at least one color attachment
 	if (!this->renderpass->has_color_attachment()) {
-		Log::debug("Renderer::finalize(): renderpass has no color attachment -> adding a default color attachment for the selected surface format");
+		Log::debug("... Renderer::finalize(): renderpass has no color attachment -> adding a default color attachment for the selected surface format");
 		this->subpass->add_attachment_reference(
 			this->renderpass->add_attachment(
 				AttachmentType::COLOR_TYPE,
-				ColorBlendState::OPAQUE_BLEND,
 				VK_IMAGE_LAYOUT_UNDEFINED,
 				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 				VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -15976,11 +16795,10 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 
 	// make sure the renderpass has a depth attachment
 	if (!this->renderpass->has_depth_stencil()) {
-		Log::debug("Renderer::finalize(): renderpass has no depth/stencil attachment -> adding a default depth/stencil attachment");
+		Log::debug("... Renderer::finalize(): renderpass has no depth/stencil attachment -> adding a default depth/stencil attachment");
 		this->subpass->add_attachment_reference(
 			this->renderpass->add_attachment(
 				AttachmentType::DEPTH_TYPE,
-				ColorBlendState::OPAQUE_BLEND,
 				VK_IMAGE_LAYOUT_UNDEFINED,
 				VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 				VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -15994,7 +16812,7 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 	// finalize subpass and renderpass
 	uint32_t subpass_index = this->subpass->finalize(0, VK_PIPELINE_BIND_POINT_GRAPHICS);
 	if (this->renderpass->subpass_dependency.empty()) {
-		Log::debug("Renderer::finalize(): renderpass has no subpass dependencies -> adding a default dependency from external to subpass ", subpass_index);
+		Log::debug("... Renderer::finalize(): renderpass has no subpass dependencies -> adding a default dependency from external to subpass ", subpass_index);
 		this->renderpass->add_subpass_dependency(
 			VK_SUBPASS_EXTERNAL,
 			subpass_index,
@@ -16013,7 +16831,7 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 
 	// make sure a swapchain has been assigned
 	if (!this->swapchain) {
-		Log::debug("Renderer::finalize(): no swapchain has been assigned -> creating a default swapchain for the selected surface and extent (owned by the Renderer instance)");
+		Log::debug("... Renderer::finalize(): no swapchain has been assigned -> creating a default swapchain for the selected surface and extent (owned by the Renderer instance)");
 		this->m_swapchain = std::make_unique<Swapchain>(
 			vk_manager->get_device(),
 			*renderpass,
@@ -16029,7 +16847,7 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 
 	// make sure a vertex shader is assigned
 	if (!this->vertex_shader) {
-		Log::debug("Renderer::finalize(): no vertex shader has been assigned -> loading a generic vertex shader as default (owned by the Renderer instance)");
+		Log::debug("... Renderer::finalize(): no vertex shader has been assigned -> loading a generic vertex shader as default (owned by the Renderer instance)");
 		is_default_renderer = true;
 		this->m_vertex_shader = std::make_unique<ShaderModule>(
 			vk_manager->get_device(),
@@ -16042,7 +16860,7 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 	// make sure a fragment shader is assigned
 	// (note: if the default fragment shader is used, the descriptor set layout and push constants must match the outline expected by this shader!)
 	if (!this->fragment_shader) {
-		Log::debug("Renderer::finalize(): no fragment shader has been assigned -> loading a generic fragment shader as default (owned by the Renderer instance)");
+		Log::debug("... Renderer::finalize(): no fragment shader has been assigned -> loading a generic fragment shader as default (owned by the Renderer instance)");
 		is_default_renderer = true;
 		this->m_fragment_shader = std::make_unique<ShaderModule>(
 			vk_manager->get_device(),
@@ -16083,6 +16901,7 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 			this->m_descriptor_set.back()->bind_cubemap(5, scene->get_cubemap_prefiltered(timeline_semaphore));
 			this->m_descriptor_set.back()->bind_textures(6, scene->get_brdf_lut(timeline_semaphore));
 			this->m_descriptor_set.back()->bind_textures(7, scene->get_textures());
+			vk_manager->get_device().wait_idle();
 			this->m_descriptor_set.back()->write();
 			this->descriptor_set.push_back(this->m_descriptor_set.back().get());
 		}
@@ -16120,7 +16939,7 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 
 	// make sure a pipeline layout has been assigned
 	if (!this->pipeline_layout) {
-		Log::debug("Renderer::finalize(): no pipeline layout has been assigned -> creating a default pipeline layout (owned by the Renderer instance)");
+		Log::debug("... Renderer::finalize(): no pipeline layout has been assigned -> creating a default pipeline layout (owned by the Renderer instance)");
 		this->m_pipeline_layout = std::make_unique<GraphicsPipelineLayout>(
 			vk_manager->get_device(),
 			*descriptor_set_layout,
@@ -16130,25 +16949,54 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 	}
 
 	// make sure pipeline properties are defined
-	if (!this->pipeline_properties) {
-		Log::debug("Renderer::finalize(): no pipeline properties have been assigned -> creating default pipeline properties (owned by the Renderer instance)");
-		this->m_pipeline_properties = std::make_unique<PipelineProperties>();
-		this->pipeline_properties = this->m_pipeline_properties.get();
+	if (!this->pipeline_properties_opaque) {
+		Log::debug("... Renderer::finalize(): no pipeline properties for the opaque pass have been assigned -> creating default pipeline properties (owned by the Renderer instance)");
+		this->m_pipeline_properties_opaque = std::make_unique<PipelineProperties>();
+		this->pipeline_properties_opaque = this->m_pipeline_properties_opaque.get();
 	}
 
-	// make sure a pipeline has been assigned
-	if (!this->pipeline) {
-		this->m_pipeline = std::make_unique<GraphicsPipeline>(
+	if (!this->pipeline_properties_alpha) {
+		Log::debug("... Renderer::finalize(): no pipeline properties for the alpha pass have been assigned -> creating default pipeline properties (owned by the Renderer instance)");
+		this->m_pipeline_properties_alpha = std::make_unique<PipelineProperties>();
+		this->m_pipeline_properties_alpha->cull_mode = VK_CULL_MODE_NONE;
+		this->m_pipeline_properties_alpha->depth_write_enable = VK_FALSE;
+		this->pipeline_properties_alpha = this->m_pipeline_properties_alpha.get();
+	}
+
+	// make sure a pipeline for the opaque pass has been assigned
+	if (!this->pipeline_opaque) {
+		this->m_pipeline_opaque = std::make_unique<GraphicsPipeline>(
 			vk_manager->get_device(),
 			*renderpass,
 			subpass_index,
 			*pipeline_layout,
-			*pipeline_properties,
+			*pipeline_properties_opaque,
+			ColorBlendState::OPAQUE_BLEND,
 			*vertex_shader,
 			*fragment_shader
 		);
-		this->pipeline = this->m_pipeline.get();
+		this->pipeline_opaque = this->m_pipeline_opaque.get();
 	}
+
+	// make sure a pipeline for the alpha pass has been assigned
+	if (!this->pipeline_alpha) {
+		this->m_pipeline_alpha = std::make_unique<GraphicsPipeline>(
+			vk_manager->get_device(),
+			*renderpass,
+			subpass_index,
+			*pipeline_layout,
+			*pipeline_properties_alpha,
+			ColorBlendState::PREMULTIPLIED_ALPHA_BLEND,
+			*vertex_shader,
+			*fragment_shader
+		);
+		this->pipeline_alpha = this->m_pipeline_alpha.get();
+	}
+
+#if defined(MAKE_RENDERDOC_CAPTURE)
+	VkDebug::init(vk_manager->get_instance().get());
+	VkDebug::capture_start();
+#endif
 	this->initialized = true;
 }
 
@@ -16199,8 +17047,8 @@ bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
 		frames_in_flight, ", FPS: ", fps, ", Task: ", &task[current_frame], "]"
 	);
 	Log::debug("\n===============================================================================");
-	total_frames_counter++;
 #endif
+	total_frames_counter++;
 	static const float_t fps_update_fraction = 0.1f;
 	fps = ((1.0f - fps_update_fraction) * fps) + (fps_update_fraction / timer.elapsed_sec());
 	timer.restart();
@@ -16213,6 +17061,15 @@ bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
 	}
 	this->descriptor_set[current_frame]->write();
 
+	std::vector<Entity*> entities = this->scene->get_visible_entities();
+	struct AlphaDrawCall {
+		float distance;
+		uint32_t entity_index;
+		const SubMesh* submesh;
+		Mesh* mesh;
+	};
+	std::vector<AlphaDrawCall> alpha_queue;
+
 	// update any push constants that may have changed since the last frame
 	// (only for the default renderer; custom renderers must handle this on their own before calling this function,
 	// because if a non-default fragment shader is used, the order and number of push constants are unknown)
@@ -16221,46 +17078,100 @@ bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
 		this->push_constants[current_frame]->add_values(scene->get_active_camera().get_view_matrix(), default_offsets.view_matrix_offset);
 		this->push_constants[current_frame]->add_values(scene->get_active_camera().get_projection_matrix(), default_offsets.projection_offset);
 		this->push_constants[current_frame]->add_values(scene->get_visible_lights_count(), default_offsets.light_count_offset);
-		//this->push_constants[current_frame]->add_values(scene->get_prefiltered_mip_levels(), default_offsets.prefmipl_offset);
+		//this->push_constants[current_frame]->add_values(scene->get_prefiltered_mip_levels(), default_offsets.prefmipl_offset); // shouldn't change unless the cubemap changes
 		this->push_constants[current_frame]->add_values(scene->get_exposure(), default_offsets.exposure_offset);
 		this->push_constants[current_frame]->add_values(scene->get_contrast(), default_offsets.contrast_offset);
-		//this->push_constants[current_frame]->add_values(scene->get_ibl_intensity(), default_offsets.ibl_intensity_offset);
+		//this->push_constants[current_frame]->add_values(scene->get_ibl_intensity(), default_offsets.ibl_intensity_offset); // shouldn't typically change after initial setup
 		this->push_constants[current_frame]->add_values(scene->get_ambient(), default_offsets.ambient_scene_color_offset);
 		this->push_constants[current_frame]->add_values(scene->get_active_camera().get_position(), default_offsets.camera_position_offset);
 	}
 
-	CommandBuffer& cb = task[current_frame].get_command_buffer();
-
+	Camera& cam = this->scene->get_active_camera();
 	uint32_t image_index = this->swapchain->acquire_next_image(image_available_semaphore[current_frame]);
-	
+
+	CommandBuffer& cb = task[current_frame].get_command_buffer();
 	cb.begin_recording();
 	cb.set_viewport({ 0, 0 }, extent);
 	cb.set_scissor({ 0, 0 }, extent);
 	cb.begin_renderpass(*renderpass, swapchain->get_framebuffer(image_index).get(), { 0,0 }, swapchain->get_extent(), clear_values);
-	cb.bind_descriptor_set(*this->descriptor_set[current_frame], *this->pipeline);
-	cb.bind_pipeline(*this->pipeline);
-	std::vector<Entity*> entities = this->scene->get_visible_entities();
+	
+
+	// ======= RENDER OPAQUE PASS ==========
+	cb.bind_descriptor_set(*this->descriptor_set[current_frame], *this->pipeline_opaque);
+	cb.bind_pipeline(*this->pipeline_opaque);
+	Mesh* last_bound_mesh = nullptr;
+
 	for (auto& it : this->scene->get_unique_meshes()) {
 		Mesh* current_mesh = it.second;
-		cb.bind_mesh(*current_mesh);
+
 		for (uint32_t entity_index = 0; entity_index < entities.size(); entity_index++) {
 			if (entities[entity_index]->get_mesh().get_unique_ID() == current_mesh->get_unique_ID()) {
+
 				for (const auto& submesh : entities[entity_index]->get_mesh().get_submeshes()) {
-					if (is_default_renderer) {
-						// update material index push constant (in-place overwrite)
-						this->push_constants[current_frame]->add_values(submesh.scene_local_material_index, default_offsets.material_offset);
-					}
-					cb.bind_push_constants(*this->push_constants[current_frame], *this->pipeline);
-					if (submesh.index_count <= 1) {
-						cb.draw(submesh.vertex_count, 1, submesh.vertex_offset, entity_index);
+					// check if this specific submesh/material is transparent (Even in an "alpha" mesh, some submeshes might be opaque)
+					const Material& mat = current_mesh->get_materials()[submesh.scene_local_material_index];
+					bool is_transparent =
+						mat.alpha_mode == AlphaMode::ALPHA_BLEND_MODE ||
+						(mat.alpha_mode == AlphaMode::MASK_MODE && mat.base_color.a <= mat.alpha_cutoff) ||
+						mat.transmission_factor > 0.01;
+
+					if (is_transparent) {
+						// calculate submesh distance from camera for sorting
+						glm::vec3 submesh_world_center = glm::vec3(entities[entity_index]->get_model_matrix() * glm::vec4(submesh.get_center(), 1.0f));
+						float dist = cam.get_distance(submesh_world_center);
+						alpha_queue.push_back({ dist, entity_index, &submesh, current_mesh });
 					}
 					else {
-						cb.draw_indexed(submesh.index_count, 1, submesh.first_index, submesh.vertex_offset, entity_index);
+						// Render Opaque immediately
+						if (last_bound_mesh != current_mesh) {
+							cb.bind_mesh(*current_mesh);
+							last_bound_mesh = current_mesh;
+						}
+						if (is_default_renderer) {
+							this->push_constants[current_frame]->add_values(submesh.scene_local_material_index, default_offsets.material_offset);
+						}
+						cb.bind_push_constants(*this->push_constants[current_frame], *this->pipeline_opaque);
+
+						if (submesh.index_count <= 1) {
+							cb.draw(submesh.vertex_count, 1, submesh.vertex_offset, entity_index);
+						}
+						else {
+							cb.draw_indexed(submesh.index_count, 1, submesh.first_index, 0, entity_index);
+						}
 					}
 				}
 			}
 		}
 	}
+
+	// ======= RENDER ALPHA PASS ==========
+	if (!alpha_queue.empty()) {
+		// Sort Back-to-Front
+		std::sort(alpha_queue.begin(), alpha_queue.end(), [](const AlphaDrawCall& a, const AlphaDrawCall& b) { return a.distance > b.distance; });
+
+		cb.bind_descriptor_set(*this->descriptor_set[current_frame], *this->pipeline_alpha);
+		cb.bind_pipeline(*this->pipeline_alpha);
+
+		for (const auto& draw_call : alpha_queue) {
+			if (draw_call.mesh != last_bound_mesh) {
+				cb.bind_mesh(*draw_call.mesh);
+				last_bound_mesh = draw_call.mesh;
+			}
+
+			if (is_default_renderer) {
+				this->push_constants[current_frame]->add_values(draw_call.submesh->scene_local_material_index, default_offsets.material_offset);
+			}
+			cb.bind_push_constants(*this->push_constants[current_frame], *this->pipeline_alpha);
+
+			if (draw_call.submesh->index_count <= 1) {
+				cb.draw(draw_call.submesh->vertex_count, 1, draw_call.submesh->vertex_offset, draw_call.entity_index);
+			}
+			else {
+				cb.draw_indexed(draw_call.submesh->index_count, 1, draw_call.submesh->first_index, 0, draw_call.entity_index);
+			}
+		}
+	}
+
 	cb.end_renderpass();
 	cb.end_recording();
 	task[current_frame].timeline_sync(timeline_semaphore);
@@ -16270,6 +17181,7 @@ bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
 
 	this->swapchain->present_rendered_image(render_finished_semaphore[current_frame]);
 	Log::debug("===============================================================================\n\n");
+	return true;
 }
 
 // getters
@@ -16279,8 +17191,10 @@ Swapchain& Renderer::get_swapchain() { if (!swapchain) { Log::warning("in Render
 RenderPass& Renderer::get_renderpass() { if (!renderpass) { Log::warning("in Renderer::get_renderpass(): renderpass is NULL."); }; return *this->renderpass; }
 SubPass& Renderer::get_subpass() { if (!subpass) { Log::warning("in Renderer::get_subpass(): subpass is NULL."); }; return *this->subpass; }
 GraphicsPipelineLayout& Renderer::get_pipeline_layout() { if (!pipeline_layout) { Log::warning("in Renderer::get_pipeline_layout(): pipeline_layout is NULL."); }; return *this->pipeline_layout; }
-PipelineProperties& Renderer::get_pipeline_properties() { if (!pipeline_properties) { Log::warning("in Renderer::get_pipeline_properties(): pipeline_properties is NULL."); }; return *this->pipeline_properties; }
-GraphicsPipeline& Renderer::get_pipeline() { if (!pipeline) { Log::warning("in Renderer::get_pipeline(): pipeline is NULL."); }; return *this->pipeline; }
+PipelineProperties& Renderer::get_opaque_pass_pipeline_properties() { if (!pipeline_properties_opaque) { Log::warning("in Renderer::get_opaque_pass_pipeline_properties(): pipeline_properties is NULL."); }; return *this->pipeline_properties_opaque; }
+PipelineProperties& Renderer::get_alpha_pass_pipeline_properties() { if (!pipeline_properties_alpha) { Log::warning("in Renderer::get_alpha_pass_pipeline_properties(): pipeline_properties is NULL."); }; return *this->pipeline_properties_alpha; }
+GraphicsPipeline& Renderer::get_opaque_pass_pipeline() { if (!pipeline_opaque) { Log::warning("in Renderer::get_pipeline(): pipeline is NULL."); }; return *this->pipeline_opaque; }
+GraphicsPipeline& Renderer::get_alpha_pass_pipeline() { if (!pipeline_alpha) { Log::warning("in Renderer::get_pipeline(): pipeline is NULL."); }; return *this->pipeline_alpha; }
 ShaderModule& Renderer::get_vertex_shader() { if (!vertex_shader) { Log::warning("in Renderer::get_vertex_shader(): vertex_shader is NULL."); }; return *this->vertex_shader; }
 ShaderModule& Renderer::get_fragment_shader() { if (!fragment_shader) { Log::warning("in Renderer::get_fragment_shader(): fragment_shader is NULL."); }; return *this->fragment_shader; }
 DescriptorSetLayout& Renderer::get_descriptor_set_layout() { if (!descriptor_set_layout) { Log::warning("in Renderer::get_descriptor_set_layout(): descriptor_set_layout is NULL."); }; return *this->descriptor_set_layout; }

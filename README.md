@@ -56,10 +56,11 @@ These supporting libraries simplify development and provide additional functiona
 | [`vkdebug.h`](#) | **Implements capture for RenderDoc debugging** to analyze GPU workloads. |
 
 ___
-## Usage Example for Graphics
+## Render Example #1: "Damanged Helmet" (Khronos)
+A single-material glTF 2.0 model with multiple textures (including emission), PBR shading, multiple lights, cubemap reflections, ...
 <div align="center">
   <br>
-    <img src="./docs/media/Khronos_Damaged_Helmet.png" alt="NGrid Mandelbrot Set" width="960" height="770"/>
+    <img src="./docs/media/Khronos_Damaged_Helmet.png" alt="NGrid Mandelbrot Set" width="960" height="850"/>
   <br>
   <p align="center">
     example: TEST RENDER using the vkcontext.h library (<em>Source Model Credit: Khronos Group</em>)
@@ -68,7 +69,7 @@ ___
 ### Code used for the example above:
 ```cpp
 #ifndef VKCONTEXT_GRAPHICS_TEST_H
-#define VKCONTEXT_GRAPHCIS_TEST_H
+#define VKCONTEXT_GRAPHICS_TEST_H
 
 #include <vkcontext.h>
 
@@ -156,7 +157,16 @@ void vkcontext_graphics_test_helmet_simplified() {
 #endif
 
 ```
-
+___
+## Render Example #2: "Chronograph Watch" (Khronos)
+Showcasing a complex model with many materials, PBR shading, glTF variants, transmission, cubemap reflections ...
+<div align="center">
+  <br>
+    <img src="./docs/media/Khronos_Chronograph_Watch.png" alt="NGrid Mandelbrot Set" width="960" height="940"/>
+  <br>
+  <p align="center">
+    example: TEST RENDER using the vkcontext.h library (<em>Source Model Credit: Khronos Group</em>)
+</div>
 ---
 
 > This repository is a work in progress.

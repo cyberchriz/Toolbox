@@ -146,6 +146,7 @@ static void Log::info(Args&&... args) {
 	}
 }
 
+#ifndef NDEBUG || defined(DEBUG_LOG_IN_RELEASE)
 template <typename... Args>
 static void Log::debug(Args&&... args) {
 	if (log_level == LogLevel::LEVEL_SILENT) { return; }
@@ -156,6 +157,7 @@ static void Log::debug(Args&&... args) {
 		write_log(log_message);
 	}
 }
+#endif
 
 template <typename... Args>
 static void Log::force(Args&&... args) {
