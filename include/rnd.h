@@ -35,6 +35,7 @@ namespace rnd {
     // get random value from a gaussian normal distribution with a given µ and sigma
     template<typename T>
     T gaussian(T mu, T sigma) {
+        if (sigma == 0) { return mu; }
         static double M_PI = 3.141592653589793;
         double random = (double)rand() / RAND_MAX;                      // get random value within range 0-1
         random /= sqrt(2 * M_PI * pow(sigma, 2));                       // reduce to the top of the distribution (f(x_val=mu))
@@ -46,7 +47,7 @@ namespace rnd {
     template<typename T>
     T cauchy(T x_peak, T gamma) {
         double random = (double)rand() / RAND_MAX;                      // random value within range 0-1
-        random /= PI * gamma;                                         // reduce to the top of the distribution (=f(x_val=x_peak))
+        random /= PI * gamma;                                           // reduce to the top of the distribution (=f(x_val=x_peak))
         char sign = rand() > (0.5 * RAND_MAX) ? 1 : -1;                 // get random algebraic sign   
         return T((sqrt(gamma / (random * PI) - pow(gamma, 2)) + x_peak) * sign);
     }
@@ -62,6 +63,7 @@ namespace rnd {
     // get random value from a Laplace distribution
     template<typename T>
     T laplace(T mu, T sigma) {
+        if (sigma == 0) { return mu; }
         double scale_factor = sigma / sqrt(2);
         double random = (double)rand() / RAND_MAX;                      // random value within range 0-1
         random /= 2 * scale_factor;                                     // reduce to top of distribution (f(x_val=mu)

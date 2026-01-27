@@ -780,7 +780,7 @@ void main() {
 
         // --- REFLECTION (SPECULAR IBL) ---
         vec3 R = normalize(reflect(-V_world, N_world));
-        uint max_mip_level = max(prefiltered_mip_levels - 1, 0);
+        float max_mip_level = max(prefiltered_mip_levels - 1, 0);
         float lod = final_roughness * max_mip_level;
         lod = clamp(lod, 0.0, float(max_mip_level));
         vec3 prefiltered_color = textureLod(prefiltered_map, R, lod).rgb;
@@ -862,7 +862,7 @@ void main() {
         
             // Clearcoat uses its own roughness for IBL lookup
             float cc_lod = clearcoat_roughness * max_mip_level;
-            cc_lod = clamp(cc_lod, 0.0, float(max_mip_level));
+            cc_lod = clamp(cc_lod, 0.0, max_mip_level);
             vec3 cc_prefiltered = textureLod(prefiltered_map, R_cc, cc_lod).rgb;
         
             // Clearcoat always has F0 = 0.04 (fixed IOR ~1.5)

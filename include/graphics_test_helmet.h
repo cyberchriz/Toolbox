@@ -17,7 +17,7 @@ void graphics_test_helmet() {
 	// load glTF model and add as scene entity
 	Mesh model(device, "resources/models/gltf/DamagedHelmet2.glb", tl_semaphore, true, true); // source: Khronos Group
 	uint32_t entity_id = scene.add_entity(model, { 0.0f, 0.0f, 0.0f });
-	
+
 	// set scene details
 	scene.get_active_camera().set_world_up(UpAxis::Y_UP);
 	scene.get_active_camera().set_position({ 0.0f, 0.0f, 3.0f });

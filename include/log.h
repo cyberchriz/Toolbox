@@ -77,7 +77,7 @@ public:
 		void stop();
 		void silent_stop();
 		void restart();
-		double elapsed_sec();
+		double elapsed_sec(bool restart = false);
 		static void sleep(int64_t nanosec, LogLevel level = LEVEL_DEBUG);
 	private:
 		LogLevel log_level;
@@ -261,9 +261,11 @@ std::string Log::log_filepath = "../logs/";
 // +-----------------------------------+
 // |  Definitions of Log::Timer members|
 // +-----------------------------------+
-double Log::Timer::elapsed_sec() {
+double Log::Timer::elapsed_sec(bool restart) {
 	end = std::chrono::high_resolution_clock::now();
-	return (std::chrono::duration_cast<std::chrono::duration<double>>(end - begin)).count();
+	double dt_sec = std::chrono::duration_cast<std::chrono::duration<double>>(end - begin).count();
+	if (restart) { this->restart(); }
+	return dt_sec;
 }
 
 // constructor
