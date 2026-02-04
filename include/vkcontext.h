@@ -20,10 +20,21 @@
 #define CUBEMAP_FACE_COUNT 6
 #define MAX_DESCRIPTOR_SET_COUNT 50 // max number of descriptor sets within the shared singleton descriptor pool
 #define MAX_TASKS_IN_DEBUG  50 // if this number of compute or graphics tasks is exceeded, this will trigger a warning in DEBUG to indicate a possible resource leak (=muted in release)
+#define MAX_VULKAN_JOBS 20
 #define MAX_FRAMES_IN_FLIGHT 3
-#define PHYSICS_UPDATE_MILLISEC 20
+#define MAX_COLLISION_JOBS_IN_FLIGHT 20
+#define PHYSICS_UPDATE_MILLISEC 64
+#define MAX_PHYSICS_SUBSTEPS 16
+#define PHYSICS_SUBSTEP_SAFETY_FACTOR 0.85f // percentage of estimated time budget to calculate substep count
+#define PHYSICS_DT_CAP_MILLISEC 256 // prevent large jumps or exessive particle emission when system is lagging
+#define MODEL_MATRIX_UPDATE_THRESHOLD_MS 8.0f // prevent the model matrix from being updated more frequently than this
+#define PARTICLES_UPDATE_MILLISEC 16
 #define PHYSICS_CELL_SIZE 1.0f // cell size for gathering collisions in the "broad phase"
 #define COLLISION_VELOCITY_THRESHOLD 0.01f
+#define COMPLEX_COLLISION_VOXEL_RESOLUTION 64
+#define VOXEL_GRID_WORKGROUP_SIZE_XYZ 4
+#define MINIMUM_VOL_SCALE 1e-6f
+#define MINIMUM_SAFE_MASS 0.001f // = 1g
 #define DEFAULT_API_MAJOR_VERSION 1
 #define DEFAULT_API_MINOR_VERSION 3
 #define DEFAULT_API_PATCH_VERSION 0
@@ -46,6 +57,7 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <future>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -210,7 +222,7 @@ VkPhysicalDeviceFeatures DEFAULT_DEVICE_FEATURES = {
 };
 
 // default pool size per descriptor type (used by the VulkanManager class)
-std::vector<VkDescriptorPoolSize> DEFAULT_POOL_SIZE = {
+std::vector<VkDescriptorPoolSize> DEFAULT_GRAPHICS_POOL_SIZE = {
 	{VK_DESCRIPTOR_TYPE_SAMPLER, 5},
 	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 * MAX_TEXTURES},
 	{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 5},
@@ -222,6 +234,48 @@ std::vector<VkDescriptorPoolSize> DEFAULT_POOL_SIZE = {
 	{VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 3},
 	// {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 0},
 	// {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 0},
+	// {VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 0},
+	// {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 0},
+	// {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 0},
+	// {VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM, 0},
+	// {VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM, 0},
+	// {VK_DESCRIPTOR_TYPE_MUTABLE_EXT, 0},
+	// {VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV, 0}
+};
+
+std::vector<VkDescriptorPoolSize> DEFAULT_COMPUTE_POOL_SIZE = {
+	{VK_DESCRIPTOR_TYPE_SAMPLER, 3},
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3},
+	{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 3},
+	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 3},
+	{VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 3},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
+	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100},
+	{VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 3},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 10},
+	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 20},
+	// {VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 0},
+	// {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 0},
+	// {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 0},
+	// {VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM, 0},
+	// {VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM, 0},
+	// {VK_DESCRIPTOR_TYPE_MUTABLE_EXT, 0},
+	// {VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV, 0}
+};
+
+std::vector<VkDescriptorPoolSize> DEFAULT_TRANSFER_POOL_SIZE = {
+	{VK_DESCRIPTOR_TYPE_SAMPLER, 3},
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3},
+	{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 3},
+	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 3},
+	{VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 3},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
+	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20},
+	{VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 3},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 10},
+	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 20},
 	// {VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 0},
 	// {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 0},
 	// {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 0},
@@ -279,6 +333,8 @@ struct Vertex;
 class FrameBuffer;
 class Semaphore;
 class Renderer;
+struct CollisionResultGPU;
+struct CollisionCandidateGPU;
 
 using EventCallback = std::function<bool(const SurfaceEvent&)>;
 using ListenerID = uint64_t;
@@ -410,6 +466,20 @@ glm::vec3 up_axis_as_vec3(UpAxis up_axis) {
 	default: return glm::vec3({ 0,1,0 }); // Y-UP as default
 	}
 }
+
+enum class LockRank : uint32_t { // helper enum to make sure correct thread lock order is followed (lower number = must be locked earlier)
+	Vulkan			= 0,
+	Entity			= 1,
+	ParticleSystem	= 2,
+	Physics			= 3,
+	Event			= 4
+};
+
+struct RankedMutex {
+	std::mutex mtx;
+	LockRank rank;
+	explicit RankedMutex(LockRank r) : rank(r) {}
+};
 
 struct Handedness {
 	inline static const float_t Right = 1.0f;
@@ -747,6 +817,52 @@ bool is_hdr(VkFormat format) {
 		return false;
 	}
 }
+
+// +=================================+   
+// | LockGuard                       |
+// +=================================+
+// This guarantees:
+// - No deadlock from ordering
+// - One place defines the rule
+// - Every thread follows the same choreography
+class LockGuard {
+public:
+	LockGuard(std::initializer_list<RankedMutex*> locks, bool reverse = false) {
+		acquire(locks.begin(), locks.end(), reverse);
+	}
+
+	LockGuard(const std::vector<RankedMutex*>& locks, bool reverse = false) {
+		acquire(locks.begin(), locks.end(), reverse);
+	}
+
+	~LockGuard() {
+		for (auto it = acquired.rbegin(); it != acquired.rend(); ++it) {
+			(*it)->mtx.unlock();
+		}
+	}
+
+private:
+	std::vector<RankedMutex*> acquired;
+
+	template<typename It>
+	void acquire(It begin, It end, bool reverse) {
+		std::vector<RankedMutex*> sorted(begin, end);
+
+		std::sort(sorted.begin(), sorted.end(),
+			[reverse](auto* a, auto* b) {
+				return reverse
+					? int(a->rank) > int(b->rank)
+					: int(a->rank) < int(b->rank);
+			});
+
+		for (auto* m : sorted) {
+			m->mtx.lock();
+			acquired.push_back(m);
+		}
+	}
+};
+
+
 
 // +=================================+   
 // | Instance                        |
@@ -1270,7 +1386,7 @@ private:
 
 	std::map<EventType, std::vector<ListenerEntry>> listeners;
 	std::queue<SurfaceEvent> event_queue;
-	mutable std::mutex mutex;
+	mutable RankedMutex event_mutex = RankedMutex(LockRank::Event);
 	ListenerID next_id = 1;
 
 	std::bitset<GLFW_KEY_LAST> key_states;
@@ -1659,6 +1775,7 @@ public:
 	// getters
 	const uint32_t* get_data() const;
 	size_t get_size() const;
+	bool empty() const;
 	size_t get_total_capacity() const;			// = total size of the occupied push constants range in bytes
 	size_t get_free_capacity() const;			// = free space in bytes without reallocation
 
@@ -1810,6 +1927,7 @@ public:
 	uint32_t get_elements() const;
 	uint64_t get_size_bytes() const;
 	VkDeviceMemory get_memory() const;
+	BufferType get_type() const;
 	VkBuffer get() const;
 	VkMemoryPropertyFlags get_memory_property_flags() const;
 	bool host_visible() const;
@@ -1822,6 +1940,7 @@ protected:
 	VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 	uint64_t size_bytes = 0;
 	bool is_host_visible = false;
+	BufferType type;
 };
 
 // +=================================+   
@@ -2245,6 +2364,7 @@ struct BBox {
 	glm::vec3 min = glm::vec3(FLT_MAX);
 	glm::vec3 max = glm::vec3(-FLT_MAX);
 	glm::vec3 center() const { return (this->min + max) * 0.5f; }
+	glm::vec3 size() const { return glm::vec3({max.x - min.x, max.y - min.y, max.z - min.z}); }
 };
 
 // +=================================+   
@@ -2273,7 +2393,7 @@ public:
 	Mesh() = delete;
 
 	// parametric constructors
-	Mesh(Device& device, const std::string& relative_path, Semaphore& timeline_semaphore, bool default_to_pbr = false, bool generate_mikktspace_tangents = true, int variant_id = 0, UpAxis src_up_axis = UpAxis::Y_UP);
+	Mesh(Device& device, const std::string& relative_path, Semaphore& timeline_semaphore, bool default_to_pbr = false, bool generate_mikktspace_tangents = true, int variant_id = 0, UpAxis src_up_axis = UpAxis::Y_UP, float_t length_unit_meters = 1.0f);
 	Mesh(Device& device, const std::string& text, glm::vec2 cursor_pos,	glm::vec2 scale, Semaphore& timeline_semaphore, Material* material = nullptr);
 
 	// destructor
@@ -2292,6 +2412,7 @@ public:
 	Buffer<uint32_t>& get_index_buffer() const;
 	Buffer<Material>& get_material_buffer(Semaphore& timeline_semaphore);
 	Buffer<Light>& get_lights_buffer(Semaphore& timeline_semaphore);
+	Buffer<uint32_t>& get_voxel_buffer() const;
 
 	// getters for counts
 	uint32_t get_index_count() const;
@@ -2305,17 +2426,26 @@ public:
 
 	// physics
 	void set_mass_kg(float_t mass_kg);
+	void set_density(float_t g_per_ml);
+	void set_length_unit(float_t meters);
 	void set_drag_coefficient(float_t value);
 	void set_surface_friction(float_t value);
 	void set_bounce_restitution(float_t value);
 	
 	float_t get_mass_kg() const;
+	float_t get_density() const; // density in g/ml
+	float_t get_length_unit() const; // length unit in meters
+	float_t get_volume_estimate() const; // volume estimate in liters (based on BBox size and voxel fill rate)
 	float_t get_drag_coefficient() const;
 	float_t get_surface_friction() const;
 	float_t get_bounce_restitution() const;
+	float_t get_fill_ratio() const;
 	
 	void make_solid(bool mesh_is_solid);
 	bool is_solid() const;
+
+	bool has_complex_geometry() const;
+	void enabled_complex_geometry(bool enabled);
 
 	// getters for textures
 	const std::vector<Texture>& get_textures() const;
@@ -2358,6 +2488,7 @@ private:
 	std::string get_gltf_texture_uri(const tinygltf::Model& model, int gltf_texture_index);
 	glm::mat4 get_gltf_node_transform(const tinygltf::Node& node);
 	void transform_vertices_axis();
+	void init_voxel_buffer();
 	
 
 	Device* device;
@@ -2366,11 +2497,13 @@ private:
 	std::vector<Material> materials;
 	std::vector<Light> lights;
 	std::vector<SubMesh> submeshes;
+	std::vector<uint32_t> voxels;
 
 	Buffer<Vertex>* vertex_buffer = nullptr;
 	Buffer<uint32_t>* index_buffer = nullptr;
 	Buffer<Material>* material_buffer = nullptr;
 	Buffer<Light>* light_buffer = nullptr;
+	Buffer<uint32_t>* voxel_buffer = nullptr;
 
 	// unique textures for this mesh
 	std::vector<Texture> textures;
@@ -2386,11 +2519,16 @@ private:
 	BBox bbox;
 
 	// physics
-	float_t mass_kg = 1;
+	float_t mass_kg = 1.0f;
+	float_t density = 1.0f; // g/ml
+	float_t fill_ratio = 1.0f;
+	float_t volume_estimate = 1.0f; // volume estimate in liters (based on BBox size and voxel fill rate)
+	float_t length_unit_meters = 1.0f;
 	float_t drag_coefficient = 0.7f;
 	float_t surface_friction = 0.95f;
-	float_t bounce_restitution = 1.0f; // 0 = no bounce, 1 = perfect bounce
+	float_t bounce_restitution = 0.2f; // 0 = no bounce, 1 = perfect bounce
 	bool mesh_is_solid = true;
+	bool complex_geometry = true;
 
 	VkIndexType index_type;
 	std::string base_dir = "";
@@ -2427,7 +2565,7 @@ public:
 	Entity(Mesh& mesh, glm::vec3 position = { 0.0f, 0.0f, 0.0f }, bool visible = true);
 
 	// destructor
-	~Entity() = default;
+	~Entity();
 
 	// move constructor and move assignment
 	Entity(Entity&& other) noexcept;
@@ -2445,6 +2583,7 @@ public:
 	glm::vec3& set_position(const glm::vec3& position);
 	glm::vec3& set_rotation(const glm::vec3& rotation);
 	glm::vec3& set_scale(const glm::vec3& scale);
+	void enable_mass_change_with_scale(bool enable = true);
 
 	glm::vec3& translate(const glm::vec3& position_delta);
 	glm::vec3& rotate(const glm::vec3& rotation_delta);
@@ -2465,13 +2604,19 @@ public:
 
 	void set_environment_density(float_t rho);
 	void set_tumble_strength(float_t value);
-	void set_last_collision(Entity* other);
+	void set_last_collision(Entity* other); // helper method for physics update (=typically not used by the user directly)
 	Entity* get_last_collision(bool reset = true);
 
 	const glm::vec3& get_position() const;
 	const glm::vec3& get_rotation() const;
+
+	glm::quat get_orientation();
+	void set_orientation(glm::quat orientation);
+
 	const glm::vec3& get_scale() const;
 	const float_t& get_mass_kg() const;
+	const float_t& get_volume_estimate() const;
+	const float_t& get_density() const; // g/ml
 
 	void enable_physics(bool linear = true, bool gravity = true, bool rotation = true, bool tumble = true);
 	bool is_lin_physics_enabled() const;
@@ -2480,6 +2625,7 @@ public:
 	// Other public methods
 	Mesh& get_mesh() const;
 	int get_unique_ID() const;
+	static Entity* get_entity_by_ID(int32_t unique_entID);
 	bool is_visible() const;
 	void set_visible(bool is_visible = true);
 
@@ -2493,6 +2639,7 @@ private:
 
 	int unique_ID = INVALID_ID;
 	inline static int next_unique_ID = 0;
+	static inline std::unordered_map<int32_t, Entity*> entity_ID_map = {}; // map for retrieving entity pointers by their unique ID
 	Mesh* mesh = nullptr; // externally owned -> don't destroy
 
 	// physics
@@ -2511,7 +2658,7 @@ private:
 	glm::vec3 lin_thrust = { 0.0f, 0.0f, 0.0f };		// updated via user input or via collisions; automatically reset during model_matrix update
 	glm::vec3 spin_thrust = { 0.0f, 0.0f, 0.0f };		// ""
 	glm::vec3 scale_acceleration = { 0.0f, 0.0f, 0.0f };// scale factor acceleration (per second^2)
-	float_t mass_kg = 1.0f;
+	bool mass_changes_with_scale = true;
 
 	float_t rho = 1.225f;								// default: air density at sea level
 	float_t tumble_strength = 0.01f;					// Adjust this for "flutteryness" (0.01 is subtle)
@@ -2615,9 +2762,12 @@ struct ParticleConfig {
 	bool rot_physics_enabled = true;
 	bool gravity_enabled = true;
 	float_t tumble_strength = 0.1f;
+	bool mass_changes_with_scale = true;
 };
 
 class ParticleSystem {
+	friend class Scene;
+	friend class Renderer;
 private:
 	struct Particle {
 		Entity* entity = nullptr;
@@ -2664,20 +2814,18 @@ public:
 	}
 
 	// Thread-safe accessors for the Renderer
-	void lock_particles() const { particles_mutex.lock(); }
-	void unlock_particles() const { particles_mutex.unlock(); }
 	const plf::colony<Particle*>& get_active_particles() const { return active_particle_pool; }
 
 	Entity* get_emitter_entity_ptr() const { return this->emitter_entity; }
 	const std::unordered_set<Mesh*>& get_particle_meshes() { return this->particle_meshes; }
 
 	void set_config(const ParticleConfig& new_config) {
-		std::lock_guard<std::mutex> lock(particles_mutex);
+		LockGuard lock({ &particles_mutex });
 		current_config = new_config;
 	}
 
 	void add_particles(Mesh& src_mesh, uint32_t count, const ParticleConfig& config = {}) {
-		std::lock_guard<std::mutex> lock(particles_mutex);
+		LockGuard lock({ &particles_mutex });
 		current_config = config;
 		for (uint32_t i = 0; i < count; i++) {
 			auto it = particle_master_pool.emplace(src_mesh, config);
@@ -2702,21 +2850,25 @@ private:
 	void start_worker() {
 		worker_thread = std::jthread([this](std::stop_token st) {
 			auto last_time = std::chrono::high_resolution_clock::now();
-			const std::chrono::milliseconds target_dt(PHYSICS_UPDATE_MILLISEC);
+			static const std::chrono::milliseconds target_dt_ms(PARTICLES_UPDATE_MILLISEC);
 
 			while (!st.stop_requested()) {
 				auto current_time = std::chrono::high_resolution_clock::now();
 				float dt_sec = std::chrono::duration<float>(current_time - last_time).count();
+				dt_sec = std::min(dt_sec, 0.001f * PHYSICS_DT_CAP_MILLISEC); // this prevents emitting an excessive amount of particles after a significant lag
 				last_time = current_time;
 
 				update_internal(dt_sec);
-
-				auto work_done = std::chrono::high_resolution_clock::now();
-				auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(work_done - current_time);
-				if (elapsed < target_dt) {
-					std::this_thread::sleep_for(target_dt - elapsed);
+				auto work_done_time = std::chrono::high_resolution_clock::now();
+				auto elapsed_work_ms = std::chrono::duration_cast<std::chrono::milliseconds>(work_done_time - current_time);
+				if (elapsed_work_ms < target_dt_ms) {
+					// Only sleep for the remaining time in our budget
+					std::this_thread::sleep_for(target_dt_ms - elapsed_work_ms);
 				}
 				else {
+					Log::warning("ParticleSystem ", this, ": worker thread is lagging behind (elapsed: ", elapsed_work_ms, " ms, target: < ", target_dt_ms, ").");
+					// We are behind schedule. 
+					// Yielding instead of sleeping allows other threads to breathe
 					std::this_thread::yield();
 				}
 			}
@@ -2726,7 +2878,7 @@ private:
 	void update_internal(float dt_sec) {
 		auto time_now = std::chrono::steady_clock::now();
 
-		std::lock_guard<std::mutex> lock(particles_mutex);
+		LockGuard lock({ &particles_mutex });
 
 		// 1. Process Active Particles (Life & Death)
 		for (auto it = active_particle_pool.begin(); it != active_particle_pool.end(); ) {
@@ -2806,6 +2958,7 @@ private:
 			p->entity->set_spin_velocity({ 0.0f, 0.0f, 0.0f }); // Reset spin
 			p->entity->enable_physics(p->config.lin_physics_enabled, p->config.gravity_enabled, p->config.rot_physics_enabled);
 			p->entity->set_tumble_strength(p->config.tumble_strength);
+			p->entity->enable_mass_change_with_scale(p->config.mass_changes_with_scale);
 			p->time_zero = time_now;
 			p->entity->set_visible(true);
 
@@ -2829,7 +2982,7 @@ private:
 
 	Entity* emitter_entity = nullptr;
 	glm::vec3 last_emitter_pos{ 0.0f };
-	mutable std::mutex particles_mutex;
+	mutable RankedMutex particles_mutex = RankedMutex(LockRank::ParticleSystem);
 	std::jthread worker_thread;
 
 	std::atomic<glm::vec3> target_position{ glm::vec3(0.0f) };
@@ -2881,8 +3034,9 @@ public:
 	void set_contrast(float_t value);
 	void set_ibl_intensity(float_t value);
 
-	// Physics
+	// Physics Thread
 	void start_physics_thread(float cell_size = 2.0f);
+	bool check_physics_thread_watchdog(uint64_t dt_warning_ns = 500'000'000, uint64_t dt_critical_ns = 5'000'000'000);
 
 	// Getters
 	Camera& get_camera(uint32_t camera_id) const;
@@ -2910,7 +3064,7 @@ private:
 	// ========================================================================
 	void process_cubemap(Semaphore& tl_semaphore);
 	void add_mesh(Mesh& mesh);
-	void handle_collisions_async(float_t cell_size);
+	void physics_update_async(float_t cell_size, float_t dt_sec);
 
 	glm::vec3 ambient_light = SCENE_DEFAULT_AMBIENT;
 	float_t exposure = SCENE_DEFAULT_EXPOSURE;
@@ -2929,11 +3083,13 @@ private:
 	// Particle Systems
 	plf::colony<ParticleSystem> particle_systems = {};
 
-	// Physics (/collisions)
+	// Physics Thread
 	std::jthread physics_thread;
-	std::mutex physics_mutex;
+	mutable RankedMutex physics_mutex = RankedMutex(LockRank::Physics);	// to be used by Scene::update_physics_async() for temporary locking the Scene when snapshots are taken or collision results are published back
+	mutable RankedMutex entity_mutex = RankedMutex(LockRank::Entity);	// to be used by any Scene methods which add or remove entities or iterate over entities while mutation of the entities vector is possible
+	std::atomic<uint64_t> physics_heartbeat{ 0 };
+	std::atomic<uint64_t> physics_last_progress_ns{ 0 };
 	std::atomic<bool> physics_running{ false };
-	float last_dt = 0.016f;
 
 	// Externally owned resources
 	std::unordered_map<uint32_t, Mesh*> unique_meshes;
@@ -3586,6 +3742,12 @@ public:
 	void bind_vertex_buffer(uint32_t first_binding, uint32_t binding_count, const Buffer<Vertex>& vertex_buffer, const std::vector<VkDeviceSize>& offsets = {});
 	void bind_vertex_buffer(uint32_t first_binding, uint32_t binding_count, VkBuffer vertex_buffer, const std::vector<VkDeviceSize>& offsets = {});
 
+	template<typename T> void fill_buffer(Buffer<T>& dst_buffer, T value, uint32_t dst_offset_elements = 0, uint32_t num_elements = 0); // num_elements = 0: VK_WHOLE_SIZE
+	template<typename T> void fill_buffer_uint(Buffer<T>& dst_buffer, uint32_t value, uint32_t dst_offset_elements = 0, uint32_t num_elements = 0);
+
+	// stage a device-local buffer to the host or vice versa
+	template<typename T> Buffer<T> stage_buffer(Buffer<T> src_buffer, uint32_t src_offset_elements = 0, uint32_t num_elements = 0);
+
 	// copy data between two buffers;
 	// this method has automatic boundary checks and shrinks the copy region to fit if the size_bytes argument is too large
 	template<typename T>
@@ -3776,7 +3938,9 @@ using TempBufferVariant = std::variant<
 	std::unique_ptr<Buffer<Vertex>>,
 	std::unique_ptr<Buffer<Material>>,
 	std::unique_ptr<Buffer<Light>>,
-	std::unique_ptr<Buffer<MaterialTexIDs>>
+	std::unique_ptr<Buffer<MaterialTexIDs>>,
+	std::unique_ptr<Buffer<CollisionResultGPU>>,
+	std::unique_ptr<Buffer<CollisionCandidateGPU>>
 >;
 
 // resources container for a compute or graphics task,
@@ -3940,10 +4104,12 @@ public:
 
 	// reset task (delete all previous resources);
 	// returns false if the task is protected or still busy
-	bool reset();
+	bool reset(bool ignore_protection = false);
 
 	// submit command buffer to appropriate queue on device;
-	VkResult submit(uint64_t wait_after_submit_nanosec = 0);
+	VkResult submit(uint64_t wait_after_submit_nanosec = 0, bool keep_protected = false);
+
+	void set_protected(bool flag);
 
 	// getters
 	std::string get_calling_function() const;
@@ -3951,6 +4117,8 @@ public:
 	CommandBuffer& get_command_buffer(bool fence_signaled = false);
 	Fence& get_fence();
 	TaskType get_type() const;
+	TempBufferVariant& get_buffer(uint32_t bufferID);
+	bool submitted() const;
 
 private:
 	// resources owned by the Task object
@@ -3984,6 +4152,7 @@ private:
 
 	std::string calling_function = "NONE (=TASK IS AVAILABLE)";
 	bool protection_flag = true; // if true, the task cannot be reset, reused or deleted at least until submit
+	bool submitted_flag = false;
 	TaskType task_type;
 
 	// pointers to externally owned resources
@@ -4041,7 +4210,9 @@ public:
 	static CommandPool& get_command_pool_graphics();
 	static CommandPool& get_command_pool_compute();
 	static CommandPool& get_command_pool_transfer();
-	static DescriptorPool& get_descriptor_pool();
+	static DescriptorPool& get_descriptor_pool_graphics();
+	static DescriptorPool& get_descriptor_pool_compute();
+	static DescriptorPool& get_descriptor_pool_transfer();
 	static const VkPhysicalDeviceFeatures& get_enabled_device_features();
 
 	// resource creation
@@ -4062,6 +4233,52 @@ public:
 	static void release_light(uint32_t light_id);
 	static void release_mesh(uint32_t mesh_id);
 
+public:
+	// VulkanJob: helper to pass GPU functions from other threads to VulkanManager
+	// (to maintain thread-safety of Vulkan resources);
+	// promise<T> is used as a future 'return value'
+	enum JobState {
+		Initial,
+		Recorded,
+		Submitted,
+		Ready,
+		Consumed
+	};
+
+	struct VulkanJob {
+		VulkanJob() {
+			state = JobState::Initial;
+			jobID = next_jobID.fetch_add(1);
+			task = nullptr;
+		};
+		JobState get_state() const { return state; }
+		uint64_t jobID;
+		JobState state;
+		Task* task;
+		std::function<void(VulkanJob&)> job_function;
+		std::shared_ptr<void> payload; // type-erased, owned; used e.g. to share any data packages/containers across jobs
+	};
+
+	struct CollisionResources {
+		CollisionResources();
+		std::unique_ptr<ShaderModule> shader;
+		std::unique_ptr<DescriptorSetLayout> set_layout;
+		std::unique_ptr<ComputePipeline> pipeline;
+	};
+
+	CollisionResources& get_collision_resources();
+
+
+	// VulkanJobs (GPU work jobs submitted by other threads)
+	static uint64_t record_compute_job(std::function<void(VulkanManager::VulkanJob&)> job_function);
+	static uint64_t record_graphics_job(std::function<void(VulkanManager::VulkanJob&)> job_function);
+	static bool erase_job(uint64_t jobID, bool ignore_task_protection_flag = true);
+	static JobState get_job_state(uint64_t jobID);
+	static bool consume_job(uint64_t jobID);
+	static bool consume_job(uint64_t jobID, std::function<void(VulkanJob&)> consume_function);
+	static void process_jobs();
+	static uint32_t job_count();
+
 private:
 	// private constructor
 	VulkanManager();
@@ -4081,7 +4298,9 @@ private:
 	inline static std::unique_ptr<CommandPool> shared_command_pool_compute = nullptr;
 	inline static std::unique_ptr<CommandPool> shared_command_pool_graphics = nullptr;
 	inline static std::unique_ptr<CommandPool> shared_command_pool_transfer = nullptr;
-	inline static std::unique_ptr<DescriptorPool> shared_descriptor_pool = nullptr;
+	inline static std::unique_ptr<DescriptorPool> shared_descriptor_pool_graphics = nullptr;
+	inline static std::unique_ptr<DescriptorPool> shared_descriptor_pool_compute = nullptr;
+	inline static std::unique_ptr<DescriptorPool> shared_descriptor_pool_transfer = nullptr;
 	inline static std::vector<std::unique_ptr<Task>> tasks = {};
 	inline static std::vector<std::unique_ptr<Semaphore>> timeline_semaphores = {};
 	inline static std::vector<std::unique_ptr<Semaphore>> binary_semaphores = {};
@@ -4090,6 +4309,11 @@ private:
 	inline static std::vector<std::unique_ptr<Texture>> textures = {};
 	inline static std::vector<std::unique_ptr<Light>> lights = {};
 	inline static std::vector<std::unique_ptr<Mesh>> meshes = {};
+	inline static std::unordered_map<uint64_t, VulkanManager::VulkanJob> jobs; // uint64_t: jobID
+	inline static RankedMutex vulkan_mutex = RankedMutex(LockRank::Vulkan);
+	inline static std::atomic<uint64_t> next_jobID{ 0 };
+	inline static std::unique_ptr<CollisionResources> collision_resources = nullptr;
+	inline static const std::thread::id MAIN_THREAD_ID = std::this_thread::get_id();
 };
 
 // +=================================+   
@@ -5124,7 +5348,7 @@ Surface& Image::display(
 	return surface;
 }
 
-// debug helper function to read back pixels of a single mip level and array layer of an image
+// DEBUG HELPER FUNCTION to read back pixels of a single mip level and array layer of an image
 void Image::readback_pixels(Semaphore& semaphore, uint32_t array_layer, uint32_t mip_level, uint32_t start_pixel, uint32_t pixel_count) {
 	// 1) Create staging buffer large enough for image
 	uint32_t pixel_bytes = get_format_bytes_per_pixel(this->format);
@@ -5639,7 +5863,7 @@ EventManager::EventManager() :
 
 // Move constructor
 EventManager::EventManager(EventManager&& other) noexcept {
-	std::lock_guard<std::mutex> lock(other.mutex);
+	LockGuard lock({ &other.event_mutex });
 	listeners = std::move(other.listeners);
 	event_queue = std::move(other.event_queue);
 	key_states = other.key_states;
@@ -5653,7 +5877,7 @@ EventManager::EventManager(EventManager&& other) noexcept {
 
 inline EventManager& EventManager::operator=(EventManager&& other) noexcept {
 	if (this != &other) {
-		std::scoped_lock lock(this->mutex, other.mutex); // Scoped lock avoids deadlocks when two managers are involved
+		LockGuard lock({ &this->event_mutex, &other.event_mutex });
 		listeners = std::move(other.listeners);
 		event_queue = std::move(other.event_queue);
 		key_states = other.key_states;
@@ -5668,7 +5892,7 @@ inline EventManager& EventManager::operator=(EventManager&& other) noexcept {
 }
 
 inline EventManager::EventListenerHandle EventManager::add_listener_internal(EventType type, EventCallback handler, int priority) {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	ListenerID id = next_id++;
 	listeners[type].emplace_back(id, handler, priority);
 	std::sort(listeners[type].begin(), listeners[type].end(), std::greater<ListenerEntry>()); // Keep listeners sorted by priority (descending)
@@ -5695,7 +5919,7 @@ inline EventManager::EventListenerHandle EventManager::add_listener(EventType ty
 }
 
 inline void EventManager::remove_listener(EventType type, ListenerID id) {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	auto it = listeners.find(type);
 	if (it != listeners.end()) {
 		auto& list = it->second;
@@ -5752,7 +5976,7 @@ inline void EventManager::update_internal_state(const SurfaceEvent& event) {
 inline void EventManager::dispatch(const SurfaceEvent& event) {
 	std::vector<ListenerEntry> current_listeners;
 	{
-		std::lock_guard<std::mutex> lock(mutex);
+		LockGuard lock({ &event_mutex });
 		update_internal_state(event);
 		auto it = listeners.find(event.type);
 		if (it != listeners.end()) current_listeners = it->second;
@@ -5765,7 +5989,7 @@ inline void EventManager::dispatch(const SurfaceEvent& event) {
 }
 
 inline void EventManager::queue_event(const SurfaceEvent& event) {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	event_queue.push(event);
 }
 
@@ -5773,7 +5997,7 @@ inline void EventManager::process_queued_events() {
 	while (true) {
 		SurfaceEvent event;
 		{
-			std::lock_guard<std::mutex> lock(mutex);
+			LockGuard lock({ &event_mutex });
 			if (event_queue.empty()) break;
 			event = event_queue.front();
 			event_queue.pop();
@@ -5783,17 +6007,17 @@ inline void EventManager::process_queued_events() {
 }
 
 inline bool EventManager::key_pressed(int key) const {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	return (key >= 0 && key < GLFW_KEY_LAST) ? key_states.test(key) : false;
 }
 
 inline bool EventManager::key_just_pressed(int key) const {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	return (key >= 0 && key < GLFW_KEY_LAST) ? (key_states.test(key) && !prev_key_states.test(key)) : false;
 }
 
 inline bool EventManager::key_just_released(int key) const {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	return (key >= 0 && key < GLFW_KEY_LAST) ? (!key_states.test(key) && prev_key_states.test(key)) : false;
 }
 
@@ -5810,24 +6034,24 @@ inline bool EventManager::check_modifiers(int glfw_mods_mask) const {
 }
 
 inline bool EventManager::mouse_button_pressed(int button) const {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	return (button >= 0 && button < GLFW_MOUSE_BUTTON_LAST) ? mouse_states.test(button) : false;
 }
 
 inline void EventManager::mouse_delta(double& dx, double& dy) const {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	dx = delta_x;
 	dy = delta_y;
 }
 
 inline void EventManager::mouse_pos(double& x, double& y) const {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	x = last_x;
 	y = last_y;
 }
 
 inline void EventManager::end_frame() {
-	std::lock_guard<std::mutex> lock(mutex);
+	LockGuard lock({ &event_mutex });
 	
 	// Transition current states to previous for edge detection
 	prev_key_states = key_states;
@@ -5895,7 +6119,7 @@ Surface::Surface(const Instance& instance, uint32_t initial_width, uint32_t init
 	// set user pointer first
 	glfwSetWindowUserPointer(this->glfw_window, this);
 
-	// Set up GLFW event callbacks 
+	// Set up GLFW event callbacks
 	glfwSetKeyCallback(this->glfw_window, glfw_key_callback);
 	glfwSetFramebufferSizeCallback(this->glfw_window, glfw_resize_callback);
 	glfwSetMouseButtonCallback(this->glfw_window, glfw_mouse_button_callback);
@@ -6483,7 +6707,11 @@ bool Fence::signaled(std::string caller_function) const {
 // reset the fence to unsignaled state
 VkResult Fence::reset(std::string caller_function) const {
 	Log::debug("Fence ", this, " (VkFence ", fence, ") for calling function ", caller_function, ": resetting fence.");
-	return vkResetFences(logical, 1, &fence);
+	VkResult result = vkResetFences(logical, 1, &fence);
+	if (result != VK_SUCCESS) {
+		Log::warning(__FUNCTION__, ": failure. VkResult ", result, " (", vkresult_to_string(result), ").");
+	}
+	return result;
 }
 
 // wait for the fence to be signaled
@@ -7216,6 +7444,7 @@ const uint32_t* PushConstants::get_data() const {
 	return reinterpret_cast<const uint32_t*>(data);
 }
 size_t PushConstants::get_size() const { return this->size; }
+bool PushConstants::empty() const { return this->size == 0; }
 size_t PushConstants::get_total_capacity() const { return this->capacity; }
 size_t PushConstants::get_free_capacity() const { return this->capacity - this->size; }
 
@@ -7271,6 +7500,7 @@ size_t PushConstants::get_padded_offset() {
 template<typename T>
 Buffer<T>::Buffer(Device& device, BufferType type, uint32_t elements, VkMemoryPropertyFlags memory_property_flags) :
 	logical(device.get_logical()),
+	type(type),
 	memory_property_flags(memory_property_flags),
 	elements(elements),
 	size_bytes(elements * sizeof(T)),
@@ -7793,6 +8023,7 @@ void Buffer<T>::set_all(T value, uint32_t offset_elements, uint32_t write_elemen
 template<typename T> uint32_t Buffer<T>::get_elements() const { return this->elements; }
 template<typename T> uint64_t Buffer<T>::get_size_bytes() const { return size_bytes; }
 template<typename T> VkDeviceMemory Buffer<T>::get_memory() const { return memory; }
+template<typename T> BufferType Buffer<T>::get_type() const { return this->type; }
 template<typename T> VkBuffer Buffer<T>::get() const { return buffer; }
 template<typename T> VkMemoryPropertyFlags Buffer<T>::get_memory_property_flags() const { return memory_property_flags; }
 template<typename T> bool Buffer<T>::host_visible() const { return is_host_visible; }
@@ -10387,11 +10618,21 @@ void Mesh::load_gltf(const std::filesystem::path& full_path, Semaphore& timeline
 }
 
 // parametric constructor
-Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore& timeline_semaphore, bool default_to_pbr, bool generate_mikktspace_tangents, int variant_id, UpAxis src_up_axis) :
+Mesh::Mesh(
+	Device& device,
+	const std::string& relative_path,
+	Semaphore& timeline_semaphore,
+	bool default_to_pbr,
+	bool generate_mikktspace_tangents,
+	int variant_id,
+	UpAxis src_up_axis,
+	float_t length_unit_meters
+) :
 	device(&device),
 	unique_ID(next_unique_mesh_id++),
 	variant_id(variant_id),
-	src_up_axis(src_up_axis) {
+	src_up_axis(src_up_axis),
+	length_unit_meters(length_unit_meters) {
 
 	// Dynamically construct the full absolute path to the file.
 	std::filesystem::path project_root = get_executable_directory() / "..";
@@ -10420,6 +10661,17 @@ Mesh::Mesh(Device& device, const std::string& relative_path, Semaphore& timeline
 		// Handle unsupported format
 		Log::error("Unsupported mesh file format ", extension.c_str(), " (Supported : .obj, .gltf, .glb)");
 	}
+	this->init_voxel_buffer();
+
+	// calculate physics properties
+	float_t volume_estimate_m3 =
+		(this->bbox.size().x * length_unit_meters) *
+		(this->bbox.size().y * length_unit_meters) *
+		(this->bbox.size().z * length_unit_meters) *
+		this->fill_ratio;
+	this->volume_estimate = 0.001f * volume_estimate_m3;
+	this->density = this->mass_kg / this->volume_estimate;
+
 	Log::debug("Mesh constructor: instantiated Mesh from filepath ", full_path, " (unique ID: ", this->unique_ID, ")");
 }
 
@@ -10662,6 +10914,10 @@ Mesh::~Mesh() {
 		delete this->light_buffer;
 		this->light_buffer = nullptr;
 	}
+	if (this->voxel_buffer) {
+		delete this->voxel_buffer;
+		this->voxel_buffer = nullptr;
+	}
 }
 
 // move constructor
@@ -10756,6 +11012,134 @@ Buffer<Light>& Mesh::get_lights_buffer(Semaphore& timeline_semaphore) {
 	return *this->light_buffer;
 }
 
+Buffer<uint32_t>& Mesh::get_voxel_buffer() const {
+	return *this->voxel_buffer;
+}
+
+void Mesh::init_voxel_buffer() {
+	if (!this->voxel_buffer) {
+		Log::debug("Mesh ", this, ": generating voxel buffer.");
+
+		const uint32_t res = COMPLEX_COLLISION_VOXEL_RESOLUTION;
+		const uint32_t total_voxels = res * res * res;
+
+		// Each uint32_t holds 32 bits (voxels)
+		uint32_t buffer_elements = (total_voxels + 31) / 32;
+		this->voxel_buffer = new Buffer<uint32_t>(*device, BufferType::STORAGE_BUFFER, buffer_elements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		std::vector<uint32_t> voxel_data(buffer_elements, 0);
+
+		// Voxelization: For each triangle, mark the bits of the voxels it intersects
+		glm::vec3 mesh_min = this->bbox.min;
+		glm::vec3 mesh_range = this->bbox.max - mesh_min;
+
+		// Safety: prevent division by zero for flat meshes
+		mesh_range.x = std::max(mesh_range.x, 0.0001f);
+		mesh_range.y = std::max(mesh_range.y, 0.0001f);
+		mesh_range.z = std::max(mesh_range.z, 0.0001f);
+
+		// === SURFACE VOXELIZATION ===
+		device->wait_idle(); // ensure vertices are ready
+		const bool indexed = !indices.empty();
+		const size_t triangle_count =
+			indexed ?
+			(indices.size() / 3) :
+			(vertices.size() / 3);
+
+		for (size_t t = 0; t < triangle_count; ++t) {
+
+			glm::vec3 v[3];
+
+			if (indexed) {
+				v[0] = vertices[indices[t * 3 + 0]].position;
+				v[1] = vertices[indices[t * 3 + 1]].position;
+				v[2] = vertices[indices[t * 3 + 2]].position;
+			}
+			else {
+				v[0] = vertices[t * 3 + 0].position;
+				v[1] = vertices[t * 3 + 1].position;
+				v[2] = vertices[t * 3 + 2].position;
+			}
+
+			// Triangle AABB in local space
+			glm::vec3 t_min = glm::min(v[0], glm::min(v[1], v[2]));
+			glm::vec3 t_max = glm::max(v[0], glm::max(v[1], v[2]));
+
+			// Convert triangle bounds to voxel grid coordinates
+			int32_t min_x = static_cast<int32_t>(std::floor(((t_min.x - mesh_min.x) / mesh_range.x) * res));
+			int32_t min_y = static_cast<int32_t>(std::floor(((t_min.y - mesh_min.y) / mesh_range.y) * res));
+			int32_t min_z = static_cast<int32_t>(std::floor(((t_min.z - mesh_min.z) / mesh_range.z) * res));
+
+			int32_t max_x = static_cast<int32_t>(std::floor(((t_max.x - mesh_min.x) / mesh_range.x) * res));
+			int32_t max_y = static_cast<int32_t>(std::floor(((t_max.y - mesh_min.y) / mesh_range.y) * res));
+			int32_t max_z = static_cast<int32_t>(std::floor(((t_max.z - mesh_min.z) / mesh_range.z) * res));
+
+			// Clamp
+			min_x = std::clamp(min_x, 0, int32_t(res) - 1);
+			max_x = std::clamp(max_x, 0, int32_t(res) - 1);
+			min_y = std::clamp(min_y, 0, int32_t(res) - 1);
+			max_y = std::clamp(max_y, 0, int32_t(res) - 1);
+			min_z = std::clamp(min_z, 0, int32_t(res) - 1);
+			max_z = std::clamp(max_z, 0, int32_t(res) - 1);
+
+			// Mark surface voxels
+			for (int32_t z = min_z; z <= max_z; ++z) {
+				for (int32_t y = min_y; y <= max_y; ++y) {
+					for (int32_t x = min_x; x <= max_x; ++x) {
+						uint32_t idx = x + y * res + z * res * res;
+						voxel_data[idx / 32] |= (1u << (idx % 32));
+					}
+				}
+			}
+		}
+
+		// === SOLID FILL PASS (scanline along X) ===
+		// For each YZ slice, fill between surface crossings
+		for (uint32_t z = 0; z < res; ++z) {
+			for (uint32_t y = 0; y < res; ++y) {
+
+				bool inside = false;
+
+				for (uint32_t x = 0; x < res; ++x) {
+					uint32_t idx = x + (y * res) + (z * res * res);
+					uint32_t word = idx / 32;
+					uint32_t bit = idx % 32;
+					bool is_surface = (voxel_data[word] & (1u << bit)) != 0;
+
+					if (is_surface) {
+						// Crossing a surface toggles inside/outside
+						inside = !inside;
+					}
+
+					if (inside) {
+						voxel_data[word] |= (1u << bit);
+					}
+				}
+			}
+		}
+
+		// === get fill ratio for volume and density estimate ===
+		size_t count = 0;
+		for (uint32_t w : voxel_data) {
+			count += std::popcount(w);
+		}
+		this->fill_ratio = float(count) / float(res * res * res);
+
+		// === Upload the bit-packed vector to the GPU buffer via staging buffer ===
+		VulkanManager& manager = VulkanManager::get_singleton();
+		Task& task = manager.get_compute_task(__FUNCTION__);
+		Buffer<uint32_t>& staging_buffer = task.make_buffer<uint32_t>(buffer_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		staging_buffer.write(voxel_data);
+		CommandBuffer& cb = task.get_command_buffer();
+		cb.begin_recording();
+		cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+		cb.record_barriers();
+		cb.copy_buffer(staging_buffer, *voxel_buffer);
+		cb.end_recording();
+		task.submit();
+		task.get_fence().wait();
+	}
+}
+
 Buffer<Vertex>& Mesh::get_vertex_buffer() const { return *this->vertex_buffer; }
 Buffer<uint32_t>& Mesh::get_index_buffer() const { return *this->index_buffer; }
 uint32_t Mesh::get_index_count() const { return this->index_count; }
@@ -10764,7 +11148,27 @@ uint32_t Mesh::get_lights_count() const { return this->lights_count; }
 uint32_t Mesh::get_material_count() const { return this->material_count; }
 uint32_t Mesh::get_texture_count() const { return this->texture_count; }
 BBox Mesh::get_bbox() const { return this->bbox; }
-void Mesh::set_mass_kg(float_t mass_kg) { this->mass_kg = mass_kg; }
+void Mesh::set_mass_kg(float_t mass_kg) {
+	this->density = mass_kg / volume_estimate; 
+	this->mass_kg = mass_kg;
+}
+void Mesh::set_density(float_t g_per_ml) {
+	this->density = g_per_ml;
+	this->mass_kg = this->volume_estimate * g_per_ml;
+}
+void Mesh::set_length_unit(float_t meters) {
+	this->length_unit_meters = meters;
+	float_t volume_estimate_m3 =
+		((this->bbox.max.x - this->bbox.min.x) * length_unit_meters) *
+		((this->bbox.max.y - this->bbox.min.y) * length_unit_meters) *
+		((this->bbox.max.z - this->bbox.min.z) * length_unit_meters) *
+		this->fill_ratio;
+	this->volume_estimate = 0.001f * volume_estimate_m3;
+	this->density = this->mass_kg / this->volume_estimate;
+}
+float_t Mesh::get_density() const { return this->density; }
+float_t Mesh::get_length_unit() const { return this->length_unit_meters; }
+float_t Mesh::get_volume_estimate() const { return this->volume_estimate; }
 float_t Mesh::get_mass_kg() const { return this->mass_kg; }
 void Mesh::set_drag_coefficient(float_t value) { this->drag_coefficient = value; }
 float_t Mesh::get_drag_coefficient() const { return this->drag_coefficient; }
@@ -10772,8 +11176,11 @@ void Mesh::set_surface_friction(float_t value) { this->surface_friction = surfac
 float_t Mesh::get_surface_friction() const { return this->surface_friction; }
 void Mesh::set_bounce_restitution(float_t value) { this->bounce_restitution = std::max(0.0f, std::min(value, 1.0f)); }
 float_t Mesh::get_bounce_restitution() const { return this->bounce_restitution; }
+float_t Mesh::get_fill_ratio() const { return this->fill_ratio; }
 void Mesh::make_solid(bool mesh_is_solid) { this->mesh_is_solid = mesh_is_solid; }
 bool Mesh::is_solid() const { return this->mesh_is_solid; }
+bool Mesh::has_complex_geometry() const { return this->complex_geometry; }
+void Mesh::enabled_complex_geometry(bool enabled) { this->complex_geometry = enabled; }
 const std::vector<Texture>& Mesh::get_textures() const { return this->textures; };
 VkIndexType Mesh::get_index_type() const { return index_type; }
 std::vector<SubMesh>& Mesh::get_submeshes() { return submeshes; }
@@ -10787,15 +11194,21 @@ const StringHash& Mesh::get_hash() const { return this->mesh_hash; }
 // | Entity                          |
 // +=================================+
 // parametric constructor
-Entity::Entity(Mesh& mesh, glm::vec3 position, bool visible) : mesh(&mesh), position(position), visible(visible), unique_ID(next_unique_ID++) {};
+Entity::Entity(Mesh& mesh, glm::vec3 position, bool visible) : mesh(&mesh), position(position), visible(visible), unique_ID(next_unique_ID++) {
+	entity_ID_map[this->unique_ID] = this;
+};
+
+// destructor
+Entity::~Entity() {
+	entity_ID_map.erase(this->unique_ID);
+	this->unique_ID = INVALID_ID;
+}
 
 // Calculates the model matrix, applying the transformations in the correct order: scale, rotate, then translate.
 glm::mat4 Entity::get_model_matrix(bool recalculate) {
 
 	// Define safe limits
-	const static float_t MINIMUM_VOL_SCALE = 1e-6f;
 	const static float_t MINIMUM_LIN_SCALE = 1e-4f;
-	const static float_t MINIMUM_SAFE_MASS = 0.001f; // = 1g
 	const static float_t MIN_INERTIA = 1e-9f;
 	const static float_t MAX_DYNAMIC_PRESSURE = 1e6f;
 
@@ -10810,10 +11223,6 @@ glm::mat4 Entity::get_model_matrix(bool recalculate) {
 		this->rotation_matrix = glm::rotate(this->rotation_matrix, glm::radians(std::fmod(rotation.z, 360.0f)), glm::vec3(0, 0, 1));
 		this->model_matrix = glm::translate(glm::mat4(1.0f), position) * this->rotation_matrix * glm::scale(glm::mat4(1.0f), scale);
 
-		// Initial mass calculation
-		float_t volume_scale = glm::max(MINIMUM_VOL_SCALE, scale.x * scale.y * scale.z);
-		this->mass_kg = glm::max(this->mesh->get_mass_kg() * volume_scale, MINIMUM_SAFE_MASS);
-
 		return this->model_matrix;
 	}
 	if (!recalculate) {
@@ -10824,13 +11233,12 @@ glm::mat4 Entity::get_model_matrix(bool recalculate) {
 		float_t sec = static_cast<float_t>(std::chrono::duration_cast<std::chrono::duration<double>>(time_now - last_update).count());
 
 		sec = glm::min(sec, 0.1f); // Guard against huge time steps (e.g. after a breakpoint or lag spike)
-		if (sec <= 0.0001f) { return this->model_matrix; } // Skip update if time delta is essentially negligible
+		if (sec <= 0.0001f * MODEL_MATRIX_UPDATE_THRESHOLD_MS) { return this->model_matrix; } // Skip update if time delta is essentially negligible
 		this->last_update = time_now; // reset timer
 
 		float speed = glm::length(lin_velocity);
 		float_t drag_coeff = this->mesh->get_drag_coefficient();
-		float_t volume_scale = glm::max(MINIMUM_VOL_SCALE, scale.x * scale.y * scale.z);
-		this->mass_kg = glm::max(this->mesh->get_mass_kg() * volume_scale, MINIMUM_SAFE_MASS);
+		float_t mass_kg = this->get_mass_kg();
 		glm::vec3 dim = (this->mesh->get_bbox().max - this->mesh->get_bbox().min) * scale;
 
 		// === LINEAR PHYSICS ===
@@ -10844,7 +11252,7 @@ glm::mat4 Entity::get_model_matrix(bool recalculate) {
 			}
 
 			// 2. External Thrust
-			lin_acceleration += this->lin_thrust / this->mass_kg;
+			lin_acceleration += this->lin_thrust / mass_kg;
 
 			// 3. Drag Force
 			if (speed > 0.0001) {
@@ -10863,18 +11271,18 @@ glm::mat4 Entity::get_model_matrix(bool recalculate) {
 				float drag_mag = 0.5f * this->rho * (speed * speed) * drag_coeff * area;
 
 				// Clamp drag so it cannot reverse velocity or exceed momentum
-				float max_drag = (speed * this->mass_kg) / sec;
+				float max_drag = (speed * mass_kg) / sec;
 				drag_mag = glm::min(drag_mag, 0.99f * max_drag); // 0.99f ensures we don't hit exactly 0 and get stuck
 
 				// Apply drag acceleration (opposing velocity)
-				lin_acceleration -= (lin_dir * drag_mag) / this->mass_kg;
+				lin_acceleration -= (lin_dir * drag_mag) / mass_kg;
 			}
 
 			lin_velocity += lin_acceleration * sec;
 		}
 		else {
 			// No complex physics, just raw velocity and thrust
-			lin_velocity += (lin_thrust / this->mass_kg) * sec;
+			lin_velocity += (lin_thrust / mass_kg) * sec;
 		}
 		position += lin_velocity * sec;
 
@@ -10885,9 +11293,9 @@ glm::mat4 Entity::get_model_matrix(bool recalculate) {
 
 			// Calculate Moment of Inertia for each axis
 			// (STABILITY FIX: Ensure inertia never reaches zero to prevent NaN during division)
-			inertia.x = glm::max((1.0f / 12.0f) * this->mass_kg * (dim.y * dim.y + dim.z * dim.z), MIN_INERTIA);
-			inertia.y = glm::max((1.0f / 12.0f) * this->mass_kg * (dim.x * dim.x + dim.z * dim.z), MIN_INERTIA);
-			inertia.z = glm::max((1.0f / 12.0f) * this->mass_kg * (dim.x * dim.x + dim.y * dim.y), MIN_INERTIA);
+			inertia.x = glm::max((1.0f / 12.0f) * mass_kg * (dim.y * dim.y + dim.z * dim.z), MIN_INERTIA);
+			inertia.y = glm::max((1.0f / 12.0f) * mass_kg * (dim.x * dim.x + dim.z * dim.z), MIN_INERTIA);
+			inertia.z = glm::max((1.0f / 12.0f) * mass_kg * (dim.x * dim.x + dim.y * dim.y), MIN_INERTIA);
 
 
 			glm::vec3 spin_acceleration = spin_thrust / inertia;
@@ -10983,7 +11391,9 @@ Entity::Entity(Entity&& other) noexcept
 	last_update(other.last_update),
 	first_update(other.first_update),
 	model_matrix(other.model_matrix),
-	rotation_matrix(other.rotation_matrix) {
+	rotation_matrix(other.rotation_matrix),
+	mass_changes_with_scale(other.mass_changes_with_scale) {
+	entity_ID_map[this->unique_ID] = this;
 	Log::debug("Entity move constructor invoked. Moving from '&other' = ", &other, " to 'this' = ", this, ".");
 }
 
@@ -10995,6 +11405,7 @@ Entity& Entity::operator=(Entity&& other) noexcept {
 		this->rotation = other.rotation;
 		this->scale = other.scale;
 		this->unique_ID = other.unique_ID; other.unique_ID = INVALID_ID;
+		entity_ID_map[this->unique_ID] = this;
 		this->mesh = other.mesh; other.mesh = nullptr;
 
 		this->visible = other.visible;
@@ -11017,6 +11428,7 @@ Entity& Entity::operator=(Entity&& other) noexcept {
 		this->first_update = other.first_update;
 		this->model_matrix = other.model_matrix;
 		this->rotation_matrix = other.rotation_matrix;
+		this->mass_changes_with_scale = other.mass_changes_with_scale;
 	}
 	else {
 		Log::debug("... 'this' and '&other' are identical! Returning '*this' (unmodified).");
@@ -11047,7 +11459,9 @@ Entity::Entity(const Entity& other)
 	tumble_strength(other.tumble_strength),
 	first_update(true),				// New instance needs its own timer start
 	model_matrix(other.model_matrix),
-	rotation_matrix(other.rotation_matrix) {
+	rotation_matrix(other.rotation_matrix),
+	mass_changes_with_scale(other.mass_changes_with_scale) {
+	entity_ID_map[this->unique_ID] = this;
 	Log::debug("Entity copy constructor invoked. Copying from '&other' = ", &other, " to 'this' = ", this, ".");
 }
 
@@ -11077,6 +11491,7 @@ Entity& Entity::operator=(const Entity& other) {
 		this->first_update = true; // Reset timer for the "new" state of this object
 		this->model_matrix = other.model_matrix;
 		this->rotation_matrix = other.rotation_matrix;
+		this->mass_changes_with_scale = other.mass_changes_with_scale;
 	}
 	else {
 		Log::debug("... 'this' and '&other' are identical! Returning '*this' (unmodified).");
@@ -11088,6 +11503,7 @@ Entity& Entity::operator=(const Entity& other) {
 glm::vec3& Entity::set_position(const glm::vec3& position) { this->position = position; return this->position; }
 glm::vec3& Entity::set_rotation(const glm::vec3& rotation) { this->rotation = rotation; return this->rotation; }
 glm::vec3& Entity::set_scale(const glm::vec3& scale) { this->scale = scale; return this->scale; }
+void Entity::enable_mass_change_with_scale(bool enable) { this->mass_changes_with_scale = enable; }
 
 glm::vec3& Entity::translate(const glm::vec3& position_delta) { this->position += position_delta; return this->position; }
 glm::vec3& Entity::rotate(const glm::vec3& rotation_delta) { this->rotation += rotation_delta; return this->rotation; }
@@ -11121,8 +11537,31 @@ Entity* Entity::get_last_collision(bool reset) {
 Mesh& Entity::get_mesh() const { return *mesh; }
 const glm::vec3& Entity::get_position() const { return this->position; }
 const glm::vec3& Entity::get_rotation() const { return this->rotation; }
+glm::quat Entity::get_orientation() { return glm::quat_cast(this->model_matrix); }
+void Entity::set_orientation(glm::quat orientation) { this->rotation = glm::eulerAngles(orientation); }
 const glm::vec3& Entity::get_scale() const { return this->scale; }
-const float_t& Entity::get_mass_kg() const { return this->mass_kg; }
+
+const float_t& Entity::get_mass_kg() const {
+	float_t mass_kg;
+	if (this->mass_changes_with_scale) {
+		float_t volume_scale = glm::max(MINIMUM_VOL_SCALE, scale.x * scale.y * scale.z);
+		mass_kg = glm::max(this->mesh->get_mass_kg() * volume_scale, MINIMUM_SAFE_MASS);
+	}
+	else {
+		mass_kg = glm::max(this->mesh->get_mass_kg(), MINIMUM_SAFE_MASS);
+	}
+	return mass_kg;
+}
+
+const float_t& Entity::get_volume_estimate() const {
+	return
+		(this->mesh->get_bbox().size().x * this->scale.x * this->mesh->get_length_unit()) *
+		(this->mesh->get_bbox().size().x * this->scale.x * this->mesh->get_length_unit()) *
+		(this->mesh->get_bbox().size().x * this->scale.x * this->mesh->get_length_unit()) *
+		0.001f *				// convert cubic meters to liters
+		this->mesh->get_fill_ratio();
+}
+const float_t& Entity::get_density() const { return this->get_mass_kg() / this->get_volume_estimate(); }
 void Entity::enable_physics(bool linear, bool gravity, bool rotation, bool tumble) {
 	this->lin_physics_enabled = linear; this->gravity_enabled = gravity;  this->rot_physics_enabled = rotation; this->tumbling_enabled = tumble;
 }
@@ -11130,6 +11569,7 @@ bool Entity::is_lin_physics_enabled() const { return this->lin_physics_enabled; 
 bool Entity::is_rot_physics_enabled() const { return this->rot_physics_enabled; }
 bool Entity::is_visible() const { return this->visible; }
 int Entity::get_unique_ID() const { return unique_ID; }
+Entity* Entity::get_entity_by_ID(int32_t unique_entID) { return entity_ID_map[unique_entID]; }
 void Entity::set_visible(bool is_visible) { this->visible = is_visible; }
 
 // +=================================+   
@@ -11606,7 +12046,9 @@ Scene::Scene() {
 	this->select_active_camera(camera_id);
 }
 
-Scene::~Scene() {}
+Scene::~Scene() {
+	LockGuard lock(	{ &entity_mutex, &physics_mutex});
+}
 
 // helper function for add_entity and add_particle_system
 void Scene::add_mesh(Mesh& mesh) {
@@ -11657,7 +12099,10 @@ uint32_t Scene::add_entity(Mesh& mesh, glm::vec3 position, bool visible) {
 	// Create and store the new Entity instance
 	auto new_entity = std::make_unique<Entity>(mesh, position, visible);
 	int entity_id = new_entity->get_unique_ID();
-	entities.emplace(entity_id, std::move(new_entity));
+	{
+		LockGuard lock({ &entity_mutex });
+		entities.emplace(entity_id, std::move(new_entity));
+	}
 	this->add_mesh(mesh);
 	return entity_id;
 }
@@ -11732,6 +12177,7 @@ plf::colony<ParticleSystem>& Scene::get_particle_systems() {
 }
 
 void Scene::remove_entity(uint32_t entity_id) {
+	LockGuard lock({ &entity_mutex });
 	if (entities.erase(entity_id) == 0) {
 		Log::warning("in Scene::remove_entity(): attempted to remove non-existent entity with ID ", entity_id);;
 	}
@@ -11755,7 +12201,10 @@ void Scene::remove_camera(uint32_t camera_id) {
 }
 
 void Scene::clear() {
-	entities.clear();
+	{
+		LockGuard lock({ &entity_mutex });
+		entities.clear();
+	}
 	scene_lights.clear();
 	unique_meshes.clear();
 	unique_materials.clear();
@@ -11797,302 +12246,750 @@ void Scene::start_physics_thread(float cell_size) {
 	if (physics_running.exchange(true)) return;
 
 	physics_thread = std::jthread([this, cell_size](std::stop_token st) {
+
 		auto last_time = std::chrono::high_resolution_clock::now();
-		const std::chrono::milliseconds target_dt(PHYSICS_UPDATE_MILLISEC);
 
 		while (!st.stop_requested()) {
-			auto current_time = std::chrono::high_resolution_clock::now();
-			float dt_sec = std::chrono::duration<float>(current_time - last_time).count();
-			last_time = current_time;
 
-			// 1. Run Collision Logic with delta time
-			// Note: We use the actual measured dt_sec for high-fidelity integration
-			this->handle_collisions_async(cell_size);
+			auto now = std::chrono::high_resolution_clock::now();
+			float dt_sec = std::chrono::duration<float>(now - last_time).count();
+			last_time = now;
+			dt_sec = std::min(dt_sec, 0.001f * PHYSICS_DT_CAP_MILLISEC);
 
-			// 2. Adaptive Sleep (Pacing)
-			// Calculate how long the physics step took
-			auto work_done_time = std::chrono::high_resolution_clock::now();
-			auto elapsed_work = std::chrono::duration_cast<std::chrono::milliseconds>(work_done_time - current_time);
+			physics_update_async(cell_size, dt_sec);
 
-			if (elapsed_work < target_dt) {
-				// Only sleep for the remaining time in our budget
-				std::this_thread::sleep_for(target_dt - elapsed_work);
+			float elapsed =	std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - last_time).count();
+
+			// --- SLEEP FOR REMAINING BUDGET IF EARLY ---
+			float budget = 0.001f * PHYSICS_UPDATE_MILLISEC;
+			if (elapsed < budget) {
+				std::this_thread::sleep_for(std::chrono::duration<float>(budget - elapsed));
 			}
-			else {
-				// We are behind schedule. 
-				// Yielding instead of sleeping allows other threads to breathe without adding a full ms of delay.
-				std::this_thread::yield();
-			}
+
+			// update watchdog info
+			physics_heartbeat.fetch_add(1, std::memory_order_relaxed);
+			physics_last_progress_ns.store(
+				std::chrono::duration_cast<std::chrono::nanoseconds>(
+					std::chrono::steady_clock::now().time_since_epoch()
+				).count(),
+				std::memory_order_relaxed
+			);
 		}
+
 		physics_running = false;
 	});
 }
 
-void Scene::handle_collisions_async(float_t cell_size) {
-	struct PhysicsState {
-		Entity* ptr;
-		glm::vec3 pos;
-		glm::vec3 lin_vel;
-		glm::vec3 spin_vel;
-		glm::mat4 model;
-		glm::mat3 rot_inv_inertia;
-		float inv_mass;
-		float restitution;
-		float friction;
-		bool lin_enabled;
-		bool rot_enabled;
-		BBox local_bbox;
-		glm::vec3 world_corners[8];
-		Entity* last_collided_with;
-	};
+struct PhysicsState {
+	int32_t unique_entity_ID;
+	glm::vec3 scale;
+	glm::vec3 pos;
+	glm::vec3 lin_vel;
+	glm::vec3 spin_vel;
+	glm::mat4 model;
+	glm::quat orientation;
+	glm::mat3 rot_inv_inertia;
+	float inv_mass;
+	float restitution;
+	float friction;
+	bool lin_enabled;
+	bool rot_enabled;
+	bool has_complex_geometry;
+	BBox mesh_bbox;
+	glm::vec3 world_corners[8];
+	Buffer<uint32_t>* voxel_buffer;
+	float_t mesh_fill_ratio;
+	int32_t last_collided_with; // entID of the collision partner
+};
 
-	std::vector<PhysicsState> states;
+// structure to store a confirmed collision
+struct Collision {
+	PhysicsState* state_A;
+	PhysicsState* state_B;
+	glm::vec3 normal;
+	float overlap;
+	glm::vec3 contact_point;
+};
+
+// structure to pass collision candidates to the GPU
+struct CollisionCandidateGPU {
+	glm::mat4 modelB;
+	glm::mat4 invModelA;
+	glm::vec4 bbox_A_min;
+	glm::vec4 bbox_B_min;
+	glm::vec4 bbox_A_range;
+	glm::vec4 bbox_B_range;
+	glm::vec4 collision_normal;
+	uint32_t voxel_buffer_A_offset;
+	uint32_t voxel_buffer_B_offset;
+	int32_t entID_A;
+	int32_t entID_B;
+};
+
+// structure for reading back collision results from the GPU
+struct CollisionResultGPU {
+	uint32_t hit_count;
+	int32_t contact_x;
+	int32_t contact_y;
+	int32_t contact_z;
+};
+
+struct CollisionJobResult {
+	std::vector<CollisionResultGPU> results;
+};
+
+// structure to share data between recording GPU work and result read-back
+struct CollisionGPUJobPayload {
+	// Task-owned
+	Buffer<CollisionResultGPU>* result_staging;
+
+	// CPU-side mapping
+	std::vector<int32_t> entIDs_A;
+	std::vector<int32_t> entIDs_B;
+	std::vector<glm::vec3> normals;
+	std::vector<CollisionResultGPU> results;
+	uint32_t candidate_count = 0;
+};
+
+void Scene::physics_update_async(float_t cell_size, float_t dt_sec) {
+
+	static thread_local std::unordered_map<int32_t, std::unique_ptr<PhysicsState>> states; // this map should never be cleared and stay alive across iterations; entries should only be removed when the entities are no longer valid, visible or solid
 
 	// === SNAPSHOT STATE (Locked) ===
 	{
-		std::lock_guard<std::mutex> lock(physics_mutex);
+		std::vector<RankedMutex*> locks;
+		locks.push_back(&entity_mutex);
+		locks.push_back(&physics_mutex);
+		for (auto& ps : particle_systems) {	locks.push_back(&ps.particles_mutex); }
+		LockGuard lock(locks);
 
+		// snapshot lambda
 		auto snapshot_entity = [&](Entity* ent) {
 			if (!ent || !ent->is_visible() || !ent->get_mesh().is_solid()) return;
+			int32_t entID = ent->get_unique_ID();
+			std::unique_ptr<PhysicsState> state = std::make_unique<PhysicsState>();
+			state->unique_entity_ID = entID;
+			state->scale = ent->get_scale();
+			state->pos = ent->get_position();
+			state->lin_vel = ent->get_lin_velocity();
+			state->spin_vel = ent->get_spin_velocity();
+			state->model = ent->get_model_matrix();
+			state->orientation = ent->get_orientation();
+			state->restitution = ent->get_mesh().get_bounce_restitution();
+			state->friction = ent->get_mesh().get_surface_friction();
+			state->mesh_bbox = ent->get_mesh().get_bbox();
+			state->lin_enabled = ent->is_lin_physics_enabled();
+			state->rot_enabled = ent->is_rot_physics_enabled();
+			state->has_complex_geometry = ent->get_mesh().has_complex_geometry();
+			state->inv_mass = (state->lin_enabled && ent->get_mass_kg() > 0) ? (1.0f / ent->get_mass_kg()) : 0.0f;
+			state->voxel_buffer = &ent->get_mesh().get_voxel_buffer();
+			state->mesh_fill_ratio = ent->get_mesh().get_fill_ratio();
+			state->last_collided_with = ent->get_last_collision(false) == nullptr ? INVALID_ID :
+				ent->get_last_collision()->get_unique_ID();
 
-			PhysicsState s;
-			s.ptr = ent;
-			s.pos = ent->get_position();
-			s.lin_vel = ent->get_lin_velocity();
-			s.spin_vel = ent->get_spin_velocity();
-			s.model = ent->get_model_matrix();
-			s.restitution = ent->get_mesh().get_bounce_restitution();
-			s.friction = ent->get_mesh().get_surface_friction();
-			s.local_bbox = ent->get_mesh().get_bbox();
-			s.lin_enabled = ent->is_lin_physics_enabled();
-			s.rot_enabled = ent->is_rot_physics_enabled();
-
-			s.inv_mass = (s.lin_enabled && ent->get_mass_kg() > 0) ? (1.0f / ent->get_mass_kg()) : 0.0f;
-
-			if (s.rot_enabled) {
+			if (state->rot_enabled) {
 				glm::vec3 local_I = ent->get_inertia();
 				glm::mat3 inv_I_local(0.0f);
 				inv_I_local[0][0] = 1.0f / std::max(local_I.x, 0.0001f);
 				inv_I_local[1][1] = 1.0f / std::max(local_I.y, 0.0001f);
 				inv_I_local[2][2] = 1.0f / std::max(local_I.z, 0.0001f);
 				glm::mat3 R = glm::mat3(ent->get_rotation_matrix());
-				s.rot_inv_inertia = R * inv_I_local * glm::transpose(R);
+				state->rot_inv_inertia = R * inv_I_local * glm::transpose(R);
 			}
 			else {
-				s.rot_inv_inertia = glm::mat3(0.0f);
+				state->rot_inv_inertia = glm::mat3(0.0f);
 			}
 
 			for (int i = 0; i < 8; ++i) {
 				glm::vec3 p;
-				p.x = (i & 1) ? s.local_bbox.max.x : s.local_bbox.min.x;
-				p.y = (i & 2) ? s.local_bbox.max.y : s.local_bbox.min.y;
-				p.z = (i & 4) ? s.local_bbox.max.z : s.local_bbox.min.z;
-				s.world_corners[i] = glm::vec3(s.model * glm::vec4(p, 1.0f));
+				p.x = (i & 1) ? state->mesh_bbox.max.x * state->scale.x : state->mesh_bbox.min.x * state->scale.x;
+				p.y = (i & 2) ? state->mesh_bbox.max.y * state->scale.y : state->mesh_bbox.min.y * state->scale.y;
+				p.z = (i & 4) ? state->mesh_bbox.max.z * state->scale.z : state->mesh_bbox.min.z * state->scale.z;
+				state->world_corners[i] = glm::vec3(state->model * glm::vec4(p, 1.0f));
 			}
-			states.push_back(s);
-			};
+
+			// register PhysicsState for this Entity to states map
+			// (or overwrite old entry if it already exists)
+			states[entID] = std::move(state);
+		};
 
 		for (auto& [id, ent] : this->entities) snapshot_entity(ent.get());
 		for (auto& ps : this->particle_systems) {
 			for (auto& p : ps.get_active_particles()) snapshot_entity(p->entity);
 		}
+
+		if (states.empty()) return;
 	}
 
-	if (states.empty()) return;
+	// === BEGIN OF SUBSTEPS LOOP ===
+	static thread_local float_t avg_substep_duration = 0.05; // conservative inititialization; to be updates as rolling average
+	uint32_t substeps = std::min(
+		std::max(
+			1u,
+			uint32_t(PHYSICS_SUBSTEP_SAFETY_FACTOR * (dt_sec / avg_substep_duration))
+		),
+		uint32_t(MAX_PHYSICS_SUBSTEPS)
+	);
+	float_t dt_substep = dt_sec / substeps;
 
-	// === BROAD PHASE (Spatial Hashing) ===
-	static thread_local std::unordered_map<int64_t, std::vector<PhysicsState*>> cells;
-	cells.clear();
 
-	for (auto& s : states) {
-		glm::vec3 bmin(FLT_MAX), bmax(-FLT_MAX);
-		for (const auto& c : s.world_corners) {
-			bmin = glm::min(bmin, c); bmax = glm::max(bmax, c);
+	for (uint32_t substep = 0; substep < substeps; substep++) {
+
+		auto substep_start = std::chrono::high_resolution_clock::now(); // store for later averaging of substep duration
+
+		// === INTEGRATION PER SUBSTEP ===
+		for (auto& pair : states) {
+			int32_t entID = pair.first;
+			PhysicsState* state = pair.second.get();
+
+			if (state->lin_enabled) {
+				state->pos += state->lin_vel * dt_substep;
+			}
+
+			if (state->rot_enabled) {
+				float angle = glm::length(state->spin_vel) * dt_substep;
+				if (angle > 0.0f) {
+					glm::vec3 axis = glm::normalize(state->spin_vel);
+					glm::quat dq = glm::angleAxis(angle, axis);
+					state->orientation = glm::normalize(dq * state->orientation);
+				}
+
+			}
+
+			state->model =
+				glm::translate(glm::mat4(1.0f), state->pos) *
+				glm::mat4_cast(state->orientation);
+
+			// recompute world corners
+			for (int i = 0; i < 8; ++i) {
+				glm::vec3 p(
+					(i & 1) ? state->mesh_bbox.max.x * state->scale.x : state->mesh_bbox.min.x * state->scale.x,
+					(i & 2) ? state->mesh_bbox.max.y * state->scale.y : state->mesh_bbox.min.y * state->scale.y,
+					(i & 4) ? state->mesh_bbox.max.z * state->scale.z : state->mesh_bbox.min.z * state->scale.z
+				);
+				state->world_corners[i] = glm::vec3(state->model * glm::vec4(p, 1.0f));
+			}
 		}
-		for (int x = (int)floor(bmin.x / cell_size); x <= (int)floor(bmax.x / cell_size); ++x) {
-			for (int y = (int)floor(bmin.y / cell_size); y <= (int)floor(bmax.y / cell_size); ++y) {
-				for (int z = (int)floor(bmin.z / cell_size); z <= (int)floor(bmax.z / cell_size); ++z) {
-					cells[((int64_t)x << 42) | (((int64_t)y & 0x1FFFFF) << 21) | ((int64_t)z & 0x1FFFFF)].push_back(&s);
+
+		// === BROAD PHASE (Spatial Hashing) ===
+		static thread_local std::unordered_map<int64_t, std::vector<PhysicsState*>> cells;
+		cells.clear();
+
+		for (auto& pair : states) {
+			PhysicsState* state = pair.second.get();
+			glm::vec3 bmin(FLT_MAX), bmax(-FLT_MAX);
+			for (const auto& c : state->world_corners) {
+				bmin = glm::min(bmin, c);
+				bmax = glm::max(bmax, c);
+			}
+
+			for (int x = (int)floor(bmin.x / cell_size); x <= (int)floor(bmax.x / cell_size); ++x) {
+				for (int y = (int)floor(bmin.y / cell_size); y <= (int)floor(bmax.y / cell_size); ++y) {
+					for (int z = (int)floor(bmin.z / cell_size); z <= (int)floor(bmax.z / cell_size); ++z) {
+						cells[((int64_t)x << 42) | (((int64_t)y & 0x1FFFFF) << 21) | ((int64_t)z & 0x1FFFFF)].push_back(state);
+					}
 				}
 			}
 		}
-	}
+		
+		// === NARROW PHASE ===
+		static thread_local std::unordered_map<PhysicsState*, std::vector<PhysicsState*>> checked;
+		checked.clear();
 
-	// === NARROW PHASE & RESOLUTION ===
-	static thread_local std::unordered_map<PhysicsState*, std::vector<PhysicsState*>> checked;
-	checked.clear();
+		static thread_local std::vector<CollisionCandidateGPU> complex_collision_candidates;
+		complex_collision_candidates.clear();
 
-	for (auto& [hash, list] : cells) {
-		if (list.size() < 2) continue;
-		for (size_t i = 0; i < list.size(); ++i) {
-			for (size_t j = i + 1; j < list.size(); ++j) {
-				PhysicsState* a = list[i], * b = list[j];
-				if (!a->lin_enabled && !b->lin_enabled) continue;
+		static std::unordered_map<Buffer<uint32_t>*, uint32_t> voxel_buffer_map;
+		voxel_buffer_map.clear();
 
-				if (a > b) std::swap(a, b);
-				if (std::find(checked[a].begin(), checked[a].end(), b) != checked[a].end()) continue;
-				checked[a].push_back(b);
+		static thread_local std::vector<Collision> confirmed_collisions;
+		confirmed_collisions.clear();
 
-				// SAT Logic (Axes generation and overlap testing)
-				glm::vec3 axes[15];
-				axes[0] = glm::normalize(glm::vec3(a->model[0]));
-				axes[1] = glm::normalize(glm::vec3(a->model[1]));
-				axes[2] = glm::normalize(glm::vec3(a->model[2]));
-				axes[3] = glm::normalize(glm::vec3(b->model[0]));
-				axes[4] = glm::normalize(glm::vec3(b->model[1]));
-				axes[5] = glm::normalize(glm::vec3(b->model[2]));
+		uint32_t voxel_buffer_current_offset = 0;
 
-				int axis_count = 6;
-				for (int k = 0; k < 3; ++k) {
-					for (int l = 0; l < 3; ++l) {
-						glm::vec3 cross_axis = glm::cross(axes[k], axes[3 + l]);
-						if (glm::length2(cross_axis) > 0.0001f) {
-							axes[axis_count++] = glm::normalize(cross_axis);
-						}
-					}
-				}
+		static thread_local const uint32_t res = COMPLEX_COLLISION_VOXEL_RESOLUTION;
+		static thread_local const uint32_t total_voxels = res * res * res;
+		static thread_local const uint32_t voxel_buffer_elements = (total_voxels + 31) / 32;
 
-				float min_overlap = FLT_MAX;
-				glm::vec3 collision_normal;
-				bool separated = false;
+		auto project_obb = [&](const PhysicsState* state, const glm::vec3& axis,
+			float& out_min, float& out_max)
+			{
+				glm::mat3 R = glm::mat3_cast(state->orientation);
+				glm::vec3 e = 0.5f * (state->mesh_bbox.size() * state->scale);
 
-				for (int k = 0; k < axis_count; ++k) {
-					const auto& axis = axes[k];
-					float minA = FLT_MAX, maxA = -FLT_MAX;
-					float minB = FLT_MAX, maxB = -FLT_MAX;
+				float r =
+					e.x * std::abs(glm::dot(axis, R[0])) +
+					e.y * std::abs(glm::dot(axis, R[1])) +
+					e.z * std::abs(glm::dot(axis, R[2]));
 
-					for (const auto& c : a->world_corners) {
-						float d = glm::dot(c, axis);
-						minA = std::min(minA, d); maxA = std::max(maxA, d);
-					}
-					for (const auto& c : b->world_corners) {
-						float d = glm::dot(c, axis);
-						minB = std::min(minB, d); maxB = std::max(maxB, d);
-					}
+				float c = glm::dot(state->pos, axis);
+				out_min = c - r;
+				out_max = c + r;
+			};
 
-					if (maxA < minB || maxB < minA) { separated = true; break; }
-					float overlap = std::min(maxA, maxB) - std::max(minA, minB);
-					if (overlap < min_overlap) { min_overlap = overlap; collision_normal = axis; }
-				}
+		for (auto& [hash, list] : cells) {
+			if (list.size() < 2) continue;
 
-				if (!separated) {
-					if (glm::dot(b->pos - a->pos, collision_normal) < 0) { collision_normal = -collision_normal; }
+			for (size_t i = 0; i < list.size(); ++i) {
+				for (size_t j = i + 1; j < list.size(); ++j) {
 
-					// Track last collision partner in the state for the Publish step
-					a->last_collided_with = b->ptr;
-					b->last_collided_with = a->ptr;
+					PhysicsState* state_A = list[i];
+					PhysicsState* state_B = list[j];
 
-					// Contact Point Calculation
-					glm::vec3 contact_point(0.0f);
-					int points = 0;
-					for (const auto& c : a->world_corners) {
-						float d = glm::dot(c - b->pos, collision_normal);
-						if (d > 0 && d < min_overlap + 0.05f) { contact_point += c; points++; }
-					}
-					for (const auto& c : b->world_corners) {
-						float d = glm::dot(c - a->pos, -collision_normal);
-						if (d > 0 && d < min_overlap + 0.05f) { contact_point += c; points++; }
-					}
-					contact_point = (points > 0) ? (contact_point / (float)points) : ((a->pos + b->pos) * 0.5f);
+					if (!state_A->lin_enabled && !state_B->lin_enabled) continue;
 
-					glm::vec3 r_a = contact_point - a->pos;
-					glm::vec3 r_b = contact_point - b->pos;
+					if (state_A > state_B) std::swap(state_A, state_B);
+					if (std::find(checked[state_A].begin(), checked[state_A].end(), state_B) != checked[state_A].end())
+						continue;
 
-					// Relative Velocity at Contact
-					glm::vec3 v_contact_a = a->lin_vel + (a->rot_enabled ? glm::cross(a->spin_vel, r_a) : glm::vec3(0));
-					glm::vec3 v_contact_b = b->lin_vel + (b->rot_enabled ? glm::cross(b->spin_vel, r_b) : glm::vec3(0));
-					glm::vec3 rel_vel = v_contact_b - v_contact_a;
+					checked[state_A].push_back(state_B);
 
-					float_t rel_vel_normal = glm::dot(rel_vel, collision_normal);
+					// --- SAT AXES ---
+					glm::vec3 axes[15];
+					glm::mat3 Ra = glm::mat3_cast(state_A->orientation);
+					glm::mat3 Rb = glm::mat3_cast(state_B->orientation);
 
-					if (rel_vel_normal < COLLISION_VELOCITY_THRESHOLD) {
-						// Impulse Resolution (including Bounce Restitution)
-						glm::vec3 ra_cross_n = glm::cross(r_a, collision_normal);
-						glm::vec3 rb_cross_n = glm::cross(r_b, collision_normal);
-						float inv_mass_sum = a->inv_mass + b->inv_mass;
-						if (a->rot_enabled) inv_mass_sum += glm::dot(ra_cross_n, a->rot_inv_inertia * ra_cross_n);
-						if (b->rot_enabled) inv_mass_sum += glm::dot(rb_cross_n, b->rot_inv_inertia * rb_cross_n);
+					axes[0] = glm::normalize(Ra[0]);
+					axes[1] = glm::normalize(Ra[1]);
+					axes[2] = glm::normalize(Ra[2]);
+					axes[3] = glm::normalize(Rb[0]);
+					axes[4] = glm::normalize(Rb[1]);
+					axes[5] = glm::normalize(Rb[2]);
 
-						float restitution_coeff = std::min(a->restitution, b->restitution);
-						if (std::abs(rel_vel_normal) < 0.05f) restitution_coeff = 0.0f; // Prevent bounce for very low velocities (Resting contact stability)
-						float impulse_mag = -(1.0f + restitution_coeff) * rel_vel_normal / std::max(inv_mass_sum, 0.0001f);
-						glm::vec3 impulse = impulse_mag * collision_normal;
-
-						if (a->lin_enabled) a->lin_vel -= impulse * a->inv_mass;
-						if (a->rot_enabled) a->spin_vel -= a->rot_inv_inertia * glm::cross(r_a, impulse);
-						if (b->lin_enabled) b->lin_vel += impulse * b->inv_mass;
-						if (b->rot_enabled) b->spin_vel += b->rot_inv_inertia * glm::cross(r_b, impulse);
-
-						// Friction
-						v_contact_a = a->lin_vel + (a->rot_enabled ? glm::cross(a->spin_vel, r_a) : glm::vec3(0));
-						v_contact_b = b->lin_vel + (b->rot_enabled ? glm::cross(b->spin_vel, r_b) : glm::vec3(0));
-						rel_vel = v_contact_b - v_contact_a;
-						glm::vec3 tangent = rel_vel - (glm::dot(rel_vel, collision_normal) * collision_normal);
-						if (glm::length2(tangent) > 0.0001f) {
-							tangent = glm::normalize(tangent);
-							float friction_impulse_mag = -glm::dot(rel_vel, tangent) / std::max(inv_mass_sum, 0.0001f);
-							float friction_coeff = std::sqrt(a->friction * b->friction);
-							float friction_limit = impulse_mag * friction_coeff;
-							if (friction_impulse_mag > friction_limit) { friction_impulse_mag = friction_limit; }
-							else if (friction_impulse_mag < -friction_limit) { friction_impulse_mag = -friction_limit; }
-							glm::vec3 f_impulse = friction_impulse_mag * tangent;
-							if (a->lin_enabled) a->lin_vel -= f_impulse * a->inv_mass;
-							if (a->rot_enabled) a->spin_vel -= a->rot_inv_inertia * glm::cross(r_a, f_impulse);
-							if (b->lin_enabled) b->lin_vel += f_impulse * b->inv_mass;
-							if (b->rot_enabled) b->spin_vel += b->rot_inv_inertia * glm::cross(r_b, f_impulse);
+					int axis_count = 6;
+					for (int k = 0; k < 3; ++k) {
+						for (int l = 0; l < 3; ++l) {
+							glm::vec3 cross_axis = glm::cross(axes[k], axes[3 + l]);
+							if (glm::length2(cross_axis) > 0.0001f)
+								axes[axis_count++] = glm::normalize(cross_axis);
 						}
 					}
 
-					// --- POSITION PROJECTION (Anti-Tunneling / Separation) ---
-					float total_inv_mass = a->inv_mass + b->inv_mass;
-					if (total_inv_mass > 0.0f) {
-						// Use the full min_overlap (no slop subtraction) to ensure complete separation
-						float penetration = std::max(min_overlap, 0.0f);
-						if (penetration > 0.0f) {
-							// Bias 1.0 ensures objects are moved exactly to the point of touching in a single frame;
-							// no overlap is tolerated
-							const float instant_separation_bias = 1.0f;
-							glm::vec3 correction = (penetration / total_inv_mass) * instant_separation_bias * collision_normal;
+					float min_overlap = FLT_MAX;
+					glm::vec3 collision_normal(0.0f);
+					bool separated = false;
 
-							if (a->lin_enabled) a->pos -= correction * a->inv_mass;
-							if (b->lin_enabled) b->pos += correction * b->inv_mass;
+					for (int k = 0; k < axis_count; ++k) {
+						const glm::vec3& axis = axes[k];
 
-							float vel_along_normal = glm::dot(b->lin_vel - a->lin_vel, collision_normal);
-							if (vel_along_normal < 0) {
-								// If two entities are still moving toward each other, cancel that velocity
-								// to help with stability at very slow speeds:
-								glm::vec3 v_corr = vel_along_normal * collision_normal;
-								if (a->lin_enabled) a->lin_vel += v_corr * (a->inv_mass / total_inv_mass);
-								if (b->lin_enabled) b->lin_vel -= v_corr * (b->inv_mass / total_inv_mass);
+						float minA, maxA, minB, maxB;
+						project_obb(state_A, axis, minA, maxA);
+						project_obb(state_B, axis, minB, maxB);
+
+						if (maxA < minB || maxB < minA) {
+							separated = true;
+							break;
+						}
+
+						float overlap = std::min(maxA, maxB) - std::max(minA, minB);
+						if (overlap < min_overlap) {
+							min_overlap = overlap;
+							collision_normal = axis;
+						}
+					}
+
+					if (separated) continue;
+
+					if (glm::dot(state_B->pos - state_A->pos, collision_normal) < 0.0f)
+						collision_normal = -collision_normal;
+
+					// === COMPLEX GEOMETRY PATH ===
+					if (state_A->has_complex_geometry ||
+						state_B->has_complex_geometry) {
+
+						CollisionCandidateGPU candidate;
+						candidate.modelB = state_B->model;
+						candidate.invModelA = glm::inverse(state_A->model);
+						candidate.bbox_A_min = glm::vec4(state_A->mesh_bbox.min * state_A->scale, 0.0f);
+						candidate.bbox_B_min = glm::vec4(state_B->mesh_bbox.min * state_B->scale, 0.0f);
+						candidate.bbox_A_range = glm::vec4(state_A->mesh_bbox.size() * state_A->scale, 0.0f);
+						candidate.bbox_B_range = glm::vec4(state_B->mesh_bbox.size() * state_B->scale, 0.0f);
+						candidate.collision_normal = glm::vec4(collision_normal, 0.0f);
+						candidate.entID_A = state_A->unique_entity_ID;
+						candidate.entID_B = state_B->unique_entity_ID;
+
+						auto vbA = state_A->voxel_buffer;
+						auto itA = voxel_buffer_map.find(vbA);
+						if (itA == voxel_buffer_map.end()) {
+							voxel_buffer_map[vbA] = voxel_buffer_current_offset;
+							candidate.voxel_buffer_A_offset = voxel_buffer_current_offset;
+							voxel_buffer_current_offset += voxel_buffer_elements;
+						}
+						else {
+							candidate.voxel_buffer_A_offset = itA->second;
+						}
+
+						auto vbB = state_B->voxel_buffer;
+						auto itB = voxel_buffer_map.find(vbB);
+						if (itB == voxel_buffer_map.end()) {
+							voxel_buffer_map[vbB] = voxel_buffer_current_offset;
+							candidate.voxel_buffer_B_offset = voxel_buffer_current_offset;
+							voxel_buffer_current_offset += voxel_buffer_elements;
+						}
+						else {
+							candidate.voxel_buffer_B_offset = itB->second;
+						}
+
+						complex_collision_candidates.push_back(candidate);
+					}
+					// === SIMPLE COLLISION PATH ===
+					else {
+						Collision coll;
+						coll.state_A = state_A;
+						coll.state_B = state_B;
+						coll.state_A->last_collided_with = state_B->unique_entity_ID;
+						coll.state_B->last_collided_with = state_A->unique_entity_ID;
+						coll.normal = collision_normal;
+						coll.overlap = min_overlap;
+						coll.contact_point = 0.5f * (state_A->pos + state_B->pos);
+
+						confirmed_collisions.push_back(coll);
+					}
+				}
+			}
+		}
+
+
+		// === GPU PHASE FOR COMPLEX COLLISIONS ===
+		static thread_local plf::colony<uint64_t> pending_jobs;
+		if (!complex_collision_candidates.empty()) {
+			if (pending_jobs.size() < MAX_COLLISION_JOBS_IN_FLIGHT) {
+
+				// Record a VulkanJob to be executed on the main thread
+				uint64_t job_id = VulkanManager::record_compute_job(
+					[candidates = std::move(complex_collision_candidates), vb_map = std::move(voxel_buffer_map)](VulkanManager::VulkanJob& job) mutable {
+
+						uint32_t candidates_count = static_cast<uint32_t>(candidates.size());
+						VulkanManager& manager = VulkanManager::get_singleton();
+						Device& device = manager.get_device();
+						auto& resources = manager.get_collision_resources();
+						DescriptorSet& ds = job.task->make_descriptor_set(*resources.set_layout);
+
+						// PushConstants
+						uint32_t total_buffer_elements = voxel_buffer_elements * vb_map.size();
+						PushConstants& pc = job.task->make_constants();
+						pc.add_values(candidates_count);
+						pc.add_values(voxel_buffer_elements);
+						pc.add_values(res);
+
+						// Task-owned temporary Buffers
+						auto& voxel_master_buffer = job.task->make_buffer<uint32_t>(total_buffer_elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+						auto& candidates_buffer = job.task->make_buffer<CollisionCandidateGPU>(candidates_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+						auto& candidates_staging = job.task->make_buffer<CollisionCandidateGPU>(candidates_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+						auto& result_buffer = job.task->make_buffer<CollisionResultGPU>(candidates_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+						auto& result_staging = job.task->make_buffer<CollisionResultGPU>(candidates_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+						candidates_staging.write(candidates);
+
+						// add payload data for result readback
+						auto payload = std::make_shared<CollisionGPUJobPayload>();
+						payload->candidate_count = candidates_count;
+						payload->result_staging = &result_staging;
+						for (auto& c : candidates) { // Fill CPU-side mappings
+							payload->entIDs_A.push_back(c.entID_A);
+							payload->entIDs_B.push_back(c.entID_B);
+							payload->normals.push_back(glm::vec3(c.collision_normal));
+						}
+						job.payload = payload;
+
+						// DescriptorSet Bindings
+						ds.bind_buffer(0, voxel_master_buffer);
+						ds.bind_buffer(1, candidates_buffer);
+						ds.bind_buffer(2, result_buffer);
+						ds.write();
+
+						// record commands
+						CommandBuffer& cb = job.task->get_command_buffer();
+						cb.begin_recording();
+						cb.bind_pipeline(*resources.pipeline);
+						cb.bind_descriptor_set(ds, *resources.pipeline);
+						cb.bind_push_constants(pc, *resources.pipeline);
+						cb.fill_buffer_uint(result_buffer, 0u);
+						cb.add_buffer_memory_barrier(result_buffer,
+							VK_ACCESS_2_TRANSFER_WRITE_BIT,
+							VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+							VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+							VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+						); // = wait for fill before the shader starts
+						for (auto& vb : vb_map) {
+							cb.copy_buffer(*vb.first, voxel_master_buffer, vb.first->get_size_bytes(), 0, vb.second);
+						} // = copy voxel buffers to single master buffer (GPU-to-GPU copy)
+						cb.add_buffer_memory_barrier(voxel_master_buffer,
+							VK_ACCESS_2_TRANSFER_WRITE_BIT,
+							VK_ACCESS_2_SHADER_READ_BIT,
+							VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+							VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+						); // = wait for voxel buffer transfer to finish
+						cb.add_buffer_memory_barrier(candidates_staging,
+							VK_ACCESS_2_HOST_WRITE_BIT,
+							VK_ACCESS_2_TRANSFER_READ_BIT,
+							VK_PIPELINE_STAGE_2_HOST_BIT,
+							VK_PIPELINE_STAGE_2_TRANSFER_BIT
+						); // = wait for host write on candidates staging buffer
+						cb.copy_buffer(candidates_staging, candidates_buffer);
+						cb.add_buffer_memory_barrier(candidates_buffer,
+							VK_ACCESS_2_TRANSFER_WRITE_BIT,
+							VK_ACCESS_2_SHADER_READ_BIT,
+							VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+							VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+						); // = wait for transfer to candidates buffer before the shader can read from it
+						cb.dispatch(*resources.pipeline, res, res, res);
+						cb.add_buffer_memory_barrier(result_buffer,
+							VK_ACCESS_2_SHADER_WRITE_BIT,
+							VK_ACCESS_2_TRANSFER_READ_BIT,
+							VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+							VK_PIPELINE_STAGE_2_TRANSFER_BIT
+						); // = wait for shader to finish writing to results before copying to staging
+						cb.record_barriers();
+						cb.copy_buffer(result_buffer, result_staging);
+						cb.end_recording();
+						job.task->submit(0, true);
+					}
+				);
+				pending_jobs.insert(job_id);
+			}
+			else {
+				// TODO: FALL-BACK TO SAT-ONLY
+				complex_collision_candidates.clear();
+			}
+		}
+
+		// === READ BACK RESULTS FROM ANY PENDING JOBS IN THE 'READY' STATE ===
+		// !!!! IMPORTANT: REQUIRES A CALL TO "VulkanManager::process_jobs()" ON THE MAIN THREAD, OTHERWISE NO RESULT WILL EVER BE AVAILABLE !!!!
+		for (auto it = pending_jobs.begin(); it != pending_jobs.end(); ) {
+			int32_t jobID = *it;
+			bool consumed = VulkanManager::consume_job(jobID,
+				[&](VulkanManager::VulkanJob& job) {
+					auto payload = std::static_pointer_cast<CollisionGPUJobPayload>(job.payload);
+					payload->results = payload->result_staging->read();
+					payload->result_staging = nullptr; // immediatly invalidate the pointer -> no longer needed after read-back
+
+					for (uint32_t cand = 0; cand < payload->candidate_count; ++cand) {
+						uint32_t hit_count = payload->results[cand].hit_count;
+						if (hit_count > 0) {
+							int32_t entID_A = payload->entIDs_A[cand];
+							int32_t entID_B = payload->entIDs_B[cand];
+							auto itA = states.find(entID_A);
+							auto itB = states.find(entID_B);
+							if (itA == states.end() || itB == states.end()) {
+								return; // stale job result
 							}
+							PhysicsState* state_A = itA->second.get();
+							PhysicsState* state_B = itB->second.get();
+
+							Collision coll;
+							coll.contact_point = glm::vec3(
+								payload->results[cand].contact_x,
+								payload->results[cand].contact_y,
+								payload->results[cand].contact_z
+							) / (payload->results[cand].hit_count * 1000.0f);
+							coll.normal = payload->normals[cand];
+							coll.state_A = state_A;
+							coll.state_B = state_B;
+							coll.state_A->last_collided_with = entID_B;
+							coll.state_B->last_collided_with = entID_A;
+
+							// estimate overlap
+							glm::vec3 bbox_size_world = state_A->mesh_bbox.size() * state_A->scale;
+							const uint32_t res = COMPLEX_COLLISION_VOXEL_RESOLUTION;
+							float voxel_volume = (bbox_size_world.x * bbox_size_world.y * bbox_size_world.z) / float(res * res * res);
+							float overlap_volume = hit_count * voxel_volume;
+							float effective_overlap_volume =
+								overlap_volume / std::max(state_A->mesh_fill_ratio, 1e-4f);
+							glm::vec3 n = glm::abs(coll.normal);
+							float contact_area =
+								(n.x * bbox_size_world.y * bbox_size_world.z) +
+								(n.y * bbox_size_world.x * bbox_size_world.z) +
+								(n.z * bbox_size_world.x * bbox_size_world.y);
+							contact_area = std::max(contact_area, 1e-4f);
+							coll.overlap = effective_overlap_volume / contact_area;
+							float max_overlap = 0.2f * glm::length(bbox_size_world);
+							coll.overlap = glm::clamp(coll.overlap, 0.0f, max_overlap); // Safety clamp
+
+							confirmed_collisions.push_back(coll);
 						}
 					}
 				}
+			);
+			if (consumed) {
+				it = pending_jobs.erase(it);
+			}
+			else {
+				++it;
 			}
 		}
-	}
+
+		// === RESOLVE CONFIRMED COLLISIONS ===
+
+		// sort collisions based on penetration depth (big penetrations first) to make collision processing order deterministic
+		std::sort(confirmed_collisions.begin(), confirmed_collisions.end(), [](const Collision& a, const Collision& b) { return a.overlap > b.overlap; });
+
+		for (Collision& coll : confirmed_collisions) {
+
+			PhysicsState* state_A = coll.state_A;
+			PhysicsState* state_B = coll.state_B;
+
+			// Contact offsets from centers of mass
+			const glm::vec3 rA = coll.contact_point - state_A->pos;
+			const glm::vec3 rB = coll.contact_point - state_B->pos;
+
+			// Velocities at contact point
+			glm::vec3 vA = state_A->lin_vel + (state_A->rot_enabled ? glm::cross(state_A->spin_vel, rA) : glm::vec3(0.0f));
+			glm::vec3 vB = state_B->lin_vel + (state_B->rot_enabled ? glm::cross(state_B->spin_vel, rB) : glm::vec3(0.0f));
+
+			glm::vec3 relative_velocity = vB - vA;
+			float relative_normal_speed = glm::dot(relative_velocity, coll.normal);
+
+			// Only resolve if closing or resting
+			if (relative_normal_speed < COLLISION_VELOCITY_THRESHOLD) {
+
+				// --- NORMAL IMPULSE ---
+				const glm::vec3 rA_cross_n = glm::cross(rA, coll.normal);
+				const glm::vec3 rB_cross_n = glm::cross(rB, coll.normal);
+
+				float normal_effective_mass =
+					state_A->inv_mass +
+					state_B->inv_mass +
+					(state_A->rot_enabled ? glm::dot(rA_cross_n, state_A->rot_inv_inertia * rA_cross_n) : 0.0f) +
+					(state_B->rot_enabled ? glm::dot(rB_cross_n, state_B->rot_inv_inertia * rB_cross_n) : 0.0f);
+				normal_effective_mass = std::max(normal_effective_mass, 1e-6f);
+
+				float restitution = std::min(state_A->restitution, state_B->restitution);
+
+				// Kill bounce at very low speeds (resting stability)
+				if (std::abs(relative_normal_speed) < 0.05f) { restitution = 0.0f; }
+
+				// Apply normal impulse
+				float normal_impulse_magnitude = -(1.0f + restitution) * relative_normal_speed / normal_effective_mass;
+				const glm::vec3 normal_impulse = normal_impulse_magnitude * coll.normal;
+
+				if (state_A->lin_enabled) { state_A->lin_vel -= normal_impulse * state_A->inv_mass; }
+				if (state_A->rot_enabled) { state_A->spin_vel -= state_A->rot_inv_inertia * glm::cross(rA, normal_impulse); }
+				if (state_B->lin_enabled) { state_B->lin_vel += normal_impulse * state_B->inv_mass; }
+				if (state_B->rot_enabled) { state_B->spin_vel += state_B->rot_inv_inertia * glm::cross(rB, normal_impulse); }
+
+				// --- FRICTION IMPULSE ---
+				vA = state_A->lin_vel + (state_A->rot_enabled ? glm::cross(state_A->spin_vel, rA) : glm::vec3(0.0f));
+				vB = state_B->lin_vel + (state_B->rot_enabled ? glm::cross(state_B->spin_vel, rB) : glm::vec3(0.0f));
+				relative_velocity = vB - vA;
+				glm::vec3 tangent_velocity = relative_velocity - glm::dot(relative_velocity, coll.normal) * coll.normal;
+				if (glm::length2(tangent_velocity) > 1e-6f) {
+					const glm::vec3 friction_direction = glm::normalize(tangent_velocity);
+					const glm::vec3 rA_cross_t = glm::cross(rA, friction_direction);
+					const glm::vec3 rB_cross_t = glm::cross(rB, friction_direction);
+					float tangent_effective_mass =
+						state_A->inv_mass +
+						state_B->inv_mass +
+						(state_A->rot_enabled ? glm::dot(rA_cross_t, state_A->rot_inv_inertia * rA_cross_t) : 0.0f) +
+						(state_B->rot_enabled ? glm::dot(rB_cross_t, state_B->rot_inv_inertia * rB_cross_t) : 0.0f);
+					tangent_effective_mass = std::max(tangent_effective_mass, 1e-6f);
+					float desired_friction_impulse = -glm::dot(relative_velocity, friction_direction) / tangent_effective_mass;
+					const float friction_coefficient = std::sqrt(state_A->friction * state_B->friction);
+					const float max_friction_impulse = friction_coefficient * normal_impulse_magnitude;
+					float clamped_friction_impulse = glm::clamp(desired_friction_impulse, -max_friction_impulse, max_friction_impulse);
+					const glm::vec3 friction_impulse = clamped_friction_impulse * friction_direction;
+
+					// Apply friction impulse
+					if (state_A->lin_enabled) { state_A->lin_vel -= friction_impulse * state_A->inv_mass; }
+					if (state_A->rot_enabled) { state_A->spin_vel -= state_A->rot_inv_inertia * glm::cross(rA, friction_impulse); }
+					if (state_B->lin_enabled) { state_B->lin_vel += friction_impulse * state_B->inv_mass; }
+					if (state_B->rot_enabled) { state_B->spin_vel += state_B->rot_inv_inertia * glm::cross(rB, friction_impulse); }
+				}
+			}
+
+			// --- POSITION PROJECTION ---
+			if (coll.overlap > 0.0f) {
+				const glm::vec3 rA_cross_n = glm::cross(rA, coll.normal);
+				const glm::vec3 rB_cross_n = glm::cross(rB, coll.normal);
+
+				float position_effective_mass =
+					state_A->inv_mass +
+					state_B->inv_mass +
+					(state_A->rot_enabled ? glm::dot(rA_cross_n, state_A->rot_inv_inertia * rA_cross_n) : 0.0f) +
+					(state_B->rot_enabled ? glm::dot(rB_cross_n, state_B->rot_inv_inertia * rB_cross_n) : 0.0f);
+				position_effective_mass = std::max(position_effective_mass, 1e-6f);
+				constexpr float penetration_slop = 0.002f;
+				constexpr float correction_bias = 0.8f;
+				float penetration = std::max(coll.overlap - penetration_slop, 0.0f);
+				const glm::vec3 position_correction = (penetration * correction_bias / position_effective_mass) * coll.normal;
+
+
+				if (state_A->lin_enabled) { state_A->pos -= position_correction * state_A->inv_mass; }
+				if (state_B->lin_enabled) { state_B->pos += position_correction * state_B->inv_mass; }
+
+				// Optional velocity cleanup along normal (slow-speed stability)
+				glm::vec3 vA_post = state_A->lin_vel + (state_A->rot_enabled ? glm::cross(state_A->spin_vel, rA) : glm::vec3(0));
+				glm::vec3 vB_post = state_B->lin_vel + (state_B->rot_enabled ? glm::cross(state_B->spin_vel, rB) : glm::vec3(0));
+				float post_correction_normal_speed = glm::dot(vB_post - vA_post, coll.normal);
+
+				if (post_correction_normal_speed < 0.0f) {
+					const glm::vec3 normal_velocity_correction = post_correction_normal_speed * coll.normal;
+					if (state_A->lin_enabled) { state_A->lin_vel += normal_velocity_correction * state_A->inv_mass; }
+					if (state_B->lin_enabled) { state_B->lin_vel -= normal_velocity_correction * state_B->inv_mass; }
+				}
+			}
+		}
+
+		// update the rolling average of the substep duration
+		auto substep_end = std::chrono::high_resolution_clock::now();
+		float_t current_substep_duration = std::chrono::duration<float_t>(substep_end - substep_start).count();
+		avg_substep_duration = (0.99f * avg_substep_duration) + (0.01f * current_substep_duration);
+
+	} // END OF SUBSTEPS LOOP
+
 
 	// === FINAL STEP: PUBLISH (Locked) ===
 	{
-		std::lock_guard<std::mutex> lock(physics_mutex);
-		for (auto& s : states) {
-			// Sync Linear State
-			if (s.lin_enabled) {
-				s.ptr->set_position(s.pos);
-				s.ptr->set_lin_velocity(s.lin_vel);
+		LockGuard lock({ &entity_mutex, &physics_mutex });
+
+		for (auto it = states.begin(); it != states.end(); ) {
+			int32_t entID = it->first;
+			Entity* ent = Entity::get_entity_by_ID(entID);
+			PhysicsState* state = it->second.get();
+
+			if (!ent || ent->get_unique_ID() != state->unique_entity_ID || !ent->is_visible() || !ent->get_mesh().is_solid()) { // stale, recycled, invisible or unsolid Entity
+				it = states.erase(it);
+				continue;
 			}
 
-			// Sync Rotational State
-			if (s.rot_enabled) {
-				s.ptr->set_spin_velocity(s.spin_vel);
+			if (state->lin_enabled) {
+				ent->set_position(state->pos);
+				ent->set_lin_velocity(state->lin_vel);
 			}
 
-			// Update collision reference for game logic
-			s.ptr->set_last_collision(s.last_collided_with);
+			if (state->rot_enabled) {
+				ent->set_spin_velocity(state->spin_vel);
+				ent->set_orientation(state->orientation);
+			}
+
+			ent->set_last_collision(Entity::get_entity_by_ID(state->last_collided_with));
+			++it;
 		}
 	}
 }
 
+bool Scene::check_physics_thread_watchdog(uint64_t dt_warning_ns, uint64_t dt_critical_ns) {
+	static uint64_t last_seen = 0;
+	uint64_t hb = physics_heartbeat.load();
+
+	if (hb == last_seen) {
+		auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+		auto last_ns = physics_last_progress_ns.load();
+		auto elapsed = now_ns - last_ns;
+		if (elapsed > dt_warning_ns) {
+			if (elapsed > dt_critical_ns) {
+				Log::error("Physics thread critically stalled (> 5 sec)");
+			}
+			else {
+				Log::warning("Physics thread stalled (>500 ms) !");
+			}
+			return false;
+		}
+	}
+	else {
+		last_seen = hb;
+	}
+	return true;
+}
 
 Camera& Scene::get_camera(uint32_t camera_id) const {
 	auto it = cameras.find(camera_id);
@@ -14972,6 +15869,73 @@ void CommandBuffer::bind_vertex_buffer(uint32_t first_binding, uint32_t binding_
 	vkCmdBindVertexBuffers(buffer, first_binding, binding_count, &vertex_buffer, offsets.size() > 0 ? offsets.data() : zero_offset);
 }
 
+// fill a buffer with a value; num_elements = 0: VK_WHOLE_SIZE
+template<typename T> void CommandBuffer::fill_buffer(Buffer<T>& dst_buffer, T value, uint32_t dst_offset_elements, uint32_t num_elements) {
+	VkDeviceSize size = num_elements == 0 ? VK_WHOLE_SIZE : num_elements * sizeof(T);
+	VkDeviceSize offset = dst_offset_elements * sizeof(T);
+	uint32_t data = 0;
+	if constexpr (sizeof(T) == 4) {
+		data = std::bit_cast<uint32_t>(value);
+	}
+	else {
+		Log::warning(__FUNCTION__, ": fill value must have size 4 bytes.");
+		return;
+	}
+	vkCmdFillBuffer(buffer, dst_buffer.get(), offset, size, data);
+}
+
+template<typename T> void CommandBuffer::fill_buffer_uint(Buffer<T>& dst_buffer, uint32_t value, uint32_t dst_offset_elements, uint32_t num_elements) {
+	VkDeviceSize size = num_elements == 0 ? VK_WHOLE_SIZE : num_elements * sizeof(T);
+	VkDeviceSize offset = dst_offset_elements * sizeof(T);
+	vkCmdFillBuffer(buffer, dst_buffer.get(), offset, size, value);
+}
+
+template<typename T> Buffer<T> CommandBuffer::stage_buffer(Buffer<T> src_buffer, uint32_t src_offset_elements, uint32_t num_elements) {
+	uint32_t elements_to_copy = 0;
+	if (num_elements == 0) {
+		elements_to_copy = src_buffer.get_elements() - src_offset_elements;
+	}
+	else {
+		elements_to_copy = std::min(num_elements, src_buffer.get_elements() - src_offset_elements);
+	}
+	if (src_buffer.host_visible()) {
+		Buffer<T> result_buffer(*this->device, src_buffer.get_type(), src_buffer.get_elements() - src_offset_elements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		this->add_buffer_memory_barrier(src_buffer,
+			VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_ACCESS_2_TRANSFER_READ_BIT,
+			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT
+		);
+		this->copy_buffer(src_buffer, result_buffer, elements_to_copy * sizeof(T), src_offset_elements * sizeof(T), 0);
+		this->add_buffer_memory_barrier(result_buffer,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_ACCESS_2_HOST_READ_BIT,
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_2_HOST_BIT
+		);
+		this->record_barriers();
+		return result_buffer;
+	}
+	else {
+		Buffer<T> result_buffer(*this->device, src_buffer.get_type(), src_buffer.get_elements() - src_offset_elements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		this->add_buffer_memory_barrier(src_buffer,
+			VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_ACCESS_2_SHADER_READ_BIT,
+			VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
+		);
+		this->copy_buffer(src_buffer, result_buffer, elements_to_copy * sizeof(T), src_offset_elements * sizeof(T), 0);
+		this->add_buffer_memory_barrier(result_buffer,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_ACCESS_2_SHADER_READ_BIT,
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
+		);
+		this->record_barriers();
+		return result_buffer;
+	}
+}
+
 // copy data between two buffers;
 // this method has automatic boundary checks and shrinks the copy region to fit if the size_bytes argument is too large
 template<typename T>
@@ -16336,29 +17300,32 @@ void Task::clear_semaphore_list() {
 
 // reset task (delete all previous resources);
 // returns false if the task is protected or still busy
-bool Task::reset() {
-	if (fence && !fence->signaled(calling_function)) {
-		Log::debug("Task ", this, " (calling function: ", calling_function, "): can't reset yet. Its Fence (", fence, ") with VkFence ", fence.get(), " hasn't yet reached the signaled state.");
+bool Task::reset(bool ignore_protection) {
+	
+	if (command_buffer != nullptr && fence && !fence->signaled(calling_function)) {
+		Log::debug("Task ", this, " (calling function: ", calling_function, "): can't reset yet. Submitted to command buffer, but the fence (", fence, ") with VkFence ", fence.get(), " hasn't yet reached the signaled state.");
 		return false;
 	}
-	if (protection_flag) {
+
+	if (protection_flag && !ignore_protection) {
 		Log::debug("Task ", this, " (calling function: ", calling_function, "): can't reset yet. The task is flagged as 'protected' (not submitted yet?).");
 		return false;
 	}
+
 	else {
 		Log::debug("Task ", this, " is available (not flagged as protected, no unsignaled fence). Resetting Task resources.");
 		// reset the command buffer to the initial state
 		// (this is not the same as command_buffer.reset() ! the smart pointer remains valid!)
 		if (command_buffer) {
 			Log::debug("... note: Task ", this, " owns CommandBuffer ", command_buffer, " with VkCommandBuffer ", command_buffer->get(), ".");
-			command_buffer->reset();
+			if (command_buffer->reset() != VK_SUCCESS) { return false; }
 		}
 
 		// reset fence to un-signaled state
 		// (note: fence->reset() is not the same as fence.reset() ! the smart pointer remains valid!)
 		if (fence) {
 			Log::debug("... note: Task ", this, " owns Fence ", fence, " with VkFence ", fence->get(), ".");
-			fence->reset(calling_function);
+			if (fence->reset(calling_function) != VK_SUCCESS) { return false; }
 		}
 
 		// clear temporary resources
@@ -16383,19 +17350,19 @@ bool Task::reset() {
 		// reset calling function
 		calling_function = "NONE (=TASK IS AVAILABLE)";
 
-		// mark as protected (at least until next submit)
-		protection_flag = true;
+		submitted_flag = false;
 
 		return true;
 	}
 }
 
 // submit command buffer to appropriate queue on device;
-VkResult Task::submit(uint64_t wait_after_submit_nanosec) {
+VkResult Task::submit(uint64_t wait_after_submit_nanosec, bool keep_protected) {
 
 	if (!command_buffer) {
 		Log::debug("Task::submit() on Task ", this, " was called, but the Task has no CommandBuffer. Early exit. Setting protection_flag to false --> Task is now available to be reused.");
-		protection_flag = false;
+		if (!keep_protected) { protection_flag = false; }
+		this->submitted_flag = true;
 		return VK_SUCCESS;
 	}
 
@@ -16506,7 +17473,7 @@ VkResult Task::submit(uint64_t wait_after_submit_nanosec) {
 			}
 			else {
 				Log::debug("... [SUCCESS].");
-				protection_flag = false;
+				if (!keep_protected) { protection_flag = false; }
 			}
 		}
 		else {
@@ -16514,11 +17481,14 @@ VkResult Task::submit(uint64_t wait_after_submit_nanosec) {
 		}
 	}
 	else {
-		protection_flag = false;
+		if (!keep_protected) { protection_flag = false; }
 	}
+	this->submitted_flag = true;
 
 	return result;
 }
+
+void Task::set_protected(bool flag) { this->protection_flag = flag; }
 
 // getters
 
@@ -16526,7 +17496,7 @@ std::string Task::get_calling_function() const { return calling_function; }
 
 bool Task::available() {
 	// 1. check protection flag
-	if (protection_flag) {
+	if (protection_flag == true) {
 		return false;
 	}
 	// 2. check fence signaled state;
@@ -16572,6 +17542,15 @@ Fence& Task::get_fence() {
 TaskType Task::get_type() const {
 	return this->task_type;
 }
+
+TempBufferVariant& Task::get_buffer(uint32_t bufferID) {
+	if (bufferID >= this->temp_buffers.size()) {
+		Log::error(__FUNCTION__, ": out of bounds. Invalid bufferID '", bufferID, "'. Task ", this, " currently owns ", temp_buffers.size(), " buffers.");
+	}
+	return *temp_buffers[bufferID].get();
+}
+
+bool Task::submitted() const { return this->submitted_flag; }
 
 PushConstants& Task::make_constants() {
 	this->constants.emplace_back(std::make_unique<PushConstants>());
@@ -16664,7 +17643,12 @@ VulkanManager& VulkanManager::get_singleton() {
 		Log::debug("VulkanManager: creating new transfer command pool");
 		shared_command_pool_transfer = std::make_unique<CommandPool>(*device, QueueFamily::TRANSFER_QUEUE);
 
-		shared_descriptor_pool = std::make_unique<DescriptorPool>(*device, MAX_DESCRIPTOR_SET_COUNT, DEFAULT_POOL_SIZE);
+		shared_descriptor_pool_graphics = std::make_unique<DescriptorPool>(*device, MAX_DESCRIPTOR_SET_COUNT, DEFAULT_GRAPHICS_POOL_SIZE);
+		shared_descriptor_pool_compute = std::make_unique<DescriptorPool>(*device, MAX_DESCRIPTOR_SET_COUNT, DEFAULT_COMPUTE_POOL_SIZE);
+		shared_descriptor_pool_transfer = std::make_unique<DescriptorPool>(*device, MAX_DESCRIPTOR_SET_COUNT, DEFAULT_TRANSFER_POOL_SIZE);
+
+		// setup collision resources
+		collision_resources = std::make_unique<CollisionResources>();
 
 		// Now, create the single VulkanManager object
 		singleton.reset(new VulkanManager());
@@ -16694,7 +17678,8 @@ Task& VulkanManager::get_compute_task(std::string calling_function) {
 			Log::debug("... skipping Task ", tasks[i].get(), ": task type is not TASK_TYPE_COMPUTE.");
 			continue;
 		}
-		if (tasks[i]->reset()) {
+		if (tasks[i]->reset(false)) {
+			tasks[i]->protection_flag = true;
 			tasks[i]->calling_function = calling_function;
 			return *tasks[i];
 		}
@@ -16702,11 +17687,13 @@ Task& VulkanManager::get_compute_task(std::string calling_function) {
 
 	// create a new task if no free task has been found
 	Log::debug("... no idle/available/unprotected task found -> creating a new one.");
-	tasks.emplace_back(std::make_unique<Task>(*device, *shared_command_pool_compute, *shared_descriptor_pool, calling_function));
+	tasks.emplace_back(std::make_unique<Task>(*device, *shared_command_pool_compute, *shared_descriptor_pool_compute, calling_function));
 #ifdef _DEBUG
 	if (task_count >= MAX_TASKS_IN_DEBUG) {
 		Log::warning("VulkanManager is currently handling ", task_count, " compute/graphics/transfer tasks. Resource leak !?");
-		if (!(task_count % MAX_TASKS_IN_DEBUG)) { log_tasks(); }
+		if (!(task_count % MAX_TASKS_IN_DEBUG)) {
+			log_tasks();
+		}
 	}
 	Log::debug("... Task ", tasks[task_count].get(), ": now available to be used for function ", calling_function, ".");
 #endif
@@ -16725,13 +17712,14 @@ Task& VulkanManager::get_graphics_task(std::string calling_function) {
 			continue;
 		}
 		if (tasks[i]->reset()) {
+			tasks[i]->protection_flag = true;
 			tasks[i]->calling_function = calling_function;
 			return *tasks[i];
 		}
 	}
 	// create a new task if no free task has been found
 	Log::debug("... no idle/available/unprotected task found -> creating a new one");
-	tasks.emplace_back(std::make_unique<Task>(*device, *shared_command_pool_graphics, *shared_descriptor_pool, calling_function));
+	tasks.emplace_back(std::make_unique<Task>(*device, *shared_command_pool_graphics, *shared_descriptor_pool_graphics, calling_function));
 #ifdef _DEBUG
 	if (task_count >= MAX_TASKS_IN_DEBUG) {
 		Log::warning("VulkanManager is currently handling ", task_count, " compute/graphics/transfer tasks. Resource leak !?");
@@ -16754,6 +17742,7 @@ Task& VulkanManager::get_transfer_task(std::string calling_function) {
 			continue;
 		}
 		if (tasks[i]->reset()) {
+			tasks[i]->protection_flag = true;
 			tasks[i]->calling_function = calling_function;
 			tasks[i]->command_pool = shared_command_pool_transfer.get();
 			return *tasks[i];
@@ -16761,11 +17750,11 @@ Task& VulkanManager::get_transfer_task(std::string calling_function) {
 	}
 	// create a new task if no free task has been found
 	Log::debug("... no idle/available/unprotected task found -> creating a new one");
-	tasks.emplace_back(std::make_unique<Task>(*device, *shared_command_pool_transfer, *shared_descriptor_pool, calling_function));
+	tasks.emplace_back(std::make_unique<Task>(*device, *shared_command_pool_transfer, *shared_descriptor_pool_transfer, calling_function));
 #ifdef _DEBUG
 	if (task_count >= MAX_TASKS_IN_DEBUG) {
 		Log::warning("VulkanManager is currently handling ", task_count, " compute/graphics/transfer tasks. Resource leak !?");
-		if (!(task_count % MAX_TASKS_IN_DEBUG)) { log_tasks(); }
+		if (!(task_count % MAX_TASKS_IN_DEBUG)) { log_tasks(); std::this_thread::yield(); }
 	}
 	Log::debug("... Task ", tasks[task_count].get(), ": now available to be used for function ", calling_function, ".");
 #endif
@@ -16833,7 +17822,9 @@ const Instance& VulkanManager::get_instance() { return *instance; }
 CommandPool& VulkanManager::get_command_pool_graphics() { return *shared_command_pool_graphics; }
 CommandPool& VulkanManager::get_command_pool_compute() { return *shared_command_pool_compute; }
 CommandPool& VulkanManager::get_command_pool_transfer() { return *shared_command_pool_transfer; }
-DescriptorPool& VulkanManager::get_descriptor_pool() { return *shared_descriptor_pool; }
+DescriptorPool& VulkanManager::get_descriptor_pool_graphics() { return *shared_descriptor_pool_graphics; }
+DescriptorPool& VulkanManager::get_descriptor_pool_compute() { return *shared_descriptor_pool_compute; }
+DescriptorPool& VulkanManager::get_descriptor_pool_transfer() { return *shared_descriptor_pool_transfer; }
 const VkPhysicalDeviceFeatures& VulkanManager::get_enabled_device_features() { return shared_enabled_device_features; }
 
 // === resource creation methods ===
@@ -16992,6 +17983,136 @@ void VulkanManager::release_mesh(uint32_t mesh_id) {
 	Log::info("VulkanManager: failed to release Mesh with ID ", mesh_id, ": the VulkanManager currenctly doesn't own a Mesh with this ID.");
 }
 
+VulkanManager::CollisionResources& VulkanManager::get_collision_resources() {
+	return *collision_resources;
+}
+
+uint64_t VulkanManager::record_compute_job(std::function<void(VulkanManager::VulkanJob&)> job_function) {
+	VulkanJob job;
+	job.task = &get_compute_task(__FUNCTION__);
+	job.job_function = std::move(job_function);
+	job.state = JobState::Recorded;
+	{
+		LockGuard lock({ &vulkan_mutex });
+		jobs.emplace(job.jobID, std::move(job));
+	}
+	return job.jobID;
+}
+
+uint64_t VulkanManager::record_graphics_job(std::function<void(VulkanManager::VulkanJob&)> job_function) {
+	VulkanJob job;
+	job.task = &get_graphics_task();
+	job.job_function = std::move(job_function);
+	job.state = JobState::Recorded;
+	{
+		LockGuard lock({ &vulkan_mutex });
+		jobs.emplace(job.jobID, std::move(job));
+	}
+	return job.jobID;
+}
+
+bool VulkanManager::erase_job(uint64_t jobID, bool ignore_task_protection_flag) {
+	LockGuard lock({ &vulkan_mutex });
+	if (jobs[jobID].state != JobState::Consumed) {
+		Log::debug(__FUNCTION__, ": Job must be in the Consumed state.");
+		return false;
+	}
+	if (!jobs[jobID].task->reset(ignore_task_protection_flag)) {
+		Log::debug(__FUNCTION__, ": Job failed to reset. Can't erase the job yet.");
+		return false;
+	}
+	jobs.erase(jobID);
+	return true;
+}
+
+VulkanManager::JobState VulkanManager::get_job_state(uint64_t jobID) {
+	LockGuard lock({ &vulkan_mutex });
+	auto it = jobs.find(jobID);
+	return it != jobs.end() ? it->second.state : JobState::Consumed;
+}
+
+
+bool VulkanManager::consume_job(uint64_t jobID) {
+	LockGuard lock({ &vulkan_mutex });
+	VulkanJob& job = jobs[jobID];
+	if (job.state == JobState::Ready) {
+		job.state = JobState::Consumed;
+		return true;
+	}
+	return false;
+}
+
+bool VulkanManager::consume_job(uint64_t jobID, std::function<void(VulkanJob&)> consume_function) {
+	LockGuard lock({ &vulkan_mutex });
+	auto it = jobs.find(jobID);
+	if (it == jobs.end()) { return false; }
+
+	VulkanJob& job = it->second;
+
+	if (job.get_state() == JobState::Ready) {
+		consume_function(job);			// execute function
+		job.task->set_protected(false);	// only AFTER readback!
+		job.state = JobState::Consumed;
+		return true;
+	}
+	return false;
+}
+
+void VulkanManager::process_jobs() {
+	if (std::this_thread::get_id() != MAIN_THREAD_ID) {
+		Log::error(__FUNCTION__, ": function call is forbidden on any threads other than the main thread !!!");
+	}
+
+	LockGuard lock({ &vulkan_mutex });
+
+	for (auto it = jobs.begin(); it != jobs.end(); ) {
+		VulkanJob& job = it->second;
+
+		switch (job.state) {
+			case JobState::Recorded: {
+				job.job_function(job);        // record + submit GPU work
+				job.task->set_protected(true);
+				job.state = JobState::Submitted;
+				++it;
+				break;
+			}
+
+			case JobState::Submitted: {
+				if (job.task && job.task->get_fence().signaled()) {
+					job.state = JobState::Ready;
+				}
+				++it;
+				break;
+			}
+
+			case JobState::Consumed: {
+				it = jobs.erase(it);
+				break;
+			}
+
+			default: {
+				++it;
+				break;
+			}
+		}
+	}
+}
+
+uint32_t VulkanManager::job_count() {
+	LockGuard lock({ &vulkan_mutex });
+	return static_cast<uint32_t>(jobs.size());
+}
+
+VulkanManager::CollisionResources::CollisionResources() {
+	const uint32_t wg_size_xyz = VOXEL_GRID_WORKGROUP_SIZE_XYZ;
+	PushConstants constants(0u, 0u, 0u); // placeholder for 3 uint
+	shader = std::make_unique<ShaderModule>(*device, CHECK_COLLISION_SPIRV_BIN, CHECK_COLLISION_SPIRV_BYTES);
+	set_layout = std::make_unique<DescriptorSetLayout>(*device);
+	set_layout->add_bindings(3, DescriptorType::STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_COMPUTE_BIT); // allocated 3 storage buffers at once
+	set_layout->finalize();
+	pipeline = std::make_unique<ComputePipeline>(*device, *shader, constants.get_size(), *set_layout, wg_size_xyz, wg_size_xyz, wg_size_xyz);
+}
+
 // private constructor: empty, because all the work is already done in get_singleton()
 VulkanManager::VulkanManager() {}
 
@@ -17021,6 +18142,7 @@ bool Renderer::FrameResources::update(Semaphore& tl_semaphore) {
 		for (auto& it : this->scene->get_particle_systems()) {
 			// import particle system meshes into scene
 			for (Mesh* mesh : it.get_particle_meshes()) {
+				LockGuard lock({ &it.particles_mutex });
 				this->scene->add_mesh(*mesh);
 			}
 		}
@@ -17237,6 +18359,15 @@ bool Renderer::FrameResources::update(Semaphore& tl_semaphore) {
 
 	// === UPDATE MODEL_MATRICES BUFFER ===
 	{
+		// lock scene entities and particle systems
+		std::vector<RankedMutex*> locks;
+		locks.push_back(&scene->entity_mutex);
+		locks.push_back(&scene->physics_mutex);
+		for (auto& ps : scene->particle_systems) {
+			locks.push_back(&ps.particles_mutex);
+		}
+		LockGuard lock(locks);
+
 		// allocate vector for visible entities
 		uint32_t scene_entities = static_cast<uint32_t>(std::count_if(this->scene->get_entities().begin(), this->scene->get_entities().end(),
 			[](const auto& pair) { return pair.second->is_visible(); }
@@ -17262,12 +18393,10 @@ bool Renderer::FrameResources::update(Semaphore& tl_semaphore) {
 		}
 		// 2. particles
 		for (const auto& it : this->scene->get_particle_systems()) {
-			it.lock_particles();
 			for (auto particle : it.get_active_particles()) { // all 'active' particles are visible by definition
 				model_matrices_vec.push_back(particle->entity->get_model_matrix());
 				this->visible_entities.push_back(particle->entity);
 			}
-			it.unlock_particles();
 		}
 
 		// write vector to device-local buffer (via staging buffer)
@@ -17323,7 +18452,7 @@ bool Renderer::FrameResources::update(Semaphore& tl_semaphore) {
 				this->renderer->m_descriptor_set_layout->finalize();
 				this->renderer->descriptor_set_layout = this->renderer->m_descriptor_set_layout.get();
 			}
-			DescriptorPool& pool = manager.get_descriptor_pool();
+			DescriptorPool& pool = manager.get_descriptor_pool_graphics();
 			this->set = std::make_unique<DescriptorSet>(device, *renderer->descriptor_set_layout, pool);
 		}
 		if (this->renderer->is_default_renderer) {
@@ -17383,7 +18512,7 @@ DescriptorSet& Renderer::FrameResources::get_descriptor_set() {
 	if (!this->set) {
 		VulkanManager& manager = VulkanManager::get_singleton();
 		Device& device = manager.get_device();
-		DescriptorPool& pool = manager.get_descriptor_pool();
+		DescriptorPool& pool = manager.get_descriptor_pool_graphics();
 		if (!this->renderer->descriptor_set_layout) {
 			// if undefined: use default layout
 			Log::debug(__FUNCTION__, ": descriptor set layout is undefined for this Renderer instance -> using default.");
@@ -17419,6 +18548,7 @@ Renderer::Renderer(Scene& scene, VkExtent2D extent, uint32_t frames_in_flight) :
 
 // destructor
 Renderer::~Renderer() {
+	LockGuard lock({ &this->scene->entity_mutex }); // required for clearing the visible entities vector
 #if defined(MAKE_RENDERDOC_CAPTURE)
 	VkDebug::capture_stop();
 #endif
@@ -17637,8 +18767,12 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 }
 
 bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
+
 	static Log::Timer timer;
 	if (timer.elapsed_sec(false) < 1.0f / this->max_fps) { return false; }
+
+	// Process GPU jobs on the main thread (required e.g. for physics/collisions update)
+	VulkanManager::process_jobs();
 
 	// find "frame in flight" with idle task and update it (write buffers, etc)
 	Log::debug("Searching for frame with available task in order to render the next frame.");
@@ -17702,20 +18836,24 @@ bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
 	std::vector<DrawCall> opaque_queue;
 
 	// Categorize visible entities into Opaque and Alpha queues
-	for (uint32_t e_idx = 0; e_idx < this->frames[current_frame].visible_entities.size(); ++e_idx) {
-		Mesh* current_mesh = &this->frames[current_frame].visible_entities[e_idx]->get_mesh();
-		const auto& submeshes = current_mesh->get_submeshes();
+	{
+		LockGuard lock({ &this->scene->entity_mutex });
 
-		for (const auto& submesh : submeshes) {
-			const Material& mat = *scene->get_unique_materials()[submesh.scene_local_material_index];
-			bool is_transparent = mat.alpha_mode == AlphaMode::ALPHA_BLEND_MODE || mat.transmission_factor > 0.01;
+		for (uint32_t e_idx = 0; e_idx < this->frames[current_frame].visible_entities.size(); ++e_idx) {
+			Mesh* current_mesh = &this->frames[current_frame].visible_entities[e_idx]->get_mesh();
+			const auto& submeshes = current_mesh->get_submeshes();
 
-			glm::vec3 world_center = glm::vec3(this->frames[current_frame].model_matrices_vec[e_idx] * glm::vec4(submesh.bbox.center(), 1.0f));
-			float dist = this->scene->get_active_camera().get_distance(world_center);
+			for (const auto& submesh : submeshes) {
+				const Material& mat = *scene->get_unique_materials()[submesh.scene_local_material_index];
+				bool is_transparent = mat.alpha_mode == AlphaMode::ALPHA_BLEND_MODE || mat.transmission_factor > 0.01;
 
-			DrawCall dc = { dist, e_idx, &submesh, current_mesh, submesh.scene_local_material_index };
-			if (is_transparent) alpha_queue.push_back(dc);
-			else opaque_queue.push_back(dc);
+				glm::vec3 world_center = glm::vec3(this->frames[current_frame].model_matrices_vec[e_idx] * glm::vec4(submesh.bbox.center(), 1.0f));
+				float dist = this->scene->get_active_camera().get_distance(world_center);
+
+				DrawCall dc = { dist, e_idx, &submesh, current_mesh, submesh.scene_local_material_index };
+				if (is_transparent) alpha_queue.push_back(dc);
+				else opaque_queue.push_back(dc);
+			}
 		}
 	}
 

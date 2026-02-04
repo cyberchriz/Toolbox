@@ -17,8 +17,9 @@ void particles_test() {
 	rd.set_fps(200);
 
 	// particle system
-	Mesh particle(device, "resources/models/obj/DefaultObjects/Metalball.obj", tl_semaphore, true, true);
-	particle.set_mass_kg(50.0f);
+	Mesh particle(device, "resources/models/obj/DefaultObjects/Metalball.obj", tl_semaphore, true, true, 0, UpAxis::Y_UP, 0.01f);
+	particle.enabled_complex_geometry(false);
+	particle.set_mass_kg(1.0f);
 	Material& mat = particle.get_materials()[0];
 	mat.base_color = { 1.0f, 1.0f, 1.0f, 1.0f};
 	mat.metallic = 1.0f;
@@ -33,14 +34,15 @@ void particles_test() {
 	ParticleSystem& particle_sys = scene.add_particle_system(spawner_ent);
 	ParticleConfig config;
 	config.gravity_enabled = true;
-	config.initial_velocity_minmax = { 10, 10 };
-	config.lifetime_minmax = { 20,20 };
-	config.scale_minmax = { 1.0f, 1.0f };
-	config.src_offset_sigma = 0.0f;
+	config.initial_velocity_minmax = { 10, 20 };
+	config.lifetime_minmax = { 15,25 };
+	config.scale_minmax = { 0.5f, 1.5f };
+	config.src_offset_sigma = 7.0f;
 	config.tumble_strength = 1.0f;
 	config.cone_angle_degrees = 360.0f;
+	config.mass_changes_with_scale = true;
 	particle_sys.add_particles(particle, 1000, config);
-	particle_sys.emit({ 1000, 0, 0 }, 30.0f);
+	particle_sys.emit({ 0, 1000, 0 }, 20.0f);
 
 	// set scene details
 	scene.get_active_camera().set_world_up(UpAxis::Y_UP);
