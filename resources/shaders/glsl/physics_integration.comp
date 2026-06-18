@@ -1,0 +1,274 @@
+// Vulkan/GLSL compute shader: Physics Integration
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+#define EPSILON 1e-6f
+#define SAFE_MASS 1e-4f
+#define SAFE_DIM 1e-4f
+
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+struct PhysicsState {
+    mat4 model_matrix;
+    mat4 inv_model_matrix;
+    mat4 rot_inv_inertia;
+
+    vec4 orientation;
+    
+    vec4 mesh_bbox_min;
+    vec4 mesh_bbox_max;
+    vec4 world_bbox_min;
+    vec4 world_bbox_max;
+    vec4 world_bbox_center;
+    vec4 world_bbox_axes[3];
+
+    vec4 scale;
+    vec4 pos;
+    vec4 lin_vel;
+    vec4 gravity;
+    vec4 lin_thrust;
+    vec4 spin_vel;
+    vec4 spin_thrust;
+    vec4 scale_vel;
+    vec4 scale_acc;
+    vec4 mesh_local_cog;
+    vec4 world_cog;
+
+    int unique_entity_ID;
+    int unique_mesh_ID;
+    int last_collided_with;
+    int lin_enabled;
+
+    int rot_enabled;
+    int solid;
+    uint voxel_master_buffer_offset;
+    uint voxel_buffer_elements;
+
+    float mesh_base_mass_kg;
+    float scaled_mass_kg;
+    float inv_scaled_mass_kg;
+    float restitution;
+
+    float friction;
+    float drag_coeff;
+    float tumble_strength;
+    float rho;
+
+    float mesh_fill_ratio;
+    float length_unit;
+    int lin_impulse_x;	    // accumulators for atomicAdd
+	int	lin_impulse_y;	    // ""
+
+	int	lin_impulse_z;	    // ""
+	int	spin_impulse_x;	    // ""
+	int	spin_impulse_y;	    // ""
+	int	spin_impulse_z;	    // ""
+
+	int pos_impulse_x;		// accumulators for atomic Baumgarte positional correction
+	int pos_impulse_y;		// ""
+	int pos_impulse_z;		// ""
+	int protection_flag;    // 0 = false; 1 = the user has made updates to the state since the last physics snapshot
+};
+
+struct EntitySortKey {
+    float x_min;
+    uint entID; // note: this is NOT the same as the global unique_entity_ID, but rather the index into the states buffer (which is used for sorting) !!!
+};
+
+layout(set = 0, binding = 0, std430) buffer states_buffer { PhysicsState states[]; };
+layout(set = 0, binding = 1) buffer sort_keys_buffer { EntitySortKey sort_keys[]; };
+layout(set = 0, binding = 4) buffer collision_candidates_count_buffer { uint candidates_count[]; }; // single element buffer to hold the count of candidates, incremented atomically
+
+layout(push_constant) uniform push_constants {
+    uint states_count;
+    uint vb_res;
+    float dt_substep;
+    uint max_collisions_per_substep;
+    float complex_threshold; // size threshold to determine if we should do voxel-based collision or just flag as simple (SAT)
+    uint solver_iterations;
+    uint sort_stage; // 0 = even, 1 = odd
+} pc;
+
+// --- MATH HELPERS ---
+
+mat3 quat_to_mat3(vec4 q) {
+    mat3 m;
+    float qx2 = q.x + q.x, qy2 = q.y + q.y, qz2 = q.z + q.z;
+    float qxx = q.x * qx2, qxy = q.x * qy2, qxz = q.x * qz2;
+    float qyy = q.y * qy2, qyz = q.y * qz2, qzz = q.z * qz2;
+    float qwx = q.w * qx2, qwy = q.w * qy2, qwz = q.w * qz2;
+    m[0][0] = 1.0 - (qyy + qzz); m[1][0] = qxy - qwz;         m[2][0] = qxz + qwy;
+    m[0][1] = qxy + qwz;         m[1][1] = 1.0 - (qxx + qzz); m[2][1] = qyz - qwx;
+    m[0][2] = qxz - qwy;         m[1][2] = qyz + qwx;         m[2][2] = 1.0 - (qxx + qyy);
+    return m;
+}
+
+vec4 quat_mul(vec4 q1, vec4 q2) {
+    return vec4(
+        q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y,
+        q1.w * q2.y + q1.y * q2.w + q1.z * q2.x - q1.x * q2.z,
+        q1.w * q2.z + q1.z * q2.w + q1.x * q2.y - q1.y * q2.x,
+        q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z
+    );
+}
+
+vec3 rotate_vec(vec3 v, vec4 q) {
+    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+}
+
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    if (x >= pc.states_count) {
+        sort_keys[x].x_min = 1e10f;
+        sort_keys[x].entID = x;
+        return;
+    }
+
+    // Work with a local copy to maximize register usage
+    PhysicsState s = states[x]; 
+
+    // === 1. SCALE & MASS INTEGRATION ===
+    s.scale_vel.xyz += s.scale_acc.xyz * pc.dt_substep;
+    s.scale.xyz = max(s.scale.xyz + s.scale_vel.xyz * pc.dt_substep, vec3(SAFE_DIM));
+    vec3 visual_scale = s.scale.xyz * s.length_unit;
+    s.scaled_mass_kg = max(s.mesh_base_mass_kg * (s.scale.x * s.scale.y * s.scale.z), SAFE_MASS);
+    s.inv_scaled_mass_kg = (s.lin_enabled != 0) ? (1.0f / s.scaled_mass_kg) : 0.0;
+    vec3 dim = max((s.mesh_bbox_max.xyz - s.mesh_bbox_min.xyz) * visual_scale, vec3(SAFE_DIM));
+
+
+    // === 2. LINEAR PHYSICS ===
+    if (s.lin_enabled != 0) {
+        vec3 lin_acc = s.gravity.xyz + (s.lin_thrust.xyz * s.inv_scaled_mass_kg);
+        s.lin_thrust.xyz = vec3(0.0f); // = reset after use (this is NOT CONTINUOUS THRUST !)
+        float speed = length(s.lin_vel.xyz);
+
+        if (speed > 0.001) {
+            vec3 lin_dir = s.lin_vel.xyz / speed;
+            mat3 rot_inv = transpose(quat_to_mat3(s.orientation));
+            vec3 local_v_dir = abs(rot_inv * lin_dir);
+            
+            float area = (dim.y * dim.z * local_v_dir.x) +
+                         (dim.x * dim.z * local_v_dir.y) +
+                         (dim.x * dim.y * local_v_dir.z);
+
+            float drag_mag = 0.5 * s.rho * (speed * speed) * s.drag_coeff * area;
+            float max_drag_acc = speed / pc.dt_substep;
+            lin_acc -= lin_dir * min(drag_mag * s.inv_scaled_mass_kg, 0.99 * max_drag_acc);
+        }
+
+        s.lin_vel.xyz += lin_acc * pc.dt_substep;
+        s.pos.xyz += s.lin_vel.xyz * pc.dt_substep;
+    }
+
+    // === 3. ROTATIONAL PHYSICS ===
+    if (s.rot_enabled != 0) {
+        // 1. Cuboid Approximation for Local Inverse Inertia Tensor
+        vec3 d2 = dim * dim;
+        
+        // We use 12.0 / (M * sum_of_squares) to get the inverse
+        mat3 inv_I_local = mat3(0.0);
+        inv_I_local[0][0] = 12.0f / max(s.scaled_mass_kg * (d2.y + d2.z), EPSILON); // Inv Ixx
+        inv_I_local[1][1] = 12.0f / max(s.scaled_mass_kg * (d2.x + d2.z), EPSILON); // Inv Iyy
+        inv_I_local[2][2] = 12.0f / max(s.scaled_mass_kg * (d2.x + d2.y), EPSILON); // Inv Izz
+
+        // 2. Rotate to World Space: I_inv_world = R * I_inv_local * R_transpose
+        mat3 R_mat = quat_to_mat3(s.orientation);
+        s.rot_inv_inertia = mat4(R_mat * inv_I_local * transpose(R_mat));
+
+        // 3. Integrate Spin
+        // Torque = r x F. Spin_acc = I_inv * Torque
+        vec3 spin_acc = mat3(s.rot_inv_inertia) * s.spin_thrust.xyz;
+        s.spin_thrust.xyz = vec3(0.0f); // = reset after use (this is NOT CONTINUOUS THRUST !)
+
+        // 4. Tumble (Weather-vaning)
+        float speed = length(s.lin_vel.xyz);
+        if (s.tumble_strength > 0.0 && speed > 1.0) {
+            float dyn_press = min(0.5 * s.rho * speed * speed, 1e6);
+            float total_area = (dim.y * dim.z) + (dim.x * dim.z) + (dim.x * dim.y);
+            vec3 lin_dir = s.lin_vel.xyz / speed;
+            
+            // Lever arm from World COG to Center of Pressure (approximated as mesh center)
+            vec3 mesh_center_local = (s.mesh_bbox_max.xyz + s.mesh_bbox_min.xyz) * 0.5f;
+            vec3 lever = rotate_vec((mesh_center_local - s.mesh_local_cog.xyz) * visual_scale, s.orientation);
+            
+            vec3 torque = cross(lever, -lin_dir * dyn_press * total_area * s.tumble_strength);
+            spin_acc += mat3(s.rot_inv_inertia) * torque;
+        }
+
+        // 5. Update Spin Velocity
+        s.spin_vel.xyz += spin_acc * pc.dt_substep;
+        
+        // 6. Update Orientation (Angular Displacement)
+        float omega = length(s.spin_vel.xyz);
+        if (omega > EPSILON) {
+            float angle = omega * pc.dt_substep;
+            vec3 axis = s.spin_vel.xyz / omega;
+            // Create delta quaternion from axis-angle
+            vec4 dq = vec4(axis * sin(angle * 0.5f), cos(angle * 0.5f));
+            s.orientation = normalize(quat_mul(dq, s.orientation));
+        }
+    }
+
+    // === 4. MATRIX & BOUNDS UPDATE ===
+    mat3 R = quat_to_mat3(s.orientation);
+    s.world_bbox_axes[0] = vec4(R[0], 0.0);
+    s.world_bbox_axes[1] = vec4(R[1], 0.0);
+    s.world_bbox_axes[2] = vec4(R[2], 0.0);
+
+    // Construct Model Matrix: Translation * Rotation * Scale * Translation(-COG)
+    mat4 T = mat4(1.0); T[3].xyz = s.pos.xyz;
+    mat4 R4 = mat4(R);
+    mat4 S = mat4(1.0);
+    S[0][0] = s.scale.x * s.length_unit;
+    S[1][1] = s.scale.y * s.length_unit;
+    S[2][2] = s.scale.z * s.length_unit;
+    mat4 T_cog = mat4(1.0);
+    T_cog[3].xyz = -s.mesh_local_cog.xyz;
+    
+    s.model_matrix = T * R4 * S * T_cog;
+    
+    // Safety check for inversion
+    float det = determinant(mat3(s.model_matrix));
+    if (abs(det) > 1e-15) {
+        s.inv_model_matrix = inverse(s.model_matrix);
+    }
+
+    // Note: s.pos is ALREADY the World Space Center of Gravity (due to T_cog being applied before rotation/translation).
+    s.world_cog.xyz = s.pos.xyz;
+
+    // AABB Calculation
+    vec3 half_extents = (s.mesh_bbox_max.xyz - s.mesh_bbox_min.xyz) * 0.5 * visual_scale;
+    vec3 local_center = (s.mesh_bbox_max.xyz + s.mesh_bbox_min.xyz) * 0.5;
+    vec3 world_center = s.pos.xyz + rotate_vec((local_center - s.mesh_local_cog.xyz) * visual_scale, s.orientation);
+    vec3 extent_world = abs(R[0]) * half_extents.x + abs(R[1]) * half_extents.y + abs(R[2]) * half_extents.z;
+
+    s.world_bbox_min = vec4(world_center - extent_world, 0.0);
+    s.world_bbox_max = vec4(world_center + extent_world, 0.0);
+    s.world_bbox_center = vec4(world_center, 0.0);
+
+    // Reset accumulators (impulse & position) for this substep
+    s.lin_impulse_x = 0;
+	s.lin_impulse_y = 0;
+	s.lin_impulse_z = 0;
+
+	s.spin_impulse_x = 0;
+	s.spin_impulse_y = 0;
+	s.spin_impulse_z = 0;
+
+    s.pos_impulse_x = 0;
+    s.pos_impulse_y = 0;
+    s.pos_impulse_z = 0;
+
+    // === 5. FINAL WRITE BACK ===
+    states[x] = s;
+
+    // Initialize sort keys for the broad-phase
+    sort_keys[x].x_min = s.world_bbox_min.x;
+    sort_keys[x].entID = x;
+
+    // Reset collision candidates count for this substep
+    if (x == 0) {
+        candidates_count[0] = 0;
+    }
+}

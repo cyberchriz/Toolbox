@@ -1,0 +1,245 @@
+#version 450
+
+#define EPSILON 1e-6f
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// ==========================
+// GPU-side data structures
+// ==========================
+
+struct PhysicsState {
+    mat4 model_matrix;
+    mat4 inv_model_matrix;
+    mat4 rot_inv_inertia;
+
+    vec4 orientation;
+    
+    vec4 mesh_bbox_min;
+    vec4 mesh_bbox_max;
+    vec4 world_bbox_min;
+    vec4 world_bbox_max;
+    vec4 world_bbox_center;
+    vec4 world_bbox_axes[3];
+
+    vec4 scale;
+    vec4 pos;
+    vec4 lin_vel;
+    vec4 gravity;
+    vec4 lin_thrust;
+    vec4 spin_vel;
+    vec4 spin_thrust;
+    vec4 scale_vel;
+    vec4 scale_acc;
+    vec4 mesh_local_cog;
+    vec4 world_cog;
+
+    int unique_entity_ID;
+    int unique_mesh_ID;
+    int last_collided_with;
+    int lin_enabled;
+
+    int rot_enabled;
+    int solid;
+    uint voxel_master_buffer_offset;
+    uint voxel_buffer_elements;
+
+    float mesh_base_mass_kg;
+    float scaled_mass_kg;
+    float inv_scaled_mass_kg;
+    float restitution;
+
+    float friction;
+    float drag_coeff;
+    float tumble_strength;
+    float rho;
+
+    float mesh_fill_ratio;
+    float length_unit;
+    int lin_impulse_x;	    // accumulators for atomicAdd
+	int	lin_impulse_y;	    // ""
+
+	int	lin_impulse_z;	    // ""
+	int	spin_impulse_x;	    // ""
+	int	spin_impulse_y;	    // ""
+	int	spin_impulse_z;	    // ""
+
+	int pos_impulse_x;		// accumulators for atomic Baumgarte positional correction
+	int pos_impulse_y;		// ""
+	int pos_impulse_z;		// ""
+	int protection_flag;    // 0 = false; 1 = the user has made updates to the state since the last physics snapshot
+};
+
+struct CollisionResult {
+    vec4 normal;  // for storing the final results after averaging (resolution step 1)
+    vec4 contact; // ""
+
+    int normal_sum_x;
+    int normal_sum_y;
+    int normal_sum_z;
+    uint hit_count;
+
+    int contact_x;
+    int contact_y;
+    int contact_z;
+    int is_complex_collision; // 0 for simple AABB (SAT), 1 for complex voxel-based collision
+    
+    int entID_A;
+	int entID_B;   
+    float overlap;
+    int padding;
+};
+
+// ==========================
+// Buffers
+// ==========================
+layout(set = 0, binding = 0, std430) buffer states_buffer { PhysicsState states[]; };
+layout(set = 0, binding = 4, std430) buffer collision_candidates_count_buffer { uint candidates_count[]; }; // single element buffer to hold the count of candidates, incremented atomically
+layout(set = 0, binding = 5, std430) buffer collision_results_buffer { CollisionResult results[]; };
+
+// ==========================
+// Push constants
+// ==========================
+layout(push_constant) uniform push_constants {
+    uint states_count;
+    uint vb_res;
+    float dt_substep;
+    uint max_collisions_per_substep;
+    float complex_threshold; // size threshold to determine if we should do voxel-based collision or just flag as simple (SAT)
+    uint solver_iterations;
+    uint sort_stage; // 0 = even, 1 = odd
+} pc;
+
+
+// ==========================
+// Main
+// ==========================
+void main() {
+    uint candID = gl_GlobalInvocationID.x;
+    
+    // Safety check against the atomic counter from Step 3
+    if (candID >= candidates_count[0] || candID >= pc.max_collisions_per_substep) return;
+
+    // Use a reference to the result for readability
+    if (results[candID].hit_count == 0) return;
+
+    uint idA = uint(results[candID].entID_A);
+    uint idB = uint(results[candID].entID_B);
+
+    // --- 1. CONTACT POINT & NORMAL AVERAGING ---
+    float h_count = float(results[candID].hit_count);
+    
+    // Convert fixed-point sums back to floats
+    vec3 avg_contact = vec3(
+        float(results[candID].contact_x) / (h_count * 1000.0f),
+        float(results[candID].contact_y) / (h_count * 1000.0f),
+        float(results[candID].contact_z) / (h_count * 1000.0f)
+    );
+
+    vec3 raw_normal = vec3(
+        float(results[candID].normal_sum_x),
+        float(results[candID].normal_sum_y),
+        float(results[candID].normal_sum_z)
+    );
+
+    // Guard against zero-length normalization
+    vec3 avg_normal = (length(raw_normal) > EPSILON) ? normalize(raw_normal) : vec3(0, 1, 0);
+
+    // Store back to buffer for Step 5.2
+    results[candID].contact = vec4(avg_contact, 1.0);
+    results[candID].normal = vec4(avg_normal, 0.0);
+
+    // --- 2. PENETRATION (OVERLAP) ESTIMATION ---
+    // Calculate volume of a single voxel
+    vec3 sizeA = (states[idA].mesh_bbox_max.xyz - states[idA].mesh_bbox_min.xyz) * (states[idA].scale.xyz * states[idA].length_unit);
+    float voxel_vol = (sizeA.x * sizeA.y * sizeA.z) / pow(float(pc.vb_res), 3.0);
+    float overlap_vol = h_count * voxel_vol;
+    
+    // Calculate projected contact area for penetration depth
+    vec3 n_abs = abs(avg_normal);
+    float contact_area = (n_abs.x * sizeA.y * sizeA.z) + (n_abs.y * sizeA.x * sizeA.z) + (n_abs.z * sizeA.x * sizeA.y);
+    
+    float penetration = overlap_vol / max(contact_area, 1e-4f);
+    // Clamp penetration to 20% of the object size to prevent "explosive" physics
+    results[candID].overlap = clamp(penetration, 0.0f, 0.2f * length(sizeA));
+
+    // --- 3. ANTI-DRIFT BIAS & GRAVITY CANCELLATION ---
+    if (states[idA].solid != 0 && states[idB].solid != 0) {
+    
+        // Improved Anti-Drift (Baumgarte Stabilization):
+        // We inject a velocity proportional to the penetration depth (overlap).
+        // This acts as a restorative force to push objects out of each other.
+        if (results[candID].overlap > 0.0005f) {
+            vec3 rel_v = states[idB].lin_vel.xyz - states[idA].lin_vel.xyz;
+            float sep_v = dot(rel_v, avg_normal);
+
+            // Baumgarte parameters
+            const float bias_factor = 0.35f; // recovery per substep
+            const float slop = 0.0002f;      // Allowed penetration before bias kicks in
+        
+            // Calculate how much velocity we need to inject to fix the overlap
+            float bias_vel = (max(results[candID].overlap - slop, 0.0f) / pc.dt_substep) * bias_factor;
+        
+            // Only apply bias if the relative velocity isn't already separating the objects fast enough
+            if (sep_v < bias_vel) {
+                float correction = bias_vel - sep_v;
+            
+                float wA = states[idA].inv_scaled_mass_kg;
+                float wB = states[idB].inv_scaled_mass_kg;
+                float total_w = wA + wB;
+
+                if (total_w > EPSILON) {
+                    if (states[idA].lin_enabled != 0) states[idA].lin_vel.xyz -= (wA / total_w) * correction * avg_normal;
+                    if (states[idB].lin_enabled != 0) states[idB].lin_vel.xyz += (wB / total_w) * correction * avg_normal;
+                }
+            }
+        }
+
+        // Standard Gravity Cancellation (prevents acceleration gain into surface)
+        float g_projA = dot(states[idA].gravity.xyz, avg_normal);
+        if (g_projA < 0.0) {
+            vec3 v_corr = -(g_projA * avg_normal) * pc.dt_substep;
+            states[idA].lin_vel.xyz += v_corr;
+        }
+
+        vec3 normalB = -avg_normal;
+        float g_projB = dot(states[idB].gravity.xyz, normalB);
+        if (g_projB < 0.0) {
+            vec3 v_corr = -(g_projB * normalB) * pc.dt_substep;
+            states[idB].lin_vel.xyz += v_corr;
+        }
+    }
+
+    // --- 4. BUOYANCY & FLUID DYNAMICS ---
+    if (states[idA].solid != states[idB].solid) {
+        uint fluidID = (states[idA].solid == 0) ? idA : idB;
+        uint solidID = (states[idA].solid == 0) ? idB : idA;
+
+        // Density calculation
+        vec3 fSize = (states[fluidID].mesh_bbox_max.xyz - states[fluidID].mesh_bbox_min.xyz) * (states[fluidID].scale.xyz * states[fluidID].length_unit);
+        float fVol = (fSize.x * fSize.y * fSize.z) * max(states[fluidID].mesh_fill_ratio, 0.01f);
+        float rho_m = states[fluidID].scaled_mass_kg / max(fVol, 1e-4f);
+
+        // Buoyancy: F = rho * V_displaced * gravity
+        vec3 buoyancyForce = rho_m * overlap_vol * (-states[solidID].gravity.xyz);
+        
+        // Drag Correction
+        float rho_air = 1.225f;
+        vec3 relative_v = states[solidID].lin_vel.xyz;
+        float speed = length(relative_v);
+        
+        if (speed > EPSILON) {
+            vec3 dragDir = -normalize(relative_v);
+            float dragMagAir = 0.5f * rho_air * speed * speed * states[solidID].drag_coeff * contact_area;
+            float dragMagMed = 0.5f * rho_m * speed * speed * states[solidID].drag_coeff * contact_area;
+            buoyancyForce += (dragMagMed - dragMagAir) * dragDir;
+        }
+
+        // Apply instantaneous velocity change (Euler integration sub-step)
+        if (states[solidID].inv_scaled_mass_kg > 0.0) {
+            states[solidID].lin_vel.xyz += (buoyancyForce * states[solidID].inv_scaled_mass_kg) * pc.dt_substep;
+        }
+    }
+}

@@ -14,43 +14,55 @@ void particles_test() {
 	Renderer rd(scene, extent);
 	Surface& surface = manager.get_surface(extent.width, extent.height, "Vulkan Graphics ParticleSystem Test");
 	rd.set_surface(surface);
-	rd.set_fps(200);
+
+	// Floor
+	Mesh floor(device, "resources/models/obj/DefaultObjects/default_cube.obj", tl_semaphore, true, true, 0, UpAxis::Y_UP, 1.0f);
+	floor.set_bounce_restitution(0.1f);
+	floor.make_solid(true);
+	floor.set_surface_friction(1.0f);
+	Material& fmat = floor.get_materials()[0];
+	fmat.base_color = { 0.0f, 1.0f, 1.0f, 1.0f };
+	uint32_t floor_entID = scene.add_entity(floor, { 0.0f, -25.0f, 0.0f }, true);
+	scene.get_entity(floor_entID).set_scale({100,1,100});
+	scene.get_entity(floor_entID).enable_physics(false); // make stationary
 
 	// particle system
-	Mesh particle(device, "resources/models/obj/DefaultObjects/Metalball.obj", tl_semaphore, true, true, 0, UpAxis::Y_UP, 0.01f);
-	particle.enabled_complex_geometry(false);
-	particle.set_mass_kg(1.0f);
-	Material& mat = particle.get_materials()[0];
-	mat.base_color = { 1.0f, 1.0f, 1.0f, 1.0f};
-	mat.metallic = 1.0f;
-	mat.roughness = 0.2f;
-	mat.specular = { 0.8f, 0.8f, 0.8f, 1.0f };
-	mat.glossiness_factor = 1.0f;
-	mat.shininess = 1.0f;
-	mat.illum = 4;
-	uint32_t spawner_entID = scene.add_entity(particle, { 0,0,0 }, false);
-	Entity& spawner_ent = scene.get_entity(spawner_entID);
-	spawner_ent.enable_physics(false);
-	ParticleSystem& particle_sys = scene.add_particle_system(spawner_ent);
+	Mesh particle(device, "resources/models/obj/DefaultObjects/Metalball.obj", tl_semaphore, true, true, 0, UpAxis::Y_UP, 1.0f);
+	particle.set_mass_kg(50.0f);
+	particle.set_surface_friction(1.0f);
+	particle.set_bounce_restitution(0.8f);
+	particle.make_solid(true);
+	Material& pmat = particle.get_materials()[0];
+	pmat.base_color = { 1.0f, 1.0f, 1.0f, 1.0f};
+	pmat.metallic = 1.0f;
+	pmat.roughness = 0.1f;
+	pmat.specular = { 0.8f, 0.8f, 0.8f, 1.0f };
+	pmat.glossiness_factor = 1.0f;
+	pmat.shininess = 1.0f;
+	pmat.illum = 4;
+	glm::vec3 spawn_pos = { 0.0f, 0.0f, 0.0f };
+	ParticleSystem& particle_sys = scene.add_particle_system(spawn_pos);
+
 	ParticleConfig config;
 	config.gravity_enabled = true;
-	config.initial_velocity_minmax = { 10, 20 };
-	config.lifetime_minmax = { 15,25 };
-	config.scale_minmax = { 0.5f, 1.5f };
-	config.src_offset_sigma = 7.0f;
-	config.tumble_strength = 1.0f;
+	config.initial_velocity_minmax = { 5, 5 };
+	config.lifetime_minmax = { 20,20 };
+	config.scale_minmax = { 1.5f, 3.5f };
+	config.src_offset_sigma = 0.0f;
+	config.tumble_strength = 0.0f;
 	config.cone_angle_degrees = 360.0f;
 	config.mass_changes_with_scale = true;
-	particle_sys.add_particles(particle, 1000, config);
-	particle_sys.emit({ 0, 1000, 0 }, 20.0f);
+	particle_sys.add_particles(particle, 2000, config);
+	particle_sys.emit({ 0, 1, 0 }, 10.0f);
 
 	// set scene details
-	scene.get_active_camera().set_world_up(UpAxis::Y_UP);
-	scene.get_active_camera().set_position({ 0.0f, 0.0f, 20.0f });
-	scene.get_active_camera().look_at(spawner_ent);
-	scene.get_active_camera().set_aspect_ratio(extent);
-	scene.get_active_camera().set_near_plane(0.01f);
-	scene.get_active_camera().set_far_plane(100.0f);
+	Camera& cam = scene.get_active_camera();
+	cam.set_world_up(UpAxis::Y_UP);
+	cam.set_position({ 0.0f, 0.0f, 100.0f });
+	cam.look_at(spawn_pos);
+	cam.set_aspect_ratio(extent);
+	cam.set_near_plane(0.01f);
+	cam.set_far_plane(500.0f);
 	scene.set_ambient({ 0.0f, 0.0f, 0.0f });
 	scene.set_exposure(0.5f);
 	scene.set_contrast(1.0f);
@@ -58,7 +70,7 @@ void particles_test() {
 
 	// add a front spot light
 	uint32_t light_id = scene.add_scene_light(LightType::DIRECTIONAL_LIGHT, { 50.0f, 0.0f, 100.0f });
-	scene.get_scene_light(light_id).point_to(spawner_ent);
+	scene.get_scene_light(light_id).point_to(spawn_pos);
 	scene.get_scene_light(light_id).set_intensity(20.0f);
 
 	// Add Event Listeners for Scroll / Translate / Rotate / WindowClose / WindowResize
@@ -72,7 +84,25 @@ void particles_test() {
 	);
 	surface.add_event_listener(
 		EventType::MOUSE_SCROLL,
-		[&](const SurfaceEvent& e) { spawner_ent.translate({ 0.0f, 0.0f, 0.1f * e.scroll.yoffset }); return true; }
+		[&](const SurfaceEvent& e) { cam.set_fov(cam.get_fov() + 0.1f * e.scroll.yoffset); return true; }
+	);
+	surface.add_event_listener(
+		EventType::MOUSE_MOVE,
+		[&](const SurfaceEvent& e) {
+			auto& em = surface.get_event_manager();
+			if (em.mouse_button_pressed(GLFW_MOUSE_BUTTON_LEFT)) {
+				double dx, dy;
+				em.mouse_delta(dx, dy);
+				if (em.check_modifiers(GLFW_MOD_CONTROL)) {
+					cam.translate({ static_cast<float_t>(dx * 0.1f), static_cast<float_t>(-dy * 0.1f), 0.0f });
+				}
+				else {
+					cam.rotate(static_cast<float>(dy * 0.1f), static_cast<float>(dx * 0.1f), 0.0f);
+				}
+				return true;
+			}
+			return false; // Let the event pass through if the button isn't held
+		}
 	);
 
 	// main render loop

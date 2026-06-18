@@ -18,23 +18,29 @@
 #define INVALID_ID -1
 #define INVALID_HASH UINT64_MAX
 #define CUBEMAP_FACE_COUNT 6
-#define MAX_DESCRIPTOR_SET_COUNT 50 // max number of descriptor sets within the shared singleton descriptor pool
-#define MAX_TASKS_IN_DEBUG  50 // if this number of compute or graphics tasks is exceeded, this will trigger a warning in DEBUG to indicate a possible resource leak (=muted in release)
-#define MAX_VULKAN_JOBS 20
+#define MAX_DESCRIPTOR_SET_COUNT 500 // max number of descriptor sets within the shared singleton descriptor pool
+#define MAX_TASKS_IN_DEBUG  100 // if this number of compute or graphics tasks is exceeded, this will trigger a warning in DEBUG to indicate a possible resource leak (=muted in release)
+#define MAX_VULKAN_JOBS 5
 #define MAX_FRAMES_IN_FLIGHT 3
-#define MAX_COLLISION_JOBS_IN_FLIGHT 20
-#define PHYSICS_UPDATE_MILLISEC 64
-#define MAX_PHYSICS_SUBSTEPS 16
-#define PHYSICS_SUBSTEP_SAFETY_FACTOR 0.85f // percentage of estimated time budget to calculate substep count
+#define MAX_COLLISION_JOBS_IN_FLIGHT 3
+#define PHYSICS_UPDATE_MILLISEC 20
+#define PHYSICS_SUBSTEPS 3
+#define SWEPT_MODEL_MATRIX false
+#define PHYSICS_SUBSTEP_SAFETY_FACTOR 0.85 // percentage of estimated time budget to calculate substep count
 #define PHYSICS_DT_CAP_MILLISEC 256 // prevent large jumps or exessive particle emission when system is lagging
-#define MODEL_MATRIX_UPDATE_THRESHOLD_MS 8.0f // prevent the model matrix from being updated more frequently than this
-#define PARTICLES_UPDATE_MILLISEC 16
+#define PHYSICS_WORKGROUP_SIZE_X 256
+#define COLLISION_SOLVER_ITERATIONS 4
+#define COMPLEX_COLLISIONS_SIZE_THRESHOLD 0.01f // size threshold (bounding box diagonal) for using complex collision (voxel-based) vs simple collision (bounding box)
+#define MAX_COLLISION_COUNT_PER_SUBSTEP 1000
+#define PARTICLES_UPDATE_MILLISEC 5
 #define PHYSICS_CELL_SIZE 1.0f // cell size for gathering collisions in the "broad phase"
-#define COLLISION_VELOCITY_THRESHOLD 0.01f
+#define COLLISION_HASHING_MAX_CELLS_PER_OBJECT 65536
+#define MINIMUM_LIN_SCALE 0.001f // defines the scale where entities are automatically set to "invisible" to avoid unnecessary processing for render
+#define COLLISION_VELOCITY_THRESHOLD -0.01f
 #define COMPLEX_COLLISION_VOXEL_RESOLUTION 64
-#define VOXEL_GRID_WORKGROUP_SIZE_XYZ 4
+#define VOXEL_GRID_WORKGROUP_SIZE_XYZ 8
 #define MINIMUM_VOL_SCALE 1e-6f
-#define MINIMUM_SAFE_MASS 0.001f // = 1g
+#define MINIMUM_SAFE_MASS 0.0001f // = 0.1g
 #define DEFAULT_API_MAJOR_VERSION 1
 #define DEFAULT_API_MINOR_VERSION 3
 #define DEFAULT_API_PATCH_VERSION 0
@@ -475,12 +481,6 @@ enum class LockRank : uint32_t { // helper enum to make sure correct thread lock
 	Event			= 4
 };
 
-struct RankedMutex {
-	std::mutex mtx;
-	LockRank rank;
-	explicit RankedMutex(LockRank r) : rank(r) {}
-};
-
 struct Handedness {
 	inline static const float_t Right = 1.0f;
 	inline static const float_t Left = -1.0f;
@@ -821,6 +821,13 @@ bool is_hdr(VkFormat format) {
 // +=================================+   
 // | LockGuard                       |
 // +=================================+
+
+struct RankedMutex {
+	std::mutex mtx;
+	LockRank rank;
+	explicit RankedMutex(LockRank r) : rank(r) {}
+};
+
 // This guarantees:
 // - No deadlock from ordering
 // - One place defines the rule
@@ -2360,11 +2367,44 @@ protected:
 // +=================================+   
 // | Boundary Box (BBox)             |
 // +=================================+
-struct BBox {
-	glm::vec3 min = glm::vec3(FLT_MAX);
-	glm::vec3 max = glm::vec3(-FLT_MAX);
-	glm::vec3 center() const { return (this->min + max) * 0.5f; }
-	glm::vec3 size() const { return glm::vec3({max.x - min.x, max.y - min.y, max.z - min.z}); }
+class BBox {
+public:
+	glm::vec3 min() const { return glm::vec3(this->_min.x, this->_min.y, this->_min.z); }
+	glm::vec3 max() const { return glm::vec3(this->_max); }
+	void set_min(glm::vec3 value) { this->_min = { value.x, value.y, value.z, 0.0f }; }
+	void set_max(glm::vec3 value) { this->_max = { value.x, value.y, value.z, 0.0f }; }
+	glm::vec3 center() const { return (this->_min + _max) * 0.5f; }
+	glm::vec3 size() const { return glm::vec3({_max.x - _min.x, _max.y - _min.y, _max.z - _min.z}); }
+
+	BBox transform(const glm::mat4& model_matrix, const glm::vec3& scale) {
+		glm::vec3 corners[8] = {
+			{this->_min.x, this->_min.y, this->_min.z},
+			{this->_max.x, this->_min.y, this->_min.z},
+			{this->_min.x, this->_max.y, this->_min.z},
+			{this->_max.x, this->_max.y, this->_min.z},
+			{this->_min.x, this->_min.y, this->_max.z},
+			{this->_max.x, this->_min.y, this->_max.z},
+			{this->_min.x, this->_max.y, this->_max.z},
+			{this->_max.x, this->_max.y, this->_max.z},
+		};
+		BBox world;
+		for (auto& c : corners) {
+			glm::vec4 wc = model_matrix * glm::vec4(c * scale, 1.0f);
+			world._min = glm::min(world._min, glm::vec4(wc));
+			world._max = glm::max(world._max, glm::vec4(wc));
+		}
+		return world;
+	}
+
+	bool overlap(const BBox& other) {
+		return
+			(this->_min.x <= other._max.x && this->_max.x >= other._min.x) &&
+			(this->_min.y <= other._max.y && this->_max.y >= other._min.y) &&
+			(this->_min.z <= other._max.z && this->_max.z >= other._min.z);
+	};
+private:
+	glm::vec4 _min = glm::vec4(FLT_MAX, FLT_MAX, FLT_MAX, 0.0f);
+	glm::vec4 _max = glm::vec4(-FLT_MAX, -FLT_MAX, -FLT_MAX, 0.0f);
 };
 
 // +=================================+   
@@ -2433,6 +2473,7 @@ public:
 	void set_bounce_restitution(float_t value);
 	
 	float_t get_mass_kg() const;
+	const glm::vec3& get_cog() const;
 	float_t get_density() const; // density in g/ml
 	float_t get_length_unit() const; // length unit in meters
 	float_t get_volume_estimate() const; // volume estimate in liters (based on BBox size and voxel fill rate)
@@ -2444,9 +2485,6 @@ public:
 	void make_solid(bool mesh_is_solid);
 	bool is_solid() const;
 
-	bool has_complex_geometry() const;
-	void enabled_complex_geometry(bool enabled);
-
 	// getters for textures
 	const std::vector<Texture>& get_textures() const;
 
@@ -2457,6 +2495,7 @@ public:
 	std::vector<Material>& get_materials();
 	std::string& get_base_dir();
 	uint32_t get_unique_ID() const;
+	static Mesh* get_mesh_by_ID(int32_t meshID);
 	const StringHash& get_hash() const;
 
 private:
@@ -2490,7 +2529,6 @@ private:
 	void transform_vertices_axis();
 	void init_voxel_buffer();
 	
-
 	Device* device;
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
@@ -2519,16 +2557,16 @@ private:
 	BBox bbox;
 
 	// physics
-	float_t mass_kg = 1.0f;
+	float_t mass_kg = std::max(1.0f, MINIMUM_SAFE_MASS);
 	float_t density = 1.0f; // g/ml
 	float_t fill_ratio = 1.0f;
+	glm::vec3 COG = { 0.0f, 0.0f, 0.0f };
 	float_t volume_estimate = 1.0f; // volume estimate in liters (based on BBox size and voxel fill rate)
 	float_t length_unit_meters = 1.0f;
 	float_t drag_coefficient = 0.7f;
 	float_t surface_friction = 0.95f;
 	float_t bounce_restitution = 0.2f; // 0 = no bounce, 1 = perfect bounce
 	bool mesh_is_solid = true;
-	bool complex_geometry = true;
 
 	VkIndexType index_type;
 	std::string base_dir = "";
@@ -2536,8 +2574,9 @@ private:
 	StringHash mesh_hash;
 	int variant_id = 0;
 	UpAxis src_up_axis = UpAxis::Y_UP;
-	uint32_t unique_ID = UINT32_MAX; // = invalid
+	int32_t unique_ID = INVALID_ID;
 	static inline uint32_t next_unique_mesh_id = 0;
+	static inline std::unordered_map<int32_t, Mesh*> mesh_ID_map = {}; // map for retrieving mesh pointers by their unique ID
 
 	//  default textures & images
 	static inline std::vector<DefaultImage> default_tex_images = {};
@@ -2552,11 +2591,119 @@ private:
 	static inline DefaultTextureID default_texID = DefaultTextureID();	
 };
 
+// +=================================+   
+// | Physics                         |
+// +=================================+
+
+// std430-compliant entity snapshot struct
+struct alignas(16) PhysicsState {
+	// --- 64-byte Aligned Blocks (naturally fit into 16 byte alingment) ---
+	glm::mat4 model_matrix;          // 64 bytes
+	glm::mat4 inv_model_matrix;      // 64 bytes
+	glm::mat4 rot_inv_inertia;       // 64 bytes
+
+	// --- 16-byte Aligned Blocks ---
+	glm::vec4 orientation = { 0.0f, 0.0f, 0.0f, 1.0f }; // 16 bytes
+
+	glm::vec4 mesh_bbox_min;         // 16 bytes
+	glm::vec4 mesh_bbox_max;         // 16 bytes
+	glm::vec4 world_bbox_min;        // 16 bytes
+	glm::vec4 world_bbox_max;        // 16 bytes
+	glm::vec4 world_bbox_center = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes
+	glm::vec4 world_bbox_axes[3];    // 48 bytes
+	
+	glm::vec4 scale = { 1.0f, 1.0f, 1.0f, 0.0f }; // 16 bytes
+	glm::vec4 pos = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes
+	glm::vec4 lin_vel = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes
+	glm::vec4 gravity = { 0.0f, -9.81f, 0.0f, 0.0f }; // 16 bytes
+	glm::vec4 lin_thrust = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes; THIS IS NOT CONTINUOUS THRUST ! AUTOMATICALLY RESET BY THE PHYSICS INTEGRATION SHADER AFTER USE !
+	glm::vec4 spin_vel = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes
+	glm::vec4 spin_thrust = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes; THIS IS NOT CONTINUOUS THRUST ! AUTOMATICALLY RESET BY THE PHYSICS INTEGRATION SHADER AFTER USE !
+	glm::vec4 scale_vel = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes
+	glm::vec4 scale_acc = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes
+	glm::vec4 mesh_local_cog = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes
+	glm::vec4 world_cog = { 0.0f, 0.0f, 0.0f, 0.0f }; // 16 bytes
+
+	// This block MUST be exactly 64 bytes or 128 bytes to maintain 16-byte alignment
+	// --- 4-byte Packed Block (Total: 64 bytes) ---
+	int32_t unique_entity_ID = INVALID_ID;
+	int32_t unique_mesh_ID = INVALID_ID;
+	int32_t last_collided_with = INVALID_ID;
+	int32_t lin_enabled = 0;		// stationary by default
+
+	int32_t rot_enabled = 0;		// ""
+	int32_t solid = 1;
+	uint32_t voxel_master_buffer_offset;
+	uint32_t voxel_buffer_elements;
+
+	float_t mesh_base_mass_kg = 1.0f;
+	float_t scaled_mass_kg = 1.0f;
+	float_t inv_scaled_mass_kg;
+	float_t restitution = 0.5f;
+
+	float_t friction;
+	float_t drag_coeff = 0.7f;
+	float_t tumble_strength = 0.01f;
+	float_t rho = 1.225f;			// density of the surrounding fluid for drag and buoyancy calculation
+
+	float_t mesh_fill_ratio = 1.0f;
+	float_t length_unit = 1.0f;
+	int32_t lin_impulse_x = 0;		// accumulators for atomicAdd
+	int32_t	lin_impulse_y = 0;		// ""
+
+	int32_t	lin_impulse_z = 0;		// ""
+	int32_t	spin_impulse_x = 0;		// ""
+	int32_t	spin_impulse_y = 0;		// ""
+	int32_t	spin_impulse_z = 0;		// ""
+
+	int32_t pos_impulse_x = 0;		// accumulators for atomic Baumgarte positional correction
+	int32_t pos_impulse_y = 0;		// ""
+	int32_t pos_impulse_z = 0;		// ""
+	int32_t protection_flag = 1;	// 0 = false; 1 = the user has made updates to the state since the last physics snapshot
+};
+
+struct PhysicsJobPayload {
+	Semaphore* tl_semaphore = nullptr;
+	Buffer<PhysicsState>* result_states = nullptr;
+};
+
+struct EntitySortKey {
+	float_t x_min;
+	uint32_t entID;
+};
+
+struct CollisionCandidateGPU {
+	uint32_t entID_A;
+	uint32_t entID_B;
+};
+
+struct CollisionResultGPU {
+	glm::vec4 normal;  // for storing the final results after averaging (resolution step 1)
+	glm::vec4 contact; // ""
+
+	int32_t normal_sum_x;
+	int32_t normal_sum_y;
+	int32_t normal_sum_z;
+	uint32_t hit_count;
+
+	int32_t contact_x;
+	int32_t contact_y;
+	int32_t contact_z;
+	int32_t is_complex_collision; // 0 for simple AABB (SAT), 1 for complex voxel-based collision
+
+	int32_t entID_A;
+	int32_t entID_B;
+	float_t overlap;
+	int32_t padding;
+};
 
 // +=================================+   
 // | Entity                          |
 // +=================================+
 class Entity {
+	friend class Scene; // required for physics snapshot in Scene::update_physics
+	friend class VulkanManager; // required for publishing back physics result from VulkanJob
+	friend class ParticleSystem;
 public:
 	// deleted default constructor
 	Entity() = delete;
@@ -2576,97 +2723,71 @@ public:
 	Entity& operator=(const Entity& other);
 
 	// Calculates the model matrix, applying the transformations: scale, rotation, velocity, position update
-	glm::mat4 get_model_matrix(bool recalculate = true); // without 'recalculate': simply return the latest result, without update
-	glm::mat4 get_rotation_matrix(bool recalculate = false); // 'recalculate': including internal call to get_model_matrix()
+	glm::mat4 get_model_matrix(bool swept);
 
 	// Public methods for transformations & physics
-	glm::vec3& set_position(const glm::vec3& position);
-	glm::vec3& set_rotation(const glm::vec3& rotation);
-	glm::vec3& set_scale(const glm::vec3& scale);
-	void enable_mass_change_with_scale(bool enable = true);
+	void set_position(const glm::vec3& position);
+	void set_rotation(const glm::vec3& rotation_degrees);
+	void set_orientation(glm::quat orientation);
+	void set_orientation(glm::vec4 orientation);
+	void set_scale(const glm::vec3& scale);
 
-	glm::vec3& translate(const glm::vec3& position_delta);
-	glm::vec3& rotate(const glm::vec3& rotation_delta);
-	glm::vec3& scale_add(const glm::vec3& scale_delta);
-	glm::vec3& scale_factor(const glm::vec3& scale_multiplier);
+	glm::vec3 translate(const glm::vec3& position_delta);
+	glm::vec3 rotate(const glm::vec3& rotation_delta);
+	glm::vec3 scale_add(const glm::vec3& scale_delta);
+	glm::vec3 scale_factor(const glm::vec3& scale_multiplier);
 
 	void set_lin_velocity(glm::vec3 velocity_xyz);
 	void set_spin_velocity(glm::vec3 spin_velocity_xzy);
 	void set_scale_velocity(glm::vec3 scale_velocity);
-
 	void set_lin_thrust(glm::vec3 lin_thrust_xzy);
 	void set_spin_thrust(glm::vec3 spin_thrust_xyz);
 	void set_scale_accelaration(glm::vec3 scale_acceleration_xyz);
+	void set_tumble_strength(float_t value);
+	void set_gravity(float_t gravity);
+	void set_gravity(glm::vec3 gravity);
 
 	glm::vec3 get_lin_velocity() const;
 	glm::vec3 get_spin_velocity() const;
-	glm::vec3 get_inertia() const;
-
-	void set_environment_density(float_t rho);
-	void set_tumble_strength(float_t value);
-	void set_last_collision(Entity* other); // helper method for physics update (=typically not used by the user directly)
+	glm::vec3 get_lin_thrust() const;
+	glm::vec3 get_spin_thrust() const;
+	float_t get_tumble_strength() const;
+	glm::vec3 get_scale_velocity() const;
+	glm::vec3 get_scale_acceleration() const;
 	Entity* get_last_collision(bool reset = true);
-
-	const glm::vec3& get_position() const;
-	const glm::vec3& get_rotation() const;
-
+	glm::vec3 get_position() const;
+	glm::vec3 get_rotation() const; // Euler Angles
 	glm::quat get_orientation();
-	void set_orientation(glm::quat orientation);
+	glm::vec3 get_scale() const;
+	float_t get_mass_kg() const;
+	float_t get_volume_estimate() const;
+	float_t get_density() const; // g/ml
 
-	const glm::vec3& get_scale() const;
-	const float_t& get_mass_kg() const;
-	const float_t& get_volume_estimate() const;
-	const float_t& get_density() const; // g/ml
-
-	void enable_physics(bool linear = true, bool gravity = true, bool rotation = true, bool tumble = true);
+	void enable_physics(bool linear, bool gravity, bool rotation);
+	void enable_physics(bool enable);
 	bool is_lin_physics_enabled() const;
 	bool is_rot_physics_enabled() const;
+	bool is_static() const; // static = no linear or rotational physics
 
 	// Other public methods
 	Mesh& get_mesh() const;
 	int get_unique_ID() const;
 	static Entity* get_entity_by_ID(int32_t unique_entID);
-	bool is_visible() const;
+	bool is_visible();
 	void set_visible(bool is_visible = true);
 
 private:
-	// Transformation properties
-	glm::mat4 model_matrix;
-	glm::mat4 rotation_matrix;
-	glm::vec3 position = glm::vec3(0.0f);
-	glm::vec3 rotation = glm::vec3(0.0f);
-	glm::vec3 scale = glm::vec3(1.0f);
-
 	int unique_ID = INVALID_ID;
 	inline static int next_unique_ID = 0;
 	static inline std::unordered_map<int32_t, Entity*> entity_ID_map = {}; // map for retrieving entity pointers by their unique ID
 	Mesh* mesh = nullptr; // externally owned -> don't destroy
 
 	// physics
+	PhysicsState state;
 	bool visible = true;
-	bool lin_physics_enabled = false;
-	bool rot_physics_enabled = false;
-	bool gravity_enabled = false;
-	bool tumbling_enabled = false;
-	Entity* last_collided_with = nullptr;
-	glm::vec3 inertia = { 0.0f, 0.0f, 0.0f };			// moment of inertia for each axis
-	
-	glm::vec3 lin_velocity = { 0.0f, 0.0f, 0.0f };		// units per second
-	glm::vec3 spin_velocity = { 0.0f, 0.0f, 0.0f };		// degrees per second
-	glm::vec3 scale_velocity = { 0.0f, 0.0f, 0.0f };	// scale factor increase per second
-
-	glm::vec3 lin_thrust = { 0.0f, 0.0f, 0.0f };		// updated via user input or via collisions; automatically reset during model_matrix update
-	glm::vec3 spin_thrust = { 0.0f, 0.0f, 0.0f };		// ""
-	glm::vec3 scale_acceleration = { 0.0f, 0.0f, 0.0f };// scale factor acceleration (per second^2)
-	bool mass_changes_with_scale = true;
-
-	float_t rho = 1.225f;								// default: air density at sea level
-	float_t tumble_strength = 0.01f;					// Adjust this for "flutteryness" (0.01 is subtle)
-	inline static glm::vec3 gravity = { 0.0f, -9.81f, 0.0f };
 	
 	// timer
 	std::chrono::steady_clock::time_point last_update;
-	bool first_update = true;
 };
 
 
@@ -2685,6 +2806,11 @@ public:
 		float camera_pitch = CAMERA_DEFAULT_PITCH
 	);
 
+	struct FrustrumPlane {
+		glm::vec3 normal; // normal vector of the plane
+		float_t distance; // distance from the origin along the normal
+	};
+
 	// Getters
 	int get_unique_ID() const;
 	glm::mat4 get_view_matrix();
@@ -2692,11 +2818,13 @@ public:
 	glm::vec3 get_position() const;
 	float_t get_distance(glm::vec3 position) const;
 	float_t get_distance(const Entity& entity) const;
+	float_t get_fov() const;
 	glm::vec3 get_front() const;
+	std::vector<FrustrumPlane>& get_frustrum_planes();
 
 	// Setters for camera attributes
 	glm::vec3 set_position(const glm::vec3& new_position);
-	glm::vec3 translate(const glm::vec3& delta);
+	glm::vec3 translate(glm::vec3 delta);
 	void rotate(float_t delta_pitch, float_t delta_yaw, float_t delta_roll);
 	void set_world_up(const UpAxis& new_world_up);
 	void set_yaw(float new_yaw);
@@ -2744,6 +2872,8 @@ private:
 	float aspect_ratio = CAMERA_DEFAULT_ASPECT_RATIO;
 	float near_plane = CAMERA_DEFAULT_NEAR_PLANE;
 	float far_plane = CAMERA_DEFAULT_FAR_PLANE;
+
+	std::vector<FrustrumPlane> frustrum_planes; // for culling
 };
 
 // +=================================+   
@@ -2751,13 +2881,13 @@ private:
 // +=================================+
 
 struct ParticleConfig {
-	glm::vec2 initial_velocity_minmax = { 1.0f, 1.0f };
-	glm::vec2 lifetime_minmax = { 10.0f, 10.0f };
+	glm::vec2 initial_velocity_minmax = { 10.0f, 10.0f };
+	glm::vec2 lifetime_minmax = { 10.0f, 1000.0f };
 	glm::vec2 scale_minmax = { 1.0f, 1.0f };
 	glm::vec3 min_rotation = { 0.0f, 0.0f, 0.0f };
 	glm::vec3 max_rotation = { 360.0f, 360.0f, 360.0f };
 	float_t src_offset_sigma = 0.0f;
-	float_t cone_angle_degrees = 0.0f;
+	float_t cone_angle_degrees = 360.0f;
 	bool lin_physics_enabled = true;
 	bool rot_physics_enabled = true;
 	bool gravity_enabled = true;
@@ -2771,8 +2901,7 @@ class ParticleSystem {
 private:
 	struct Particle {
 		Entity* entity = nullptr;
-		float_t lifetime_sec = 0.0f;
-		std::chrono::steady_clock::time_point time_zero;
+		std::chrono::steady_clock::time_point timepoint_zero;
 		ParticleConfig config;
 
 		Particle() = delete;
@@ -2781,8 +2910,7 @@ private:
 
 		Particle(Particle&& other) noexcept :
 			entity(std::exchange(other.entity, nullptr)),
-			lifetime_sec(other.lifetime_sec),
-			time_zero(other.time_zero),
+			timepoint_zero(other.timepoint_zero),
 			config(other.config) {
 		}
 
@@ -2790,8 +2918,7 @@ private:
 			if (this != &other) {
 				delete entity;
 				entity = std::exchange(other.entity, nullptr);
-				lifetime_sec = other.lifetime_sec;
-				time_zero = other.time_zero;
+				timepoint_zero = other.timepoint_zero;
 				config = other.config;
 			}
 			return *this;
@@ -2804,8 +2931,14 @@ private:
 	};
 
 public:
+	// constructor for systems tied to an emitter entity
 	ParticleSystem(Entity& emitter_entity) : emitter_entity(&emitter_entity) {
-		last_emitter_pos = emitter_entity.get_position();
+		start_worker();
+	}
+
+	// constructor for systems tied to a fixed position
+	ParticleSystem(glm::vec3 emitter_position) {
+		this->emitter_position.store(emitter_position);
 		start_worker();
 	}
 
@@ -2819,14 +2952,8 @@ public:
 	Entity* get_emitter_entity_ptr() const { return this->emitter_entity; }
 	const std::unordered_set<Mesh*>& get_particle_meshes() { return this->particle_meshes; }
 
-	void set_config(const ParticleConfig& new_config) {
-		LockGuard lock({ &particles_mutex });
-		current_config = new_config;
-	}
-
 	void add_particles(Mesh& src_mesh, uint32_t count, const ParticleConfig& config = {}) {
 		LockGuard lock({ &particles_mutex });
-		current_config = config;
 		for (uint32_t i = 0; i < count; i++) {
 			auto it = particle_master_pool.emplace(src_mesh, config);
 			inactive_particle_pool.insert(&(*it));
@@ -2840,33 +2967,47 @@ public:
 		emissions_per_sec.store(std::max(0.0f, rate));
 	}
 
+	void set_emitter_position(glm::vec3 new_pos) {
+		if (emitter_entity) {
+			Log::warning("ParticleSystem ", this, ": Ignoring set_emitter_position() call because this system is tied to an emitter entity (unique entID: ", emitter_entity->get_unique_ID(), ").");
+			return;
+		}
+		emitter_position.store(new_pos);
+	}
+
 	void stop() {
 		if (worker_thread.joinable()) {
 			worker_thread.request_stop();
 		}
 	}
 
+	bool is_stopped() const {
+		return !worker_thread.joinable() || worker_thread.get_stop_token().stop_requested();
+	}
+
 private:
 	void start_worker() {
 		worker_thread = std::jthread([this](std::stop_token st) {
-			auto last_time = std::chrono::high_resolution_clock::now();
-			static const std::chrono::milliseconds target_dt_ms(PARTICLES_UPDATE_MILLISEC);
+			Log::force("PARTICLE SYSTEM THREAD: ", std::this_thread::get_id());
+			std::chrono::steady_clock::time_point last_timepoint = std::chrono::high_resolution_clock::now();
+			constexpr float_t budget_sec = 0.001f * PARTICLES_UPDATE_MILLISEC;
 
 			while (!st.stop_requested()) {
-				auto current_time = std::chrono::high_resolution_clock::now();
-				float dt_sec = std::chrono::duration<float>(current_time - last_time).count();
-				dt_sec = std::min(dt_sec, 0.001f * PHYSICS_DT_CAP_MILLISEC); // this prevents emitting an excessive amount of particles after a significant lag
-				last_time = current_time;
+				std::chrono::steady_clock::time_point timepoint_now = std::chrono::high_resolution_clock::now();
+				float_t dt_sec = std::chrono::duration<float>(timepoint_now - last_timepoint).count();
+				constexpr float_t PHYSICS_DT_CAP_SEC = 0.001f * PHYSICS_DT_CAP_MILLISEC;
+				dt_sec = std::min(dt_sec, PHYSICS_DT_CAP_SEC); // this prevents emitting an excessive amount of particles after a significant lag
+				last_timepoint = timepoint_now;
 
 				update_internal(dt_sec);
-				auto work_done_time = std::chrono::high_resolution_clock::now();
-				auto elapsed_work_ms = std::chrono::duration_cast<std::chrono::milliseconds>(work_done_time - current_time);
-				if (elapsed_work_ms < target_dt_ms) {
+				auto work_done_timepoint = std::chrono::high_resolution_clock::now();
+				auto elapsed_work_sec = std::chrono::duration<float>(work_done_timepoint - timepoint_now).count();
+				if (elapsed_work_sec < budget_sec) {
 					// Only sleep for the remaining time in our budget
-					std::this_thread::sleep_for(target_dt_ms - elapsed_work_ms);
+					std::this_thread::sleep_for(std::chrono::duration<float>(budget_sec - elapsed_work_sec));
 				}
 				else {
-					Log::warning("ParticleSystem ", this, ": worker thread is lagging behind (elapsed: ", elapsed_work_ms, " ms, target: < ", target_dt_ms, ").");
+					Log::warning("ParticleSystem ", this, ": worker thread is lagging behind (elapsed: ", elapsed_work_sec, " sec, budget: < ", budget_sec, " sec).");
 					// We are behind schedule. 
 					// Yielding instead of sleeping allows other threads to breathe
 					std::this_thread::yield();
@@ -2876,16 +3017,22 @@ private:
 	}
 
 	void update_internal(float dt_sec) {
-		auto time_now = std::chrono::steady_clock::now();
+		std::chrono::steady_clock::time_point timepoint_now = std::chrono::steady_clock::now();
 
 		LockGuard lock({ &particles_mutex });
+
+		float rate = emissions_per_sec.load();
+		emission_accumulator += rate * dt_sec;
 
 		// 1. Process Active Particles (Life & Death)
 		for (auto it = active_particle_pool.begin(); it != active_particle_pool.end(); ) {
 			Particle* p = *it;
-			double age = std::chrono::duration_cast<std::chrono::duration<double>>(time_now - p->time_zero).count();
+			float_t age_sec = std::chrono::duration<float>(timepoint_now - p->timepoint_zero).count();
 
-			if (p->lifetime_sec > 0.001f && age > p->lifetime_sec) {
+			if (
+				(age_sec > p->config.lifetime_minmax.y) ||														// max lifetime exceeded
+				(age_sec > p->config.lifetime_minmax.x && inactive_particle_pool.size() < emission_accumulator)	// min lifetime exceeded AND pool depleted
+			) {
 				p->entity->set_visible(false);
 				inactive_particle_pool.insert(p);
 				it = active_particle_pool.erase(it);
@@ -2896,31 +3043,21 @@ private:
 		}
 
 		// 2. Process Emission Accumulator
-		float rate = emissions_per_sec.load();
-		emission_accumulator += rate * dt_sec;
-
+		int spawn_count = (int)std::floor(emission_accumulator);
+		if (spawn_count <= 0) {	return;	}
 		glm::vec3 target = target_position.load();
-		glm::vec3 current_emitter_pos = emitter_entity->get_position();
+		glm::vec3 current_emitter_pos = emitter_entity ? emitter_entity->get_position() : this->emitter_position.load();
 
 		// 3. Spawning with Linear Interpolation (Anti-clumping)
-		int spawn_count = (int)std::floor(emission_accumulator);
 		for (int i = 0; i < spawn_count && !inactive_particle_pool.empty(); ++i) {
 			auto inactive_it = inactive_particle_pool.begin();
 			Particle* p = *inactive_it;
 			inactive_particle_pool.erase(inactive_it);
-			active_particle_pool.insert(p);
-
-			p->config = current_config;
 
 			float_t initial_velocity = rnd::uniform<float_t>(p->config.initial_velocity_minmax.x, p->config.initial_velocity_minmax.y);
-			p->lifetime_sec = rnd::uniform<float_t>(p->config.lifetime_minmax.x, p->config.lifetime_minmax.y);
 			float_t scale = rnd::uniform<float_t>(p->config.scale_minmax.x, p->config.scale_minmax.y);
-
-			// Interpolate position based on which fraction of the frame this particle represents
-			float t = (float)(i + 1) / (float)spawn_count;
-			glm::vec3 interpolated_spawn_pos = glm::mix(last_emitter_pos, current_emitter_pos, t);
-
-			glm::vec3 base_dir = glm::normalize(target - interpolated_spawn_pos);
+			glm::vec3 spawn_pos = emitter_entity ? emitter_entity->get_position() : emitter_position.load();
+			glm::vec3 base_dir = glm::normalize(target - spawn_pos);
 			glm::vec3 final_emission_dir = base_dir;
 			glm::vec3 tangent(0.0f), bitangent(0.0f);
 
@@ -2946,26 +3083,25 @@ private:
 				float_t offset_r = rnd::gaussian<float_t>(0.0f, p->config.src_offset_sigma);
 				pos_offset = (std::cos(offset_theta) * tangent + std::sin(offset_theta) * bitangent) * offset_r;
 			}
-
-			p->entity->set_position(interpolated_spawn_pos + pos_offset);
+			p->entity->state.pos = glm::vec4(spawn_pos + pos_offset, 0.0f);
+			p->entity->state.scale = glm::vec4(glm::vec3(scale), 0.0f);
+			p->entity->state.lin_vel = glm::vec4(final_emission_dir * initial_velocity, 0.0f);
+			p->entity->state.spin_vel = glm::vec4(0.0f);
+			p->entity->state.lin_enabled = p->config.lin_physics_enabled ? 1 : 0;
+			p->entity->state.rot_enabled = p->config.rot_physics_enabled ? 1 : 0;
+			p->entity->state.gravity = glm::vec4(p->config.gravity_enabled ? glm::vec3(0.0f, -9.81f, 0.0f) : glm::vec3(0.0f), 0.0f);
+			p->entity->state.tumble_strength = p->config.tumble_strength;
 			p->entity->set_rotation(glm::vec3(
 				rnd::uniform(p->config.min_rotation.x, p->config.max_rotation.x),
 				rnd::uniform(p->config.min_rotation.y, p->config.max_rotation.y),
 				rnd::uniform(p->config.min_rotation.z, p->config.max_rotation.z)
 			));
-			p->entity->set_scale(glm::vec3(scale));
-			p->entity->set_lin_velocity(final_emission_dir * initial_velocity);
-			p->entity->set_spin_velocity({ 0.0f, 0.0f, 0.0f }); // Reset spin
-			p->entity->enable_physics(p->config.lin_physics_enabled, p->config.gravity_enabled, p->config.rot_physics_enabled);
-			p->entity->set_tumble_strength(p->config.tumble_strength);
-			p->entity->enable_mass_change_with_scale(p->config.mass_changes_with_scale);
-			p->time_zero = time_now;
+			p->entity->state.protection_flag = 1; // protect from physics updates until the next snapshot, to allow the initial state to "take effect" for at least one frame
+			p->timepoint_zero = timepoint_now;
 			p->entity->set_visible(true);
-
+			active_particle_pool.insert(p);
 			emission_accumulator -= 1.0f;
 		}
-
-		last_emitter_pos = current_emitter_pos;
 
 		if (inactive_particle_pool.empty()) {
 			emission_accumulator = 0.0f;
@@ -2981,15 +3117,13 @@ private:
 	std::unordered_set<Mesh*> particle_meshes;
 
 	Entity* emitter_entity = nullptr;
-	glm::vec3 last_emitter_pos{ 0.0f };
 	mutable RankedMutex particles_mutex = RankedMutex(LockRank::ParticleSystem);
 	std::jthread worker_thread;
 
 	std::atomic<glm::vec3> target_position{ glm::vec3(0.0f) };
+	std::atomic<glm::vec3> emitter_position{ glm::vec3(0.0f) }; // alternative for systems which aren't tied to an entity
 	std::atomic<float_t> emissions_per_sec{ 0.0f };
 	double emission_accumulator = 0;
-
-	ParticleConfig current_config;
 };
 
 // +=================================+   
@@ -2997,6 +3131,7 @@ private:
 // +=================================+
 class Scene {
 	friend class Renderer;
+	friend class Entity;
 public:
 	// ========================================================================
 	// PUBLIC INTERFACE (Constructors, Destructors, Getters, Setters, etc.)
@@ -3019,6 +3154,7 @@ public:
 	uint32_t add_camera(glm::vec3 position = CAMERA_DEFAULT_POSITION, UpAxis up = CAMERA_DEFAULT_UP, float yaw = CAMERA_DEFAULT_YAW, float pitch = CAMERA_DEFAULT_PITCH);
 	void add_cubemap(Device& device, const std::string& filepath, Semaphore& tl_semaphore, VkSamplerAddressMode sampler_address_mode_U = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VkSamplerAddressMode sampler_address_mode_V = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, TextureType type = TextureType::EQUIRECTANGULAR_HDR_TEXTYPE, uint32_t cubemap_resolution = 1024, VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT);
 	ParticleSystem& add_particle_system(Entity& emitter_entity);
+	ParticleSystem& add_particle_system(glm::vec3 emitter_position);
 	plf::colony<ParticleSystem>& get_particle_systems();
 
 	// Removal & Cleanup
@@ -3064,7 +3200,7 @@ private:
 	// ========================================================================
 	void process_cubemap(Semaphore& tl_semaphore);
 	void add_mesh(Mesh& mesh);
-	void physics_update_async(float_t cell_size, float_t dt_sec);
+	void physics_update(float_t dt_sec);
 
 	glm::vec3 ambient_light = SCENE_DEFAULT_AMBIENT;
 	float_t exposure = SCENE_DEFAULT_EXPOSURE;
@@ -3298,7 +3434,7 @@ public:
 	Swapchain(const Swapchain& other) = delete;
 	Swapchain operator=(const Swapchain& other) = delete;
 
-	uint32_t acquire_next_image(Semaphore& image_available_binary_semaphore, const std::optional<Fence>& fence = NULLOPT, uint64_t timeout = UINT64_MAX);
+	int32_t acquire_next_image(Semaphore& image_available_binary_semaphore, const std::optional<Fence>& fence = NULLOPT, uint64_t timeout = UINT64_MAX);
 
 	// present the rendered image to the graphics queue (method overload without semaphores)
 	VkResult present_rendered_image();
@@ -3919,7 +4055,7 @@ private:
 // | Task                            |
 // +=================================+
 
-using TempBufferVariant = std::variant<
+using TempBufferVariant = std::variant <
 	std::unique_ptr<Buffer<char8_t>>,
 	std::unique_ptr<Buffer<float_t>>,
 	std::unique_ptr<Buffer<double_t>>,
@@ -3940,7 +4076,9 @@ using TempBufferVariant = std::variant<
 	std::unique_ptr<Buffer<Light>>,
 	std::unique_ptr<Buffer<MaterialTexIDs>>,
 	std::unique_ptr<Buffer<CollisionResultGPU>>,
-	std::unique_ptr<Buffer<CollisionCandidateGPU>>
+	std::unique_ptr<Buffer<CollisionCandidateGPU>>,
+	std::unique_ptr<Buffer<PhysicsState>>,
+	std::unique_ptr<Buffer<EntitySortKey>>
 >;
 
 // resources container for a compute or graphics task,
@@ -4232,6 +4370,7 @@ public:
 	static void release_texture(StringHash texture_hash);
 	static void release_light(uint32_t light_id);
 	static void release_mesh(uint32_t mesh_id);
+	static void recover();
 
 public:
 	// VulkanJob: helper to pass GPU functions from other threads to VulkanManager
@@ -4245,38 +4384,62 @@ public:
 		Consumed
 	};
 
-	struct VulkanJob {
-		VulkanJob() {
-			state = JobState::Initial;
-			jobID = next_jobID.fetch_add(1);
-			task = nullptr;
-		};
-		JobState get_state() const { return state; }
+	enum JobType {
+		GraphicsJob,
+		ComputeJob,
+		TransferJob
+	};
+
+	class VulkanJob {
+	public:
+		VulkanJob() :
+			state(JobState::Initial),
+			jobID(next_jobID.fetch_add(1)),
+			task(nullptr),
+			type(type),
+			consume_function_assigned(false) {};
 		uint64_t jobID;
 		JobState state;
+		JobType type;
 		Task* task;
+		bool consume_function_assigned;
 		std::function<void(VulkanJob&)> job_function;
+		std::function<void(VulkanJob&)> consume_function;
 		std::shared_ptr<void> payload; // type-erased, owned; used e.g. to share any data packages/containers across jobs
+	private:
+		inline static std::atomic<uint64_t> next_jobID{ 0 };
 	};
 
-	struct CollisionResources {
-		CollisionResources();
-		std::unique_ptr<ShaderModule> shader;
+	struct PhysicsJobResources {
+		PhysicsJobResources();
+		std::unique_ptr<ShaderModule> physics_integration_shader;
+		std::unique_ptr<ShaderModule> states_sort_shader;
+		std::unique_ptr<ShaderModule> collision_detection_shader;
+		std::unique_ptr<ShaderModule> collision_confirmation_shader;
+		std::unique_ptr<ShaderModule> collision_resolve_step1_shader;
+		std::unique_ptr<ShaderModule> collision_resolve_step2_shader;
+		std::unique_ptr<ShaderModule> collision_resolve_step3_shader;
+
 		std::unique_ptr<DescriptorSetLayout> set_layout;
-		std::unique_ptr<ComputePipeline> pipeline;
+		
+		std::unique_ptr<ComputePipeline> physics_integration_pipeline;
+		std::unique_ptr<ComputePipeline> states_sort_pipeline;
+		std::unique_ptr<ComputePipeline> collision_detection_pipeline;
+		std::unique_ptr<ComputePipeline> collision_confirmation_pipeline;
+		std::unique_ptr<ComputePipeline> collision_resolve_step1_pipeline;
+		std::unique_ptr<ComputePipeline> collision_resolve_step2_pipeline;
+		std::unique_ptr<ComputePipeline> collision_resolve_step3_pipeline;
 	};
 
-	CollisionResources& get_collision_resources();
+	PhysicsJobResources& get_physics_job_resources();
 
 
 	// VulkanJobs (GPU work jobs submitted by other threads)
-	static uint64_t record_compute_job(std::function<void(VulkanManager::VulkanJob&)> job_function);
-	static uint64_t record_graphics_job(std::function<void(VulkanManager::VulkanJob&)> job_function);
+	static uint64_t record_job(VulkanManager::JobType type, std::function<void(VulkanManager::VulkanJob&)> job_function);
 	static bool erase_job(uint64_t jobID, bool ignore_task_protection_flag = true);
 	static JobState get_job_state(uint64_t jobID);
-	static bool consume_job(uint64_t jobID);
-	static bool consume_job(uint64_t jobID, std::function<void(VulkanJob&)> consume_function);
-	static void process_jobs();
+	static void consume_job(uint64_t jobID, std::function<void(VulkanJob&)> consume_function);
+	static void process_jobs(bool skip_outdated = true);
 	static uint32_t job_count();
 
 private:
@@ -4311,8 +4474,7 @@ private:
 	inline static std::vector<std::unique_ptr<Mesh>> meshes = {};
 	inline static std::unordered_map<uint64_t, VulkanManager::VulkanJob> jobs; // uint64_t: jobID
 	inline static RankedMutex vulkan_mutex = RankedMutex(LockRank::Vulkan);
-	inline static std::atomic<uint64_t> next_jobID{ 0 };
-	inline static std::unique_ptr<CollisionResources> collision_resources = nullptr;
+	inline static std::unique_ptr<PhysicsJobResources> physics_job_resources = nullptr;
 	inline static const std::thread::id MAIN_THREAD_ID = std::this_thread::get_id();
 };
 
@@ -4328,22 +4490,9 @@ private:
 		FrameResources();
 		~FrameResources() = default;
 		bool update(Semaphore& tl_semaphore);
-		PushConstants& get_push_constants();
-		DescriptorSet& get_descriptor_set();
+		DescriptorSet& get_descriptor_set(uint32_t batchID);
 
-		// default bindings
-		struct DefaultBindings {
-			uint32_t materials = 0;
-			uint32_t lights = 1;
-			uint32_t tex_IDs = 2;
-			uint32_t model_matrices = 3;
-			uint32_t cubemap_irradiance = 4;
-			uint32_t cubemap_prefiltered = 5;
-			uint32_t brdf_lut = 6;
-			uint32_t textures = 7;
-		};
-
-		// offsets for default push constants
+		// default offsets for push constants
 		struct DefaultConstantsOffsets {
 			size_t view_matrix_offset = 0;
 			size_t projection_offset = 0;
@@ -4357,17 +4506,15 @@ private:
 			size_t camera_position_offset = 0;
 		};
 		inline static DefaultConstantsOffsets default_offsets;
-		inline static DefaultBindings default_bindings;
-
 	private:
 		Scene* scene = nullptr;
 		Renderer* renderer = nullptr;
-		std::unique_ptr<PushConstants> constants = nullptr;
-		std::unique_ptr<DescriptorSet> set = nullptr;
+		std::vector<std::unique_ptr<DescriptorSet>> descriptor_sets = {}; // one for each batch
 		std::unique_ptr<Buffer<glm::mat4>> model_matrices_buffer = nullptr;
 		std::unique_ptr<Buffer<Material>> materials_buffer = nullptr;
 		std::unique_ptr<Buffer<Light>> lights_buffer = nullptr;
 		std::unique_ptr<Buffer<MaterialTexIDs>> material_texIDs_buffer = nullptr;
+		std::vector<std::unique_ptr<Buffer<uint32_t>>> batch_instance_indices_buffer; // one for each batch
 		std::unique_ptr<Semaphore> image_available_semaphore;
 		std::unique_ptr<Semaphore> render_finished_semaphore;
 		std::vector<Entity*> visible_entities;
@@ -4392,19 +4539,7 @@ public:
 
 	// set externally owned resources
 	void set_surface(Surface& surface);
-	void set_renderpass(RenderPass& renderpass);
-	void set_subpass(SubPass& subpass);
-	void set_pipeline_layout(GraphicsPipelineLayout& pipeline_layout);
-	void set_opaque_pass_pipeline_properties(PipelineProperties& pipeline_properties);
-	void set_alpha_pass_pipeline_properties(PipelineProperties& pipeline_properties);
-	void set_opaque_pass_pipeline(GraphicsPipeline& pipeline);
-	void set_alpha_pass_pipeline(GraphicsPipeline& pipeline);
-	void set_push_constants(PushConstants& push_constants);
-	void set_vertex_shader(ShaderModule& vertex_shader);
-	void set_fragment_shader(ShaderModule& fragment_shader);
-	void set_descriptor_set_layout(DescriptorSetLayout& descriptor_set_layout);
-
-	void set_fps(float_t max_fps);
+	void set_scene(Scene& scene);
 
 	// getters
 	Renderer::FrameResources& get_frame(uint32_t frame_id);
@@ -4416,47 +4551,26 @@ public:
 	GraphicsPipelineLayout& get_pipeline_layout();
 	PipelineProperties& get_opaque_pass_pipeline_properties();
 	PipelineProperties& get_alpha_pass_pipeline_properties();
-	GraphicsPipeline& get_opaque_pass_pipeline();
-	GraphicsPipeline& get_alpha_pass_pipeline();
-	ShaderModule& get_vertex_shader();
-	ShaderModule& get_fragment_shader();
-	DescriptorSetLayout& get_descriptor_set_layout();
-	PushConstants& get_constants(); // returns the push constants for the next 'frame in flight'
-	DescriptorSet& get_descriptor_set(); // returns the descriptor set for the next 'frame in flight'
 	float_t get_fps() const;
 	void log_fps(uint32_t log_every_n_frames = 100);
 
 private:
-	// instance-owned internal resources (optional; used for default construction)
-	std::unique_ptr<Swapchain> m_swapchain = nullptr;
-	std::unique_ptr<RenderPass> m_renderpass = nullptr;
-	std::unique_ptr<SubPass> m_subpass = nullptr;
-	std::unique_ptr<GraphicsPipelineLayout> m_pipeline_layout = nullptr;
-	std::unique_ptr<PipelineProperties> m_pipeline_properties_opaque = nullptr;
-	std::unique_ptr<PipelineProperties> m_pipeline_properties_alpha = nullptr;
-	std::unique_ptr<GraphicsPipeline> m_pipeline_opaque = nullptr;
-	std::unique_ptr<GraphicsPipeline> m_pipeline_alpha = nullptr;
-	std::unique_ptr<ShaderModule> m_vertex_shader = nullptr;
-	std::unique_ptr<ShaderModule> m_fragment_shader = nullptr;
-	std::unique_ptr<DescriptorSetLayout> m_descriptor_set_layout = nullptr;
-	std::unique_ptr<DepthBuffer> m_depth_buffer = nullptr;
-	
-	// resource pointers (either to externally owned objects or as raw pointers to internally owned unique pointers)
-	// -> no cleanup in destructor required
-	VulkanManager* vk_manager = nullptr;
-	Swapchain* swapchain = nullptr;
-	Surface* surface = nullptr;
 	Scene* scene = nullptr;
-	RenderPass* renderpass = nullptr;
-	SubPass* subpass = nullptr;
-	GraphicsPipelineLayout* pipeline_layout = nullptr;
-	PipelineProperties* pipeline_properties_opaque = nullptr;
-	PipelineProperties* pipeline_properties_alpha = nullptr;
-	GraphicsPipeline* pipeline_opaque = nullptr;
-	GraphicsPipeline* pipeline_alpha = nullptr;
-	ShaderModule* vertex_shader = nullptr;
-	ShaderModule* fragment_shader = nullptr;
-	DescriptorSetLayout* descriptor_set_layout = nullptr;
+	VulkanManager* vk_manager = nullptr;
+	Surface* surface = nullptr;
+	std::unique_ptr<Swapchain> swapchain = nullptr;
+	std::unique_ptr<RenderPass> renderpass = nullptr;
+	std::unique_ptr<SubPass> subpass = nullptr;
+	std::unique_ptr<GraphicsPipelineLayout> pipeline_layout = nullptr;
+	std::unique_ptr<PipelineProperties> pipeline_properties_opaque = nullptr;
+	std::unique_ptr<PipelineProperties> pipeline_properties_alpha = nullptr;
+	std::unique_ptr<GraphicsPipeline> pipeline_opaque = nullptr;
+	std::unique_ptr<GraphicsPipeline> pipeline_alpha = nullptr;
+	std::unique_ptr<ShaderModule> vertex_shader = nullptr;
+	std::unique_ptr<ShaderModule> fragment_shader = nullptr;
+	std::unique_ptr<DescriptorSetLayout> descriptor_set_layout = nullptr;
+	std::unique_ptr<DepthBuffer> depth_buffer = nullptr;
+	std::unique_ptr<PushConstants> push_constants = nullptr;
 
 	// other members
 	void initialize(Semaphore& timeline_semaphore);
@@ -4464,9 +4578,7 @@ private:
 	uint32_t frames_in_flight = MAX_FRAMES_IN_FLIGHT;
 	FrameResources frames[MAX_FRAMES_IN_FLIGHT];
 	float_t fps = 0;
-	float_t max_fps = 200;
 	uint32_t total_frames_counter = 0; // total number of rendered frames since initialization
-	bool is_default_renderer = false;
 	VkExtent2D extent;
 	std::vector<VkClearValue> clear_values;
 };
@@ -5223,6 +5335,7 @@ Image::Image(
 
 	result = vkBindImageMemory(logical, image, memory, 0);
 	if (result != VK_SUCCESS) {
+		device.wait_idle();
 		vkFreeMemory(logical, memory, nullptr);
 		vkDestroyImage(logical, image, nullptr);
 		memory = VK_NULL_HANDLE;
@@ -9677,13 +9790,13 @@ void Mesh::process_obj_vertices(
 
 		// Calculate bounding box extents for this SubMesh
 		for (const auto& v : verts) {
-			sub.bbox.min = glm::min(sub.bbox.min, v.position);
-			sub.bbox.max = glm::max(sub.bbox.max, v.position);
+			sub.bbox.set_min(glm::min(sub.bbox.min(), v.position));
+			sub.bbox.set_max(glm::max(sub.bbox.max(), v.position));
 		}
 
 		// Update the parent mesh overall bounding box
-		this->bbox.min = glm::min(this->bbox.min, sub.bbox.min);
-		this->bbox.max = glm::max(this->bbox.max, sub.bbox.max);
+		this->bbox.set_min(glm::min(this->bbox.min(), sub.bbox.min()));
+		this->bbox.set_max(glm::max(this->bbox.max(), sub.bbox.max()));
 
 		this->vertices.insert(this->vertices.end(), verts.begin(), verts.end());
 	}
@@ -10014,12 +10127,12 @@ void Mesh::process_gltf_node(
 			else {
 				const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.at("POSITION")];
 				if (accessor.minValues.size() == 3) {
-					submesh.bbox.min = glm::vec3(accessor.minValues[0], accessor.minValues[1], accessor.minValues[2]);
-					this->bbox.min = glm::min(this->bbox.min, submesh.bbox.min);
+					submesh.bbox.set_min(glm::vec3(accessor.minValues[0], accessor.minValues[1], accessor.minValues[2]));
+					this->bbox.set_min(glm::min(this->bbox.min(), submesh.bbox.min()));
 				}
 				if (accessor.maxValues.size() == 3) {
-					submesh.bbox.max = glm::vec3(accessor.maxValues[0], accessor.maxValues[1], accessor.maxValues[2]);
-					this->bbox.max = glm::max(this->bbox.max, submesh.bbox.max);
+					submesh.bbox.set_max(glm::vec3(accessor.maxValues[0], accessor.maxValues[1], accessor.maxValues[2]));
+					this->bbox.set_max(glm::max(this->bbox.max(), submesh.bbox.max()));
 				}
 			}
 
@@ -10672,6 +10785,7 @@ Mesh::Mesh(
 	this->volume_estimate = 0.001f * volume_estimate_m3;
 	this->density = this->mass_kg / this->volume_estimate;
 
+	mesh_ID_map[unique_ID] = this;
 	Log::debug("Mesh constructor: instantiated Mesh from filepath ", full_path, " (unique ID: ", this->unique_ID, ")");
 }
 
@@ -10771,6 +10885,7 @@ Mesh::Mesh(
 	// Transfer data to GPU
 	this->write_buffers(timeline_semaphore);
 	*/
+	mesh_ID_map[unique_ID] = this;
 }
 
 void Mesh::transform_vertices_axis() {
@@ -10918,6 +11033,7 @@ Mesh::~Mesh() {
 		delete this->voxel_buffer;
 		this->voxel_buffer = nullptr;
 	}
+	mesh_ID_map.erase(this->unique_ID);
 }
 
 // move constructor
@@ -10940,7 +11056,22 @@ Mesh::Mesh(Mesh&& other) noexcept :
 	texture_count(std::exchange(other.texture_count, 0)),
 	index_type(other.index_type),
 	base_dir(other.base_dir),
-	unique_ID(std::exchange(other.unique_ID, UINT32_MAX)) {
+	unique_ID(std::exchange(other.unique_ID, INVALID_ID)),
+	bbox(other.bbox),
+	mass_kg(other.mass_kg),
+	density(other.density),
+	fill_ratio(other.fill_ratio),
+	COG(other.COG),
+	volume_estimate(other.volume_estimate),
+	length_unit_meters(other.length_unit_meters),
+	drag_coefficient(other.drag_coefficient),
+	surface_friction(other.surface_friction),
+	bounce_restitution(other.bounce_restitution),
+	mesh_is_solid(other.mesh_is_solid),
+	gltf_provided_tangents(other.gltf_provided_tangents),
+	mesh_hash(other.mesh_hash),
+	variant_id(other.variant_id),
+	src_up_axis(other.src_up_axis) {
 	Log::debug("Mesh move constructor invoked. Moving from '&other' = ", &other, " to 'this' = ", this, ".");
 }
 
@@ -10979,10 +11110,27 @@ Mesh& Mesh::operator=(Mesh&& other) noexcept {
 		this->lights_count = other.lights_count;
 		this->texture_count = other.texture_count;
 
-		// copy other members
+		// copy other core members
 		this->index_type = other.index_type;
 		this->base_dir = other.base_dir;
-		this->unique_ID = std::exchange(other.unique_ID, UINT32_MAX);
+		this->unique_ID = std::exchange(other.unique_ID, INVALID_ID);
+		this->gltf_provided_tangents = other.gltf_provided_tangents;
+		this->mesh_hash = other.mesh_hash;
+		this->variant_id = other.variant_id;
+		this->src_up_axis = other.src_up_axis;
+
+		// physics properties
+		this->bbox = other.bbox;
+		this->mass_kg = other.mass_kg;
+		this->density = other.density;
+		this->fill_ratio = other.fill_ratio;
+		this->COG = other.COG;
+		this->volume_estimate = other.volume_estimate;
+		this->length_unit_meters = other.length_unit_meters;
+		this->drag_coefficient = other.drag_coefficient;
+		this->surface_friction = other.surface_friction;
+		this->bounce_restitution = other.bounce_restitution;
+		this->mesh_is_solid = other.mesh_is_solid;
 	}
 	else {
 		Log::debug("... 'this' and '&other' are identical! Returning '*this' (unmodified).");
@@ -11025,12 +11173,12 @@ void Mesh::init_voxel_buffer() {
 
 		// Each uint32_t holds 32 bits (voxels)
 		uint32_t buffer_elements = (total_voxels + 31) / 32;
-		this->voxel_buffer = new Buffer<uint32_t>(*device, BufferType::STORAGE_BUFFER, buffer_elements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		this->voxel_buffer = new Buffer<uint32_t>(*device, BufferType::STORAGE_BUFFER, buffer_elements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		std::vector<uint32_t> voxel_data(buffer_elements, 0);
 
 		// Voxelization: For each triangle, mark the bits of the voxels it intersects
-		glm::vec3 mesh_min = this->bbox.min;
-		glm::vec3 mesh_range = this->bbox.max - mesh_min;
+		glm::vec3 mesh_min = this->bbox.min();
+		glm::vec3 mesh_range = this->bbox.max() - mesh_min;
 
 		// Safety: prevent division by zero for flat meshes
 		mesh_range.x = std::max(mesh_range.x, 0.0001f);
@@ -11117,26 +11265,49 @@ void Mesh::init_voxel_buffer() {
 			}
 		}
 
-		// === get fill ratio for volume and density estimate ===
+		// === GET FILL RATIO VOR VOLUME AND DENSITY ESTIMATE ===
 		size_t count = 0;
 		for (uint32_t w : voxel_data) {
 			count += std::popcount(w);
 		}
 		this->fill_ratio = float(count) / float(res * res * res);
 
-		// === Upload the bit-packed vector to the GPU buffer via staging buffer ===
-		VulkanManager& manager = VulkanManager::get_singleton();
-		Task& task = manager.get_compute_task(__FUNCTION__);
-		Buffer<uint32_t>& staging_buffer = task.make_buffer<uint32_t>(buffer_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		staging_buffer.write(voxel_data);
-		CommandBuffer& cb = task.get_command_buffer();
-		cb.begin_recording();
-		cb.add_buffer_memory_barrier(staging_buffer, VK_ACCESS_2_HOST_WRITE_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
-		cb.record_barriers();
-		cb.copy_buffer(staging_buffer, *voxel_buffer);
-		cb.end_recording();
-		task.submit();
-		task.get_fence().wait();
+		// === ESTIMATE CENTER OF GRAVITY (ASSUMING HOMOGENOUS DENSITY) ===
+		glm::vec3 cog_accum(0.0f);
+		size_t filled_voxels = 0;
+
+		const glm::vec3 voxel_size = mesh_range / float(res);
+
+		for (uint32_t z = 0; z < res; ++z) {
+			for (uint32_t y = 0; y < res; ++y) {
+				for (uint32_t x = 0; x < res; ++x) {
+
+					uint32_t idx = x + y * res + z * res * res;
+					uint32_t word = idx / 32;
+					uint32_t bit = idx % 32;
+
+					if (voxel_data[word] & (1u << bit)) {
+						glm::vec3 voxel_center =
+							mesh_min +
+							glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f) * voxel_size;
+
+						cog_accum += voxel_center;
+						++filled_voxels;
+					}
+				}
+			}
+		}
+
+		if (filled_voxels > 0) {
+			this->COG = cog_accum / float(filled_voxels);
+		}
+		else {
+			// fallback: use bbox center
+			this->COG = 0.5f * (bbox.min() + bbox.max());
+		}
+
+		// write vector data to staging buffer
+		voxel_buffer->write(voxel_data);
 	}
 }
 
@@ -11149,8 +11320,9 @@ uint32_t Mesh::get_material_count() const { return this->material_count; }
 uint32_t Mesh::get_texture_count() const { return this->texture_count; }
 BBox Mesh::get_bbox() const { return this->bbox; }
 void Mesh::set_mass_kg(float_t mass_kg) {
-	this->density = mass_kg / volume_estimate; 
-	this->mass_kg = mass_kg;
+	float_t safe_mass = std::max(mass_kg, MINIMUM_SAFE_MASS);
+	this->density = safe_mass / volume_estimate; 
+	this->mass_kg = safe_mass;
 }
 void Mesh::set_density(float_t g_per_ml) {
 	this->density = g_per_ml;
@@ -11159,9 +11331,9 @@ void Mesh::set_density(float_t g_per_ml) {
 void Mesh::set_length_unit(float_t meters) {
 	this->length_unit_meters = meters;
 	float_t volume_estimate_m3 =
-		((this->bbox.max.x - this->bbox.min.x) * length_unit_meters) *
-		((this->bbox.max.y - this->bbox.min.y) * length_unit_meters) *
-		((this->bbox.max.z - this->bbox.min.z) * length_unit_meters) *
+		((this->bbox.max().x - this->bbox.min().x) * length_unit_meters) *
+		((this->bbox.max().y - this->bbox.min().y) * length_unit_meters) *
+		((this->bbox.max().z - this->bbox.min().z) * length_unit_meters) *
 		this->fill_ratio;
 	this->volume_estimate = 0.001f * volume_estimate_m3;
 	this->density = this->mass_kg / this->volume_estimate;
@@ -11170,6 +11342,7 @@ float_t Mesh::get_density() const { return this->density; }
 float_t Mesh::get_length_unit() const { return this->length_unit_meters; }
 float_t Mesh::get_volume_estimate() const { return this->volume_estimate; }
 float_t Mesh::get_mass_kg() const { return this->mass_kg; }
+const glm::vec3& Mesh::get_cog() const { return this->COG; }
 void Mesh::set_drag_coefficient(float_t value) { this->drag_coefficient = value; }
 float_t Mesh::get_drag_coefficient() const { return this->drag_coefficient; }
 void Mesh::set_surface_friction(float_t value) { this->surface_friction = surface_friction; };
@@ -11179,14 +11352,13 @@ float_t Mesh::get_bounce_restitution() const { return this->bounce_restitution; 
 float_t Mesh::get_fill_ratio() const { return this->fill_ratio; }
 void Mesh::make_solid(bool mesh_is_solid) { this->mesh_is_solid = mesh_is_solid; }
 bool Mesh::is_solid() const { return this->mesh_is_solid; }
-bool Mesh::has_complex_geometry() const { return this->complex_geometry; }
-void Mesh::enabled_complex_geometry(bool enabled) { this->complex_geometry = enabled; }
 const std::vector<Texture>& Mesh::get_textures() const { return this->textures; };
 VkIndexType Mesh::get_index_type() const { return index_type; }
 std::vector<SubMesh>& Mesh::get_submeshes() { return submeshes; }
 std::vector<Light>& Mesh::get_lights() { return this->lights; };
 std::string& Mesh::get_base_dir() { return this->base_dir; };
 uint32_t Mesh::get_unique_ID() const { return this->unique_ID; }
+Mesh* Mesh::get_mesh_by_ID(int32_t meshID) { auto it = mesh_ID_map.find(meshID); return it == mesh_ID_map.end() ? nullptr : mesh_ID_map[meshID]; }
 std::vector<Material>& Mesh::get_materials() { return this->materials; }
 const StringHash& Mesh::get_hash() const { return this->mesh_hash; }
 
@@ -11194,8 +11366,21 @@ const StringHash& Mesh::get_hash() const { return this->mesh_hash; }
 // | Entity                          |
 // +=================================+
 // parametric constructor
-Entity::Entity(Mesh& mesh, glm::vec3 position, bool visible) : mesh(&mesh), position(position), visible(visible), unique_ID(next_unique_ID++) {
+Entity::Entity(Mesh& mesh, glm::vec3 position, bool visible) : mesh(&mesh), visible(visible), unique_ID(next_unique_ID++) {
 	entity_ID_map[this->unique_ID] = this;
+	this->state.pos = glm::vec4(position, 0.0f);
+	this->state.drag_coeff = mesh.get_drag_coefficient();
+	this->state.friction = mesh.get_surface_friction();
+	this->state.length_unit = mesh.get_length_unit();
+	this->state.mesh_base_mass_kg = mesh.get_mass_kg();
+	this->state.mesh_bbox_max = glm::vec4(mesh.get_bbox().max(), 0.0f);
+	this->state.mesh_bbox_min = glm::vec4(mesh.get_bbox().min(), 0.0f);
+	this->state.mesh_fill_ratio = mesh.get_fill_ratio();
+	this->state.mesh_local_cog = glm::vec4(mesh.get_cog(), 0.0f);
+	this->state.restitution = mesh.get_bounce_restitution();
+	this->state.unique_entity_ID = this->unique_ID;
+	this->state.unique_mesh_ID = mesh.get_unique_ID();
+	this->last_update = std::chrono::steady_clock::now();
 };
 
 // destructor
@@ -11204,195 +11389,65 @@ Entity::~Entity() {
 	this->unique_ID = INVALID_ID;
 }
 
-// Calculates the model matrix, applying the transformations in the correct order: scale, rotate, then translate.
-glm::mat4 Entity::get_model_matrix(bool recalculate) {
+// Calculates the model matrix, applying the transformations as calculated in Scene::update_physics_async()
+glm::mat4 Entity::get_model_matrix(bool swept) {
+	if (swept) {
+		auto timepoint_now = std::chrono::steady_clock::now();
+		float dt = std::chrono::duration<float>(timepoint_now - last_update).count();
 
-	// Define safe limits
-	const static float_t MINIMUM_LIN_SCALE = 1e-4f;
-	const static float_t MIN_INERTIA = 1e-9f;
-	const static float_t MAX_DYNAMIC_PRESSURE = 1e6f;
+		// Safety cap for dt to prevent explosions during debug pauses
+		dt = glm::clamp(dt, 0.0f, 0.001f * PHYSICS_DT_CAP_MILLISEC);
 
-	if (first_update) {
-		last_update = std::chrono::high_resolution_clock::now(); // initializer timer
-		first_update = false;
+		// Calculate acceleration: Force * InvMass
+		glm::vec3 acceleration = glm::vec3(this->state.lin_thrust) * this->state.inv_scaled_mass_kg;
 
-		// Initial Matrix Construction
-		this->rotation_matrix = glm::mat4(1.0f);
-		this->rotation_matrix = glm::rotate(this->rotation_matrix, glm::radians(std::fmod(rotation.x, 360.0f)), glm::vec3(1, 0, 0));
-		this->rotation_matrix = glm::rotate(this->rotation_matrix, glm::radians(std::fmod(rotation.y, 360.0f)), glm::vec3(0, 1, 0));
-		this->rotation_matrix = glm::rotate(this->rotation_matrix, glm::radians(std::fmod(rotation.z, 360.0f)), glm::vec3(0, 0, 1));
-		this->model_matrix = glm::translate(glm::mat4(1.0f), position) * this->rotation_matrix * glm::scale(glm::mat4(1.0f), scale);
+		// 1. Swept Position
+		glm::vec3 swept_position = glm::vec3(this->state.pos) + (glm::vec3(this->state.lin_vel) * dt) + (0.5f * acceleration * dt * dt);
 
-		return this->model_matrix;
-	}
-	if (!recalculate) {
-		return this->model_matrix;
+		// 2. Swept Orientation
+		glm::quat current_orientation(
+			this->state.orientation.w,
+			this->state.orientation.x,
+			this->state.orientation.y,
+			this->state.orientation.z
+		);
+
+		// Apply angular acceleration if applicable
+		glm::vec3 angular_acc = glm::mat3(this->state.rot_inv_inertia) * glm::vec3(this->state.spin_thrust);
+		glm::vec3 v_w = glm::vec3(this->state.spin_vel) + (angular_acc * dt * 0.5f);
+
+		float omega = glm::length(v_w);
+		if (omega > 1e-6f) {
+			// Standard order: Quat(angle, axis) * orientation
+			glm::quat delta = glm::angleAxis(omega * dt, v_w / omega);
+			current_orientation = glm::normalize(delta * current_orientation);
+		}
+
+		// 3. Match Shader Construction exactly
+		glm::mat4 T = glm::translate(glm::mat4(1.0f), swept_position);
+		glm::mat4 R = glm::mat4_cast(current_orientation);
+
+		// Ensure scale logic matches the shader's S * T_cog
+		glm::vec3 s_acc = glm::vec3(this->state.scale_acc);
+		glm::vec3 swept_scale = (glm::vec3(this->state.scale) + (glm::vec3(this->state.scale_vel) * dt) + (0.5f * s_acc * dt * dt)) * (float)this->state.length_unit;
+
+		glm::mat4 S = glm::scale(glm::mat4(1.0f), swept_scale);
+		glm::mat4 T_cog = glm::translate(glm::mat4(1.0f), -glm::vec3(this->state.mesh_local_cog));
+
+		return T * R * S * T_cog;
 	}
 	else {
-		std::chrono::steady_clock::time_point time_now = std::chrono::high_resolution_clock::now();
-		float_t sec = static_cast<float_t>(std::chrono::duration_cast<std::chrono::duration<double>>(time_now - last_update).count());
-
-		sec = glm::min(sec, 0.1f); // Guard against huge time steps (e.g. after a breakpoint or lag spike)
-		if (sec <= 0.0001f * MODEL_MATRIX_UPDATE_THRESHOLD_MS) { return this->model_matrix; } // Skip update if time delta is essentially negligible
-		this->last_update = time_now; // reset timer
-
-		float speed = glm::length(lin_velocity);
-		float_t drag_coeff = this->mesh->get_drag_coefficient();
-		float_t mass_kg = this->get_mass_kg();
-		glm::vec3 dim = (this->mesh->get_bbox().max - this->mesh->get_bbox().min) * scale;
-
-		// === LINEAR PHYSICS ===
-		glm::vec3 lin_dir(0.0f);
-		if (lin_physics_enabled) {
-			glm::vec3 lin_acceleration(0.0f);
-
-			// 1. Gravity
-			if (gravity_enabled) {
-				lin_acceleration += gravity;
-			}
-
-			// 2. External Thrust
-			lin_acceleration += this->lin_thrust / mass_kg;
-
-			// 3. Drag Force
-			if (speed > 0.0001) {
-				// Transform World Velocity Direction to Local Space
-				lin_dir = lin_velocity / speed;
-				glm::vec3 local_v_dir = glm::vec3(glm::transpose(this->rotation_matrix) * glm::vec4(lin_dir, 0.0f));
-				glm::vec3 dir = glm::abs(local_v_dir);
-
-				// Project area of the boundary box as seen from the direction of movement
-				float area =
-					(dim.y * dim.z * dir.x) +
-					(dim.x * dim.z * dir.y) +
-					(dim.x * dim.y * dir.z);
-
-				// Calculate Drag Force Magnitude: F = 1/2 * rho * v^2 * Cd * A
-				float drag_mag = 0.5f * this->rho * (speed * speed) * drag_coeff * area;
-
-				// Clamp drag so it cannot reverse velocity or exceed momentum
-				float max_drag = (speed * mass_kg) / sec;
-				drag_mag = glm::min(drag_mag, 0.99f * max_drag); // 0.99f ensures we don't hit exactly 0 and get stuck
-
-				// Apply drag acceleration (opposing velocity)
-				lin_acceleration -= (lin_dir * drag_mag) / mass_kg;
-			}
-
-			lin_velocity += lin_acceleration * sec;
-		}
-		else {
-			// No complex physics, just raw velocity and thrust
-			lin_velocity += (lin_thrust / mass_kg) * sec;
-		}
-		position += lin_velocity * sec;
-
-		// === ROTATIONAL PHYSICS ===
-		if (rot_physics_enabled) {
-			
-			float angular_speed = glm::length(spin_velocity);
-
-			// Calculate Moment of Inertia for each axis
-			// (STABILITY FIX: Ensure inertia never reaches zero to prevent NaN during division)
-			inertia.x = glm::max((1.0f / 12.0f) * mass_kg * (dim.y * dim.y + dim.z * dim.z), MIN_INERTIA);
-			inertia.y = glm::max((1.0f / 12.0f) * mass_kg * (dim.x * dim.x + dim.z * dim.z), MIN_INERTIA);
-			inertia.z = glm::max((1.0f / 12.0f) * mass_kg * (dim.x * dim.x + dim.y * dim.y), MIN_INERTIA);
-
-
-			glm::vec3 spin_acceleration = spin_thrust / inertia;
-
-			if (tumbling_enabled && speed > 1.0f) {
-				float dynamic_pressure = glm::min(0.5f * this->rho * (speed * speed), MAX_DYNAMIC_PRESSURE);
-				float area = (dim.y * dim.z) + (dim.x * dim.z) + (dim.x * dim.y);
-
-				glm::vec3 tumble_axis = glm::cross(lin_dir, glm::vec3(0, 1, 0));
-
-				// Handle parallel case to avoid zero-length axis
-				if (glm::length2(tumble_axis) < 0.0001f) tumble_axis = glm::vec3(1, 0, 0);
-				else tumble_axis = glm::normalize(tumble_axis);
-
-				float lever_arm = (dim.x + dim.y + dim.z) / 3.0f;
-				glm::vec3 tumbling_torque = tumble_axis * (dynamic_pressure * area * tumble_strength * lever_arm);
-				spin_acceleration += tumbling_torque / inertia;
-			}
-
-			if (angular_speed > 0.0001f) {
-				float rot_drag_mag = 0.5f * rho * (angular_speed * angular_speed) * drag_coeff;
-				float max_rot_drag_accel = (angular_speed * 0.99f) / sec; // *.99: Limit rotational drag so it doesn't flip the spin direction
-				glm::vec3 spin_dir = spin_velocity / angular_speed;
-				float drag_accel_mag = rot_drag_mag / glm::length(inertia);
-				spin_acceleration -= spin_dir * glm::min(drag_accel_mag, max_rot_drag_accel);
-			}
-			spin_velocity += spin_acceleration * sec;
-		}
-		else {
-			// No complex physics, just raw spin velocity and spin thrust
-			inertia = glm::max(inertia, glm::vec3(MIN_INERTIA));
-			spin_velocity += (spin_thrust / inertia) * sec;
-		}
-		rotation += spin_velocity * sec;
-
-		// Wrap rotation to [0, 360] to maintain floating point precision over time
-		rotation.x = std::fmod(rotation.x, 360.0f);
-		rotation.y = std::fmod(rotation.y, 360.0f);
-		rotation.z = std::fmod(rotation.z, 360.0f);
-		
-		// === SCALE ===
-		scale_velocity += scale_acceleration * sec;
-		scale += scale_velocity * sec;
-		if (scale.x <= MINIMUM_LIN_SCALE || scale.y <= MINIMUM_LIN_SCALE || scale.z <= MINIMUM_LIN_SCALE) {
-			this->visible = false;
-		}
-
-		// === RESET THRUST FOR NEXT FRAME ===
-		lin_thrust = glm::vec3(0.0f);
-		spin_thrust = glm::vec3(0.0f);
-
-		// === UPDATE ROTATION_MATRIX FOR FINAL MATRIX AND CACHING ===
-		// This ensures the render matches the result of the physics step
-		this->rotation_matrix = glm::mat4(1.0f);
-		this->rotation_matrix = glm::rotate(this->rotation_matrix, glm::radians(rotation.x), glm::vec3(1, 0, 0));
-		this->rotation_matrix = glm::rotate(this->rotation_matrix, glm::radians(rotation.y), glm::vec3(0, 1, 0));
-		this->rotation_matrix = glm::rotate(this->rotation_matrix, glm::radians(rotation.z), glm::vec3(0, 0, 1));
-
-		// Final Matrix Construction (Reusing R)
-		this->model_matrix = glm::translate(glm::mat4(1.0f), position) * this->rotation_matrix * glm::scale(glm::mat4(1.0f), scale);
-		return this->model_matrix;
+		return this->state.model_matrix;
 	}
-}
-
-glm::mat4 Entity::get_rotation_matrix(bool recalculate) {
-	if (recalculate) {
-		this->get_model_matrix();
-	}
-	return this->rotation_matrix;
 }
 
 // move constructor
 Entity::Entity(Entity&& other) noexcept
-	: position(other.position),
-	rotation(other.rotation),
-	scale(other.scale),
-	unique_ID(std::exchange(other.unique_ID, INVALID_ID)),
+	: unique_ID(std::exchange(other.unique_ID, INVALID_ID)),
 	mesh(std::exchange(other.mesh, nullptr)), // Transfer pointer
 	visible(other.visible),
-	lin_physics_enabled(other.lin_physics_enabled),
-	rot_physics_enabled(other.rot_physics_enabled),
-	gravity_enabled(other.gravity_enabled),
-	tumbling_enabled(other.tumbling_enabled),
-	inertia(other.inertia),
-	lin_velocity(other.lin_velocity),
-	spin_velocity(other.spin_velocity),
-	scale_velocity(other.scale_velocity),
-	lin_thrust(other.lin_thrust),
-	spin_thrust(other.spin_thrust),
-	scale_acceleration(other.scale_acceleration),
-	rho(other.rho),
-	tumble_strength(other.tumble_strength),
 	last_update(other.last_update),
-	first_update(other.first_update),
-	model_matrix(other.model_matrix),
-	rotation_matrix(other.rotation_matrix),
-	mass_changes_with_scale(other.mass_changes_with_scale) {
+	state(std::move(other.state)) {
 	entity_ID_map[this->unique_ID] = this;
 	Log::debug("Entity move constructor invoked. Moving from '&other' = ", &other, " to 'this' = ", this, ".");
 }
@@ -11401,34 +11456,12 @@ Entity::Entity(Entity&& other) noexcept
 Entity& Entity::operator=(Entity&& other) noexcept {
 	Log::debug("Entity move assignment invoked. Moving from '&other' = ", &other, " to 'this' = ", this, ".");
 	if (this != &other) {
-		this->position = other.position;
-		this->rotation = other.rotation;
-		this->scale = other.scale;
 		this->unique_ID = other.unique_ID; other.unique_ID = INVALID_ID;
 		entity_ID_map[this->unique_ID] = this;
 		this->mesh = other.mesh; other.mesh = nullptr;
-
 		this->visible = other.visible;
-		this->lin_physics_enabled = other.lin_physics_enabled;
-		this->rot_physics_enabled = other.rot_physics_enabled;
-		this->gravity_enabled = other.gravity_enabled;
-		this->tumbling_enabled = other.tumbling_enabled;
-
-		this->inertia = other.inertia;
-		this->lin_velocity = other.lin_velocity;
-		this->spin_velocity = other.spin_velocity;
-		this->scale_velocity = other.scale_velocity;
-		this->lin_thrust = other.lin_thrust;
-		this->spin_thrust = other.spin_thrust;
-		this->scale_acceleration = other.scale_acceleration;
-
-		this->rho = other.rho;
-		this->tumble_strength = other.tumble_strength;
 		this->last_update = other.last_update;
-		this->first_update = other.first_update;
-		this->model_matrix = other.model_matrix;
-		this->rotation_matrix = other.rotation_matrix;
-		this->mass_changes_with_scale = other.mass_changes_with_scale;
+		this->state = std::move(other.state);
 	}
 	else {
 		Log::debug("... 'this' and '&other' are identical! Returning '*this' (unmodified).");
@@ -11438,29 +11471,9 @@ Entity& Entity::operator=(Entity&& other) noexcept {
 
 // copy constructor
 Entity::Entity(const Entity& other)
-	: position(other.position),
-	rotation(other.rotation),
-	scale(other.scale),
-	unique_ID(next_unique_ID++),	// Assign a brand new ID to the copy
+	: unique_ID(next_unique_ID++),	// Assign a brand new ID to the copy
 	mesh(other.mesh),				// Copy the pointer to the externally owned mesh
-	visible(other.visible),
-	lin_physics_enabled(other.lin_physics_enabled),
-	rot_physics_enabled(other.rot_physics_enabled),
-	gravity_enabled(other.gravity_enabled),
-	tumbling_enabled(other.tumbling_enabled),
-	inertia(other.inertia),
-	lin_velocity(other.lin_velocity),
-	spin_velocity(other.spin_velocity),
-	scale_velocity(other.scale_velocity),
-	lin_thrust(other.lin_thrust),
-	spin_thrust(other.spin_thrust),
-	scale_acceleration(other.scale_acceleration),
-	rho(other.rho),
-	tumble_strength(other.tumble_strength),
-	first_update(true),				// New instance needs its own timer start
-	model_matrix(other.model_matrix),
-	rotation_matrix(other.rotation_matrix),
-	mass_changes_with_scale(other.mass_changes_with_scale) {
+	visible(other.visible) {
 	entity_ID_map[this->unique_ID] = this;
 	Log::debug("Entity copy constructor invoked. Copying from '&other' = ", &other, " to 'this' = ", this, ".");
 }
@@ -11470,28 +11483,10 @@ Entity& Entity::operator=(const Entity& other) {
 	Log::debug("Entity copy assignment invoked. Copying from '&other' = ", &other, " to 'this' = ", this, ".");
 	if (this != &other) {
 		// note: the unique_IDs are kept unmodified for both src and dst
-		this->position = other.position;
-		this->rotation = other.rotation;
-		this->scale = other.scale;
 		this->mesh = other.mesh;
 		this->visible = other.visible;
-		this->lin_physics_enabled = other.lin_physics_enabled;
-		this->rot_physics_enabled = other.rot_physics_enabled;
-		this->gravity_enabled = other.gravity_enabled;
-		this->tumbling_enabled = other.tumbling_enabled;
-		this->inertia = other.inertia;
-		this->lin_velocity = other.lin_velocity;
-		this->spin_velocity = other.spin_velocity;
-		this->scale_velocity = other.scale_velocity;
-		this->lin_thrust = other.lin_thrust;
-		this->spin_thrust = other.spin_thrust;
-		this->scale_acceleration = other.scale_acceleration;
-		this->rho = other.rho;
-		this->tumble_strength = other.tumble_strength;
-		this->first_update = true; // Reset timer for the "new" state of this object
-		this->model_matrix = other.model_matrix;
-		this->rotation_matrix = other.rotation_matrix;
-		this->mass_changes_with_scale = other.mass_changes_with_scale;
+		this->last_update = other.last_update;
+		this->state = other.state;
 	}
 	else {
 		Log::debug("... 'this' and '&other' are identical! Returning '*this' (unmodified).");
@@ -11500,77 +11495,197 @@ Entity& Entity::operator=(const Entity& other) {
 }
 
 // Public setter methods for transformations.
-glm::vec3& Entity::set_position(const glm::vec3& position) { this->position = position; return this->position; }
-glm::vec3& Entity::set_rotation(const glm::vec3& rotation) { this->rotation = rotation; return this->rotation; }
-glm::vec3& Entity::set_scale(const glm::vec3& scale) { this->scale = scale; return this->scale; }
-void Entity::enable_mass_change_with_scale(bool enable) { this->mass_changes_with_scale = enable; }
-
-glm::vec3& Entity::translate(const glm::vec3& position_delta) { this->position += position_delta; return this->position; }
-glm::vec3& Entity::rotate(const glm::vec3& rotation_delta) { this->rotation += rotation_delta; return this->rotation; }
-glm::vec3& Entity::scale_add(const glm::vec3& scale_delta) { this->scale += scale_delta; return this->scale; }
-glm::vec3& Entity::scale_factor(const glm::vec3& scale_multiplier) { this->scale *= scale_multiplier; return this->scale; }
-
-void Entity::set_lin_velocity(glm::vec3 velocity_xyz) { this->lin_velocity = velocity_xyz; }
-void Entity::set_lin_thrust(glm::vec3 lin_thrust_xyz) { this->lin_thrust = lin_thrust_xyz; }
-void Entity::set_spin_velocity(glm::vec3 spin_velocity_xyz) { this->spin_velocity = spin_velocity_xyz; }
-void Entity::set_spin_thrust(glm::vec3 spin_thrust_xyz) { this->spin_thrust = spin_thrust_xyz; }
-void Entity::set_scale_velocity(glm::vec3 scale_velocity) { this->scale_velocity = scale_velocity; }
-void Entity::set_scale_accelaration(glm::vec3 scale_acceleration) { this->scale_acceleration = scale_acceleration; }
-
-glm::vec3 Entity::get_lin_velocity() const { return this->lin_velocity; }
-glm::vec3 Entity::get_spin_velocity() const { return this->spin_velocity; }
-glm::vec3 Entity::get_inertia() const { return this->inertia; }
-
-void Entity::set_environment_density(float_t rho) { this->rho = rho; }
-void Entity::set_tumble_strength(float_t value) { this->tumble_strength = value; }
-
-void Entity::set_last_collision(Entity* other) {
-	this->last_collided_with = other;
+void Entity::set_position(const glm::vec3& position) {
+	this->state.pos = glm::vec4(position, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
 }
 
+void Entity::set_rotation(const glm::vec3& rotation_degrees) {
+	glm::quat ori_quat(glm::radians(rotation_degrees));
+	this->state.orientation = glm::vec4(ori_quat.x, ori_quat.y, ori_quat.z, ori_quat.w);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+void Entity::set_orientation(glm::quat orientation) { this->state.orientation = { orientation.x, orientation.y, orientation.z, orientation.w }; }
+
+void Entity::set_orientation(glm::vec4 orientation) { this->state.orientation = orientation; }
+
+void Entity::set_scale(const glm::vec3& scale) {
+	this->state.scale = glm::vec4(scale, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+glm::vec3 Entity::translate(const glm::vec3& position_delta) {
+	glm::vec3 old_pos = glm::vec3(this->state.pos);
+	glm::vec3 new_pos = old_pos + position_delta;
+	this->state.pos = glm::vec4(new_pos, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+	return new_pos;
+}
+
+glm::vec3 Entity::rotate(const glm::vec3& rotation_delta_degrees) {
+	glm::quat current_ori(
+		this->state.orientation.w,
+		this->state.orientation.x,
+		this->state.orientation.y,
+		this->state.orientation.z
+	);
+	glm::quat delta_quat = glm::quat(glm::radians(rotation_delta_degrees));
+	glm::quat new_ori = glm::normalize(delta_quat * current_ori);
+	this->state.orientation = glm::vec4(new_ori.x, new_ori.y, new_ori.z, new_ori.w);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+	return glm::degrees(glm::eulerAngles(new_ori));
+}
+
+glm::vec3 Entity::scale_add(const glm::vec3& scale_delta) {
+	glm::vec3 new_scale = glm::vec3(this->state.scale) + scale_delta;
+	this->state.scale = glm::vec4(new_scale, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+	return new_scale;
+}
+
+glm::vec3 Entity::scale_factor(const glm::vec3& scale_multiplier) {
+	glm::vec3 new_scale = glm::vec3(this->state.scale) * scale_multiplier;
+	this->state.scale = glm::vec4(new_scale, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+	return new_scale;
+}
+
+void Entity::set_lin_velocity(glm::vec3 velocity_xyz) {
+	this->state.lin_vel = glm::vec4(velocity_xyz, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+void Entity::set_lin_thrust(glm::vec3 lin_thrust_xyz) {
+	this->state.lin_thrust = glm::vec4(lin_thrust_xyz, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+void Entity::set_spin_velocity(glm::vec3 spin_velocity_xyz) {
+	this->state.spin_vel = glm::vec4(spin_velocity_xyz, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+void Entity::set_spin_thrust(glm::vec3 spin_thrust_xyz) {
+	this->state.spin_thrust = glm::vec4(spin_thrust_xyz, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+void Entity::set_scale_velocity(glm::vec3 scale_velocity) {
+	this->state.scale_vel = glm::vec4(scale_velocity, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+void Entity::set_scale_accelaration(glm::vec3 scale_acceleration) {
+	this->state.scale_acc = glm::vec4(scale_acceleration, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+void Entity::set_tumble_strength(float_t value) {
+	this->state.tumble_strength = value;
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+void Entity::set_gravity(float_t gravity) {
+	this->state.gravity = glm::vec4(0.0f, gravity, 0.0f, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+void Entity::set_gravity(glm::vec3 gravity) {
+	this->state.gravity = glm::vec4(gravity, 0.0f);
+	this->state.protection_flag = 1;
+	this->last_update = std::chrono::steady_clock::now();
+}
+
+glm::vec3 Entity::get_position() const { return glm::vec3(this->state.pos); }
+glm::vec3 Entity::get_rotation() const { return glm::eulerAngles(glm::quat(this->state.orientation.w, this->state.orientation.x, this->state.orientation.y, this->state.orientation.z)); }
+glm::quat Entity::get_orientation() { return glm::quat(this->state.orientation.w, this->state.orientation.x, this->state.orientation.y, this->state.orientation.z); }
+glm::vec3 Entity::get_lin_velocity() const { return glm::vec3(this->state.lin_vel); }
+glm::vec3 Entity::get_spin_velocity() const { return glm::vec3(this->state.spin_vel); }
+glm::vec3 Entity::get_lin_thrust() const { return glm::vec3(this->state.lin_thrust); }
+glm::vec3 Entity::get_spin_thrust() const { return glm::vec3(this->state.spin_thrust); }
+float_t Entity::get_tumble_strength() const { return this->state.tumble_strength; }
+glm::vec3 Entity::get_scale_velocity() const { return glm::vec3(this->state.scale_vel); }
+glm::vec3 Entity::get_scale_acceleration() const { return glm::vec3(this->state.scale_acc); }
+
 Entity* Entity::get_last_collision(bool reset) {
-	Entity* collision_partner = this->last_collided_with;
-	if (reset) { this->last_collided_with = nullptr; }
+	Entity* collision_partner = get_entity_by_ID(this->state.last_collided_with);
+	if (reset) {
+		this->state.last_collided_with = INVALID_ID;
+		this->state.protection_flag = 1;
+	}
 	return collision_partner;
 }
 
 Mesh& Entity::get_mesh() const { return *mesh; }
-const glm::vec3& Entity::get_position() const { return this->position; }
-const glm::vec3& Entity::get_rotation() const { return this->rotation; }
-glm::quat Entity::get_orientation() { return glm::quat_cast(this->model_matrix); }
-void Entity::set_orientation(glm::quat orientation) { this->rotation = glm::eulerAngles(orientation); }
-const glm::vec3& Entity::get_scale() const { return this->scale; }
 
-const float_t& Entity::get_mass_kg() const {
-	float_t mass_kg;
-	if (this->mass_changes_with_scale) {
-		float_t volume_scale = glm::max(MINIMUM_VOL_SCALE, scale.x * scale.y * scale.z);
-		mass_kg = glm::max(this->mesh->get_mass_kg() * volume_scale, MINIMUM_SAFE_MASS);
-	}
-	else {
-		mass_kg = glm::max(this->mesh->get_mass_kg(), MINIMUM_SAFE_MASS);
-	}
-	return mass_kg;
+glm::vec3 Entity::get_scale() const { return glm::vec3(this->state.scale); }
+
+float_t Entity::get_mass_kg() const {
+	float_t volume_scale = this->state.scale.x * this->state.scale.y * this->state.scale.z * this->state.length_unit;
+	volume_scale = glm::max(MINIMUM_VOL_SCALE, volume_scale);
+	return glm::max(this->state.mesh_base_mass_kg * volume_scale, MINIMUM_SAFE_MASS);
 }
 
-const float_t& Entity::get_volume_estimate() const {
+float_t Entity::get_volume_estimate() const {
 	return
-		(this->mesh->get_bbox().size().x * this->scale.x * this->mesh->get_length_unit()) *
-		(this->mesh->get_bbox().size().x * this->scale.x * this->mesh->get_length_unit()) *
-		(this->mesh->get_bbox().size().x * this->scale.x * this->mesh->get_length_unit()) *
-		0.001f *				// convert cubic meters to liters
-		this->mesh->get_fill_ratio();
+		(this->state.mesh_bbox_max.x - this->state.mesh_bbox_min.x) * this->state.scale.x * this->state.length_unit *
+		(this->state.mesh_bbox_max.y - this->state.mesh_bbox_min.y) * this->state.scale.y * this->state.length_unit *
+		(this->state.mesh_bbox_max.z - this->state.mesh_bbox_min.z) * this->state.scale.z * this->state.length_unit *
+		0.001f * // convert cubic meters to liters
+		this->state.mesh_fill_ratio;
 }
-const float_t& Entity::get_density() const { return this->get_mass_kg() / this->get_volume_estimate(); }
-void Entity::enable_physics(bool linear, bool gravity, bool rotation, bool tumble) {
-	this->lin_physics_enabled = linear; this->gravity_enabled = gravity;  this->rot_physics_enabled = rotation; this->tumbling_enabled = tumble;
+
+float_t Entity::get_density() const { return this->get_mass_kg() / this->get_volume_estimate(); }
+
+void Entity::enable_physics(bool linear, bool gravity, bool rotation) {
+	this->state.lin_enabled = int32_t(linear);
+	this->state.gravity = gravity ? glm::vec4(0.0f, -9.81, 0.0f, 0.0f) : glm::vec4(0.0f);
+	this->state.rot_enabled = int32_t(rotation);
+	this->last_update = std::chrono::steady_clock::now();
 }
-bool Entity::is_lin_physics_enabled() const { return this->lin_physics_enabled; }
-bool Entity::is_rot_physics_enabled() const { return this->rot_physics_enabled; }
-bool Entity::is_visible() const { return this->visible; }
+void Entity::enable_physics(bool enable) {
+	this->enable_physics(enable, enable, enable);
+}
+
+bool Entity::is_lin_physics_enabled() const { return bool(this->state.lin_enabled); }
+
+bool Entity::is_rot_physics_enabled() const { return bool(this->state.rot_enabled); }
+
+bool Entity::is_static() const { return !this->is_lin_physics_enabled() && !this->is_rot_physics_enabled(); }
+
+bool Entity::is_visible() {
+	if (this->state.scale.x <= MINIMUM_LIN_SCALE || this->state.scale.y <= MINIMUM_LIN_SCALE || this->state.scale.z <= MINIMUM_LIN_SCALE) {
+		this->visible = false;
+	}
+	return this->visible;
+}
+
 int Entity::get_unique_ID() const { return unique_ID; }
-Entity* Entity::get_entity_by_ID(int32_t unique_entID) { return entity_ID_map[unique_entID]; }
-void Entity::set_visible(bool is_visible) { this->visible = is_visible; }
+
+Entity* Entity::get_entity_by_ID(int32_t unique_entID) {
+	auto it = entity_ID_map.find(unique_entID);
+	return it == entity_ID_map.end() ? nullptr : entity_ID_map[unique_entID];
+}
+
+void Entity::set_visible(bool is_visible) {
+	this->last_update = std::chrono::steady_clock::now(); this->visible = is_visible;
+}
 
 // +=================================+   
 // | Camera                          |
@@ -11615,6 +11730,7 @@ float_t Camera::get_distance(const Entity& entity) const {
 	return glm::length(entity.get_position() - this->position);
 }
 
+float_t Camera::get_fov() const { return this->fov; }
 glm::vec3 Camera::get_front() const {
 	return front;
 }
@@ -11627,7 +11743,7 @@ glm::vec3 Camera::set_position(const glm::vec3& new_position) {
 }
 
 // translate the camera's position by the specified delta
-glm::vec3 Camera::translate(const glm::vec3& delta) {
+glm::vec3 Camera::translate(glm::vec3 delta) {
 	this->position += delta;
 	this->update_camera_vectors();
 	return position;
@@ -11835,6 +11951,34 @@ void Camera::update_camera_vectors() {
 		right = glm::normalize(glm::vec3(roll_mat * glm::vec4(right, 0.0f)));
 		up = glm::normalize(glm::cross(right, front));
 	}
+}
+
+std::vector<Camera::FrustrumPlane>& Camera::get_frustrum_planes() {
+	this->frustrum_planes.resize(6);
+	glm::mat4 VP = this->get_projection_matrix() * this->get_view_matrix();
+
+	auto extract_plane = [](const glm::mat4& m, int row, int sign) {
+		glm::vec4 p = glm::vec4(
+			m[0][3] + sign * m[0][row],
+			m[1][3] + sign * m[1][row],
+			m[2][3] + sign * m[2][row],
+			m[3][3] + sign * m[3][row]
+		);
+		float len = glm::length(glm::vec3(p));
+		Camera::FrustrumPlane plane;
+		plane.normal = glm::vec3(p) / len;
+		plane.distance = p.w / len;
+		return plane;
+	};
+
+	this->frustrum_planes[0] = extract_plane(VP, 0, +1); // left
+	this->frustrum_planes[1] = extract_plane(VP, 0, -1); // right
+	this->frustrum_planes[2] = extract_plane(VP, 1, +1); // bottom
+	this->frustrum_planes[3] = extract_plane(VP, 1, -1); // top
+	this->frustrum_planes[4] = extract_plane(VP, 2, +1); // near
+	this->frustrum_planes[5] = extract_plane(VP, 2, -1); // far
+
+	return this->frustrum_planes;
 }
 
 // +=================================+   
@@ -12166,9 +12310,11 @@ void Scene::add_cubemap(
 
 ParticleSystem& Scene::add_particle_system(Entity& emitter_entity) {
 	auto it = this->particle_systems.emplace(emitter_entity);
-	for (auto& mesh : it->get_particle_meshes()) {
-		this->add_mesh(*mesh);
-	}
+	return *it;
+}
+
+ParticleSystem& Scene::add_particle_system(glm::vec3 emitter_position) {
+	auto it = this->particle_systems.emplace(emitter_position);
 	return *it;
 }
 
@@ -12246,24 +12392,30 @@ void Scene::start_physics_thread(float cell_size) {
 	if (physics_running.exchange(true)) return;
 
 	physics_thread = std::jthread([this, cell_size](std::stop_token st) {
-
-		auto last_time = std::chrono::high_resolution_clock::now();
+		Log::force("PHYSICS THREAD: ", std::this_thread::get_id());
+		auto last_timepoint = std::chrono::high_resolution_clock::now();
 
 		while (!st.stop_requested()) {
+			while (VulkanManager::job_count() >= MAX_VULKAN_JOBS) {
+				std::this_thread::yield();
+				std::this_thread::sleep_for(std::chrono::duration<float>(0.001));
+			}
+			auto timepoint_now = std::chrono::high_resolution_clock::now();
+			float_t dt_sec = std::chrono::duration<float_t>(timepoint_now - last_timepoint).count();
+			last_timepoint = timepoint_now;
+			static constexpr float_t BUDGET_SEC = 0.001f * PHYSICS_UPDATE_MILLISEC;
 
-			auto now = std::chrono::high_resolution_clock::now();
-			float dt_sec = std::chrono::duration<float>(now - last_time).count();
-			last_time = now;
-			dt_sec = std::min(dt_sec, 0.001f * PHYSICS_DT_CAP_MILLISEC);
+			physics_update(BUDGET_SEC);
 
-			physics_update_async(cell_size, dt_sec);
-
-			float elapsed =	std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - last_time).count();
+			float_t elapsed_sec = std::chrono::duration<float_t>(std::chrono::high_resolution_clock::now() - last_timepoint).count();
 
 			// --- SLEEP FOR REMAINING BUDGET IF EARLY ---
-			float budget = 0.001f * PHYSICS_UPDATE_MILLISEC;
-			if (elapsed < budget) {
-				std::this_thread::sleep_for(std::chrono::duration<float>(budget - elapsed));
+			if (elapsed_sec < BUDGET_SEC) {
+				std::this_thread::sleep_for(std::chrono::duration<float>(BUDGET_SEC - elapsed_sec));
+			}
+			else {
+				Log::warning("Physics update took ", elapsed_sec * 1000.0f, " ms, which exceeds the budget of ", BUDGET_SEC * 1000.0f, " ms.");
+				std::this_thread::yield();
 			}
 
 			// update watchdog info
@@ -12280,691 +12432,405 @@ void Scene::start_physics_thread(float cell_size) {
 	});
 }
 
-struct PhysicsState {
-	int32_t unique_entity_ID;
-	glm::vec3 scale;
-	glm::vec3 pos;
-	glm::vec3 lin_vel;
-	glm::vec3 spin_vel;
-	glm::mat4 model;
-	glm::quat orientation;
-	glm::mat3 rot_inv_inertia;
-	float inv_mass;
-	float restitution;
-	float friction;
-	bool lin_enabled;
-	bool rot_enabled;
-	bool has_complex_geometry;
-	BBox mesh_bbox;
-	glm::vec3 world_corners[8];
-	Buffer<uint32_t>* voxel_buffer;
-	float_t mesh_fill_ratio;
-	int32_t last_collided_with; // entID of the collision partner
-};
+void Scene::physics_update(float_t dt_sec) {
+	
+	if (VulkanManager::job_count() >= MAX_VULKAN_JOBS) {
+		Log::warning("Physics update skipped to avoid Vulkan job queue overflow. Current job count: ", VulkanManager::job_count());
+		return;
+	}
 
-// structure to store a confirmed collision
-struct Collision {
-	PhysicsState* state_A;
-	PhysicsState* state_B;
-	glm::vec3 normal;
-	float overlap;
-	glm::vec3 contact_point;
-};
+	// ------------------------------------------------------------------------------------------------------------------------------------------
+	// SNAPSHOT (CPU)
+	// ------------------------------------------------------------------------------------------------------------------------------------------
 
-// structure to pass collision candidates to the GPU
-struct CollisionCandidateGPU {
-	glm::mat4 modelB;
-	glm::mat4 invModelA;
-	glm::vec4 bbox_A_min;
-	glm::vec4 bbox_B_min;
-	glm::vec4 bbox_A_range;
-	glm::vec4 bbox_B_range;
-	glm::vec4 collision_normal;
-	uint32_t voxel_buffer_A_offset;
-	uint32_t voxel_buffer_B_offset;
-	int32_t entID_A;
-	int32_t entID_B;
-};
+	static thread_local std::vector<PhysicsState> states;
+	states.clear();
+	static thread_local const size_t MIN_STATES_ALLOCATION = 100;
+	static thread_local size_t last_states_count = 0;
+	states.reserve(std::max(MIN_STATES_ALLOCATION, static_cast<size_t>(1.5f * last_states_count)));
 
-// structure for reading back collision results from the GPU
-struct CollisionResultGPU {
-	uint32_t hit_count;
-	int32_t contact_x;
-	int32_t contact_y;
-	int32_t contact_z;
-};
+	std::unordered_map<uint32_t, uint32_t> voxel_buffer_map; // key: meshID, value: offset in voxel master buffer
+	uint32_t voxel_buffer_current_offset = 0;
+	static thread_local uint32_t res = COMPLEX_COLLISION_VOXEL_RESOLUTION;
+	static thread_local uint32_t total_voxels = res * res * res;
+	static thread_local uint32_t voxel_buffer_elements = (total_voxels + 31) / 32;
 
-struct CollisionJobResult {
-	std::vector<CollisionResultGPU> results;
-};
-
-// structure to share data between recording GPU work and result read-back
-struct CollisionGPUJobPayload {
-	// Task-owned
-	Buffer<CollisionResultGPU>* result_staging;
-
-	// CPU-side mapping
-	std::vector<int32_t> entIDs_A;
-	std::vector<int32_t> entIDs_B;
-	std::vector<glm::vec3> normals;
-	std::vector<CollisionResultGPU> results;
-	uint32_t candidate_count = 0;
-};
-
-void Scene::physics_update_async(float_t cell_size, float_t dt_sec) {
-
-	static thread_local std::unordered_map<int32_t, std::unique_ptr<PhysicsState>> states; // this map should never be cleared and stay alive across iterations; entries should only be removed when the entities are no longer valid, visible or solid
-
-	// === SNAPSHOT STATE (Locked) ===
 	{
 		std::vector<RankedMutex*> locks;
 		locks.push_back(&entity_mutex);
 		locks.push_back(&physics_mutex);
-		for (auto& ps : particle_systems) {	locks.push_back(&ps.particles_mutex); }
+		for (auto& ps : particle_systems) { locks.push_back(&ps.particles_mutex); }
 		LockGuard lock(locks);
 
-		// snapshot lambda
-		auto snapshot_entity = [&](Entity* ent) {
-			if (!ent || !ent->is_visible() || !ent->get_mesh().is_solid()) return;
-			int32_t entID = ent->get_unique_ID();
-			std::unique_ptr<PhysicsState> state = std::make_unique<PhysicsState>();
-			state->unique_entity_ID = entID;
-			state->scale = ent->get_scale();
-			state->pos = ent->get_position();
-			state->lin_vel = ent->get_lin_velocity();
-			state->spin_vel = ent->get_spin_velocity();
-			state->model = ent->get_model_matrix();
-			state->orientation = ent->get_orientation();
-			state->restitution = ent->get_mesh().get_bounce_restitution();
-			state->friction = ent->get_mesh().get_surface_friction();
-			state->mesh_bbox = ent->get_mesh().get_bbox();
-			state->lin_enabled = ent->is_lin_physics_enabled();
-			state->rot_enabled = ent->is_rot_physics_enabled();
-			state->has_complex_geometry = ent->get_mesh().has_complex_geometry();
-			state->inv_mass = (state->lin_enabled && ent->get_mass_kg() > 0) ? (1.0f / ent->get_mass_kg()) : 0.0f;
-			state->voxel_buffer = &ent->get_mesh().get_voxel_buffer();
-			state->mesh_fill_ratio = ent->get_mesh().get_fill_ratio();
-			state->last_collided_with = ent->get_last_collision(false) == nullptr ? INVALID_ID :
-				ent->get_last_collision()->get_unique_ID();
-
-			if (state->rot_enabled) {
-				glm::vec3 local_I = ent->get_inertia();
-				glm::mat3 inv_I_local(0.0f);
-				inv_I_local[0][0] = 1.0f / std::max(local_I.x, 0.0001f);
-				inv_I_local[1][1] = 1.0f / std::max(local_I.y, 0.0001f);
-				inv_I_local[2][2] = 1.0f / std::max(local_I.z, 0.0001f);
-				glm::mat3 R = glm::mat3(ent->get_rotation_matrix());
-				state->rot_inv_inertia = R * inv_I_local * glm::transpose(R);
+		auto map_voxelbuffer = [&](uint32_t meshID) {
+			auto it = voxel_buffer_map.find(meshID);
+			if (it != voxel_buffer_map.end()) {
+				return it->second;
 			}
 			else {
-				state->rot_inv_inertia = glm::mat3(0.0f);
+				uint32_t off = voxel_buffer_current_offset;
+				voxel_buffer_map[meshID] = off;
+				voxel_buffer_current_offset += voxel_buffer_elements;
+				return off;
 			}
-
-			for (int i = 0; i < 8; ++i) {
-				glm::vec3 p;
-				p.x = (i & 1) ? state->mesh_bbox.max.x * state->scale.x : state->mesh_bbox.min.x * state->scale.x;
-				p.y = (i & 2) ? state->mesh_bbox.max.y * state->scale.y : state->mesh_bbox.min.y * state->scale.y;
-				p.z = (i & 4) ? state->mesh_bbox.max.z * state->scale.z : state->mesh_bbox.min.z * state->scale.z;
-				state->world_corners[i] = glm::vec3(state->model * glm::vec4(p, 1.0f));
-			}
-
-			// register PhysicsState for this Entity to states map
-			// (or overwrite old entry if it already exists)
-			states[entID] = std::move(state);
 		};
 
-		for (auto& [id, ent] : this->entities) snapshot_entity(ent.get());
+		bool all_static = true;
+
+		for (auto& [id, ent] : this->entities) {
+			if (ent && ent->is_visible()) {
+				states.push_back(ent->state);
+				states.back().voxel_master_buffer_offset = map_voxelbuffer(ent->get_mesh().get_unique_ID());
+				states.back().voxel_buffer_elements = voxel_buffer_elements;
+				ent->state.protection_flag = 0;
+				if (!ent->is_static()) {
+					all_static = false;
+				}
+			}
+		}
 		for (auto& ps : this->particle_systems) {
-			for (auto& p : ps.get_active_particles()) snapshot_entity(p->entity);
+			for (auto& p : ps.get_active_particles()) {
+				if (p && p->entity && p->entity->is_visible()) {
+					states.push_back(p->entity->state);
+					states.back().voxel_master_buffer_offset = map_voxelbuffer(p->entity->get_mesh().get_unique_ID());
+					states.back().voxel_buffer_elements = voxel_buffer_elements;
+					p->entity->state.protection_flag = 0;
+					if (!p->entity->is_static()) {
+						all_static = false;
+					}
+				}
+			}
 		}
 
 		if (states.empty()) return;
-	}
+		if (all_static) return;
+		last_states_count = states.size();
 
-	// === BEGIN OF SUBSTEPS LOOP ===
-	static thread_local float_t avg_substep_duration = 0.05; // conservative inititialization; to be updates as rolling average
-	uint32_t substeps = std::min(
-		std::max(
-			1u,
-			uint32_t(PHYSICS_SUBSTEP_SAFETY_FACTOR * (dt_sec / avg_substep_duration))
-		),
-		uint32_t(MAX_PHYSICS_SUBSTEPS)
-	);
-	float_t dt_substep = dt_sec / substeps;
+	} // END OF MUTEX LOCK
 
+	// record VulkanJob (queue for submit on the main thread)
+	uint64_t jobID = VulkanManager::record_job(VulkanManager::JobType::ComputeJob,
+		[input_states = std::move(states), vb_map = std::move(voxel_buffer_map), dt_sec = dt_sec, voxel_buffer_elements = voxel_buffer_elements](VulkanManager::VulkanJob& job) mutable {
 
-	for (uint32_t substep = 0; substep < substeps; substep++) {
-
-		auto substep_start = std::chrono::high_resolution_clock::now(); // store for later averaging of substep duration
-
-		// === INTEGRATION PER SUBSTEP ===
-		for (auto& pair : states) {
-			int32_t entID = pair.first;
-			PhysicsState* state = pair.second.get();
-
-			if (state->lin_enabled) {
-				state->pos += state->lin_vel * dt_substep;
-			}
-
-			if (state->rot_enabled) {
-				float angle = glm::length(state->spin_vel) * dt_substep;
-				if (angle > 0.0f) {
-					glm::vec3 axis = glm::normalize(state->spin_vel);
-					glm::quat dq = glm::angleAxis(angle, axis);
-					state->orientation = glm::normalize(dq * state->orientation);
-				}
-
-			}
-
-			state->model =
-				glm::translate(glm::mat4(1.0f), state->pos) *
-				glm::mat4_cast(state->orientation);
-
-			// recompute world corners
-			for (int i = 0; i < 8; ++i) {
-				glm::vec3 p(
-					(i & 1) ? state->mesh_bbox.max.x * state->scale.x : state->mesh_bbox.min.x * state->scale.x,
-					(i & 2) ? state->mesh_bbox.max.y * state->scale.y : state->mesh_bbox.min.y * state->scale.y,
-					(i & 4) ? state->mesh_bbox.max.z * state->scale.z : state->mesh_bbox.min.z * state->scale.z
-				);
-				state->world_corners[i] = glm::vec3(state->model * glm::vec4(p, 1.0f));
-			}
-		}
-
-		// === BROAD PHASE (Spatial Hashing) ===
-		static thread_local std::unordered_map<int64_t, std::vector<PhysicsState*>> cells;
-		cells.clear();
-
-		for (auto& pair : states) {
-			PhysicsState* state = pair.second.get();
-			glm::vec3 bmin(FLT_MAX), bmax(-FLT_MAX);
-			for (const auto& c : state->world_corners) {
-				bmin = glm::min(bmin, c);
-				bmax = glm::max(bmax, c);
-			}
-
-			for (int x = (int)floor(bmin.x / cell_size); x <= (int)floor(bmax.x / cell_size); ++x) {
-				for (int y = (int)floor(bmin.y / cell_size); y <= (int)floor(bmax.y / cell_size); ++y) {
-					for (int z = (int)floor(bmin.z / cell_size); z <= (int)floor(bmax.z / cell_size); ++z) {
-						cells[((int64_t)x << 42) | (((int64_t)y & 0x1FFFFF) << 21) | ((int64_t)z & 0x1FFFFF)].push_back(state);
-					}
-				}
-			}
-		}
-		
-		// === NARROW PHASE ===
-		static thread_local std::unordered_map<PhysicsState*, std::vector<PhysicsState*>> checked;
-		checked.clear();
-
-		static thread_local std::vector<CollisionCandidateGPU> complex_collision_candidates;
-		complex_collision_candidates.clear();
-
-		static std::unordered_map<Buffer<uint32_t>*, uint32_t> voxel_buffer_map;
-		voxel_buffer_map.clear();
-
-		static thread_local std::vector<Collision> confirmed_collisions;
-		confirmed_collisions.clear();
-
-		uint32_t voxel_buffer_current_offset = 0;
-
-		static thread_local const uint32_t res = COMPLEX_COLLISION_VOXEL_RESOLUTION;
-		static thread_local const uint32_t total_voxels = res * res * res;
-		static thread_local const uint32_t voxel_buffer_elements = (total_voxels + 31) / 32;
-
-		auto project_obb = [&](const PhysicsState* state, const glm::vec3& axis,
-			float& out_min, float& out_max)
-			{
-				glm::mat3 R = glm::mat3_cast(state->orientation);
-				glm::vec3 e = 0.5f * (state->mesh_bbox.size() * state->scale);
-
-				float r =
-					e.x * std::abs(glm::dot(axis, R[0])) +
-					e.y * std::abs(glm::dot(axis, R[1])) +
-					e.z * std::abs(glm::dot(axis, R[2]));
-
-				float c = glm::dot(state->pos, axis);
-				out_min = c - r;
-				out_max = c + r;
-			};
-
-		for (auto& [hash, list] : cells) {
-			if (list.size() < 2) continue;
-
-			for (size_t i = 0; i < list.size(); ++i) {
-				for (size_t j = i + 1; j < list.size(); ++j) {
-
-					PhysicsState* state_A = list[i];
-					PhysicsState* state_B = list[j];
-
-					if (!state_A->lin_enabled && !state_B->lin_enabled) continue;
-
-					if (state_A > state_B) std::swap(state_A, state_B);
-					if (std::find(checked[state_A].begin(), checked[state_A].end(), state_B) != checked[state_A].end())
-						continue;
-
-					checked[state_A].push_back(state_B);
-
-					// --- SAT AXES ---
-					glm::vec3 axes[15];
-					glm::mat3 Ra = glm::mat3_cast(state_A->orientation);
-					glm::mat3 Rb = glm::mat3_cast(state_B->orientation);
-
-					axes[0] = glm::normalize(Ra[0]);
-					axes[1] = glm::normalize(Ra[1]);
-					axes[2] = glm::normalize(Ra[2]);
-					axes[3] = glm::normalize(Rb[0]);
-					axes[4] = glm::normalize(Rb[1]);
-					axes[5] = glm::normalize(Rb[2]);
-
-					int axis_count = 6;
-					for (int k = 0; k < 3; ++k) {
-						for (int l = 0; l < 3; ++l) {
-							glm::vec3 cross_axis = glm::cross(axes[k], axes[3 + l]);
-							if (glm::length2(cross_axis) > 0.0001f)
-								axes[axis_count++] = glm::normalize(cross_axis);
-						}
-					}
-
-					float min_overlap = FLT_MAX;
-					glm::vec3 collision_normal(0.0f);
-					bool separated = false;
-
-					for (int k = 0; k < axis_count; ++k) {
-						const glm::vec3& axis = axes[k];
-
-						float minA, maxA, minB, maxB;
-						project_obb(state_A, axis, minA, maxA);
-						project_obb(state_B, axis, minB, maxB);
-
-						if (maxA < minB || maxB < minA) {
-							separated = true;
-							break;
-						}
-
-						float overlap = std::min(maxA, maxB) - std::max(minA, minB);
-						if (overlap < min_overlap) {
-							min_overlap = overlap;
-							collision_normal = axis;
-						}
-					}
-
-					if (separated) continue;
-
-					if (glm::dot(state_B->pos - state_A->pos, collision_normal) < 0.0f)
-						collision_normal = -collision_normal;
-
-					// === COMPLEX GEOMETRY PATH ===
-					if (state_A->has_complex_geometry ||
-						state_B->has_complex_geometry) {
-
-						CollisionCandidateGPU candidate;
-						candidate.modelB = state_B->model;
-						candidate.invModelA = glm::inverse(state_A->model);
-						candidate.bbox_A_min = glm::vec4(state_A->mesh_bbox.min * state_A->scale, 0.0f);
-						candidate.bbox_B_min = glm::vec4(state_B->mesh_bbox.min * state_B->scale, 0.0f);
-						candidate.bbox_A_range = glm::vec4(state_A->mesh_bbox.size() * state_A->scale, 0.0f);
-						candidate.bbox_B_range = glm::vec4(state_B->mesh_bbox.size() * state_B->scale, 0.0f);
-						candidate.collision_normal = glm::vec4(collision_normal, 0.0f);
-						candidate.entID_A = state_A->unique_entity_ID;
-						candidate.entID_B = state_B->unique_entity_ID;
-
-						auto vbA = state_A->voxel_buffer;
-						auto itA = voxel_buffer_map.find(vbA);
-						if (itA == voxel_buffer_map.end()) {
-							voxel_buffer_map[vbA] = voxel_buffer_current_offset;
-							candidate.voxel_buffer_A_offset = voxel_buffer_current_offset;
-							voxel_buffer_current_offset += voxel_buffer_elements;
-						}
-						else {
-							candidate.voxel_buffer_A_offset = itA->second;
-						}
-
-						auto vbB = state_B->voxel_buffer;
-						auto itB = voxel_buffer_map.find(vbB);
-						if (itB == voxel_buffer_map.end()) {
-							voxel_buffer_map[vbB] = voxel_buffer_current_offset;
-							candidate.voxel_buffer_B_offset = voxel_buffer_current_offset;
-							voxel_buffer_current_offset += voxel_buffer_elements;
-						}
-						else {
-							candidate.voxel_buffer_B_offset = itB->second;
-						}
-
-						complex_collision_candidates.push_back(candidate);
-					}
-					// === SIMPLE COLLISION PATH ===
-					else {
-						Collision coll;
-						coll.state_A = state_A;
-						coll.state_B = state_B;
-						coll.state_A->last_collided_with = state_B->unique_entity_ID;
-						coll.state_B->last_collided_with = state_A->unique_entity_ID;
-						coll.normal = collision_normal;
-						coll.overlap = min_overlap;
-						coll.contact_point = 0.5f * (state_A->pos + state_B->pos);
-
-						confirmed_collisions.push_back(coll);
-					}
-				}
-			}
-		}
-
-
-		// === GPU PHASE FOR COMPLEX COLLISIONS ===
-		static thread_local plf::colony<uint64_t> pending_jobs;
-		if (!complex_collision_candidates.empty()) {
-			if (pending_jobs.size() < MAX_COLLISION_JOBS_IN_FLIGHT) {
-
-				// Record a VulkanJob to be executed on the main thread
-				uint64_t job_id = VulkanManager::record_compute_job(
-					[candidates = std::move(complex_collision_candidates), vb_map = std::move(voxel_buffer_map)](VulkanManager::VulkanJob& job) mutable {
-
-						uint32_t candidates_count = static_cast<uint32_t>(candidates.size());
-						VulkanManager& manager = VulkanManager::get_singleton();
-						Device& device = manager.get_device();
-						auto& resources = manager.get_collision_resources();
-						DescriptorSet& ds = job.task->make_descriptor_set(*resources.set_layout);
-
-						// PushConstants
-						uint32_t total_buffer_elements = voxel_buffer_elements * vb_map.size();
-						PushConstants& pc = job.task->make_constants();
-						pc.add_values(candidates_count);
-						pc.add_values(voxel_buffer_elements);
-						pc.add_values(res);
-
-						// Task-owned temporary Buffers
-						auto& voxel_master_buffer = job.task->make_buffer<uint32_t>(total_buffer_elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-						auto& candidates_buffer = job.task->make_buffer<CollisionCandidateGPU>(candidates_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-						auto& candidates_staging = job.task->make_buffer<CollisionCandidateGPU>(candidates_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-						auto& result_buffer = job.task->make_buffer<CollisionResultGPU>(candidates_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-						auto& result_staging = job.task->make_buffer<CollisionResultGPU>(candidates_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-						candidates_staging.write(candidates);
-
-						// add payload data for result readback
-						auto payload = std::make_shared<CollisionGPUJobPayload>();
-						payload->candidate_count = candidates_count;
-						payload->result_staging = &result_staging;
-						for (auto& c : candidates) { // Fill CPU-side mappings
-							payload->entIDs_A.push_back(c.entID_A);
-							payload->entIDs_B.push_back(c.entID_B);
-							payload->normals.push_back(glm::vec3(c.collision_normal));
-						}
-						job.payload = payload;
-
-						// DescriptorSet Bindings
-						ds.bind_buffer(0, voxel_master_buffer);
-						ds.bind_buffer(1, candidates_buffer);
-						ds.bind_buffer(2, result_buffer);
-						ds.write();
-
-						// record commands
-						CommandBuffer& cb = job.task->get_command_buffer();
-						cb.begin_recording();
-						cb.bind_pipeline(*resources.pipeline);
-						cb.bind_descriptor_set(ds, *resources.pipeline);
-						cb.bind_push_constants(pc, *resources.pipeline);
-						cb.fill_buffer_uint(result_buffer, 0u);
-						cb.add_buffer_memory_barrier(result_buffer,
-							VK_ACCESS_2_TRANSFER_WRITE_BIT,
-							VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
-							VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-							VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
-						); // = wait for fill before the shader starts
-						for (auto& vb : vb_map) {
-							cb.copy_buffer(*vb.first, voxel_master_buffer, vb.first->get_size_bytes(), 0, vb.second);
-						} // = copy voxel buffers to single master buffer (GPU-to-GPU copy)
-						cb.add_buffer_memory_barrier(voxel_master_buffer,
-							VK_ACCESS_2_TRANSFER_WRITE_BIT,
-							VK_ACCESS_2_SHADER_READ_BIT,
-							VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-							VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
-						); // = wait for voxel buffer transfer to finish
-						cb.add_buffer_memory_barrier(candidates_staging,
-							VK_ACCESS_2_HOST_WRITE_BIT,
-							VK_ACCESS_2_TRANSFER_READ_BIT,
-							VK_PIPELINE_STAGE_2_HOST_BIT,
-							VK_PIPELINE_STAGE_2_TRANSFER_BIT
-						); // = wait for host write on candidates staging buffer
-						cb.copy_buffer(candidates_staging, candidates_buffer);
-						cb.add_buffer_memory_barrier(candidates_buffer,
-							VK_ACCESS_2_TRANSFER_WRITE_BIT,
-							VK_ACCESS_2_SHADER_READ_BIT,
-							VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-							VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
-						); // = wait for transfer to candidates buffer before the shader can read from it
-						cb.dispatch(*resources.pipeline, res, res, res);
-						cb.add_buffer_memory_barrier(result_buffer,
-							VK_ACCESS_2_SHADER_WRITE_BIT,
-							VK_ACCESS_2_TRANSFER_READ_BIT,
-							VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-							VK_PIPELINE_STAGE_2_TRANSFER_BIT
-						); // = wait for shader to finish writing to results before copying to staging
-						cb.record_barriers();
-						cb.copy_buffer(result_buffer, result_staging);
-						cb.end_recording();
-						job.task->submit(0, true);
-					}
-				);
-				pending_jobs.insert(job_id);
-			}
-			else {
-				// TODO: FALL-BACK TO SAT-ONLY
-				complex_collision_candidates.clear();
-			}
-		}
-
-		// === READ BACK RESULTS FROM ANY PENDING JOBS IN THE 'READY' STATE ===
-		// !!!! IMPORTANT: REQUIRES A CALL TO "VulkanManager::process_jobs()" ON THE MAIN THREAD, OTHERWISE NO RESULT WILL EVER BE AVAILABLE !!!!
-		for (auto it = pending_jobs.begin(); it != pending_jobs.end(); ) {
-			int32_t jobID = *it;
-			bool consumed = VulkanManager::consume_job(jobID,
-				[&](VulkanManager::VulkanJob& job) {
-					auto payload = std::static_pointer_cast<CollisionGPUJobPayload>(job.payload);
-					payload->results = payload->result_staging->read();
-					payload->result_staging = nullptr; // immediatly invalidate the pointer -> no longer needed after read-back
-
-					for (uint32_t cand = 0; cand < payload->candidate_count; ++cand) {
-						uint32_t hit_count = payload->results[cand].hit_count;
-						if (hit_count > 0) {
-							int32_t entID_A = payload->entIDs_A[cand];
-							int32_t entID_B = payload->entIDs_B[cand];
-							auto itA = states.find(entID_A);
-							auto itB = states.find(entID_B);
-							if (itA == states.end() || itB == states.end()) {
-								return; // stale job result
-							}
-							PhysicsState* state_A = itA->second.get();
-							PhysicsState* state_B = itB->second.get();
-
-							Collision coll;
-							coll.contact_point = glm::vec3(
-								payload->results[cand].contact_x,
-								payload->results[cand].contact_y,
-								payload->results[cand].contact_z
-							) / (payload->results[cand].hit_count * 1000.0f);
-							coll.normal = payload->normals[cand];
-							coll.state_A = state_A;
-							coll.state_B = state_B;
-							coll.state_A->last_collided_with = entID_B;
-							coll.state_B->last_collided_with = entID_A;
-
-							// estimate overlap
-							glm::vec3 bbox_size_world = state_A->mesh_bbox.size() * state_A->scale;
-							const uint32_t res = COMPLEX_COLLISION_VOXEL_RESOLUTION;
-							float voxel_volume = (bbox_size_world.x * bbox_size_world.y * bbox_size_world.z) / float(res * res * res);
-							float overlap_volume = hit_count * voxel_volume;
-							float effective_overlap_volume =
-								overlap_volume / std::max(state_A->mesh_fill_ratio, 1e-4f);
-							glm::vec3 n = glm::abs(coll.normal);
-							float contact_area =
-								(n.x * bbox_size_world.y * bbox_size_world.z) +
-								(n.y * bbox_size_world.x * bbox_size_world.z) +
-								(n.z * bbox_size_world.x * bbox_size_world.y);
-							contact_area = std::max(contact_area, 1e-4f);
-							coll.overlap = effective_overlap_volume / contact_area;
-							float max_overlap = 0.2f * glm::length(bbox_size_world);
-							coll.overlap = glm::clamp(coll.overlap, 0.0f, max_overlap); // Safety clamp
-
-							confirmed_collisions.push_back(coll);
-						}
-					}
-				}
+			// ------------------------------------------------------------------------------------------------------------------------------------------
+			// UPLOAD (CPU -> GPU); ONE-TIME PER FRAME
+			// ------------------------------------------------------------------------------------------------------------------------------------------
+			VulkanManager& manager = VulkanManager::get_singleton();
+			auto& resrc = manager.get_physics_job_resources();
+			Task& task = *job.task;
+			static thread_local Semaphore& tl_semaphore = manager.get_timeline_semaphore(
+				0,																			// initial value
+				VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,	// wait dst stage mask
+				VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT	// signal dst stage mask
 			);
-			if (consumed) {
-				it = pending_jobs.erase(it);
-			}
-			else {
-				++it;
-			}
-		}
-
-		// === RESOLVE CONFIRMED COLLISIONS ===
-
-		// sort collisions based on penetration depth (big penetrations first) to make collision processing order deterministic
-		std::sort(confirmed_collisions.begin(), confirmed_collisions.end(), [](const Collision& a, const Collision& b) { return a.overlap > b.overlap; });
-
-		for (Collision& coll : confirmed_collisions) {
-
-			PhysicsState* state_A = coll.state_A;
-			PhysicsState* state_B = coll.state_B;
-
-			// Contact offsets from centers of mass
-			const glm::vec3 rA = coll.contact_point - state_A->pos;
-			const glm::vec3 rB = coll.contact_point - state_B->pos;
-
-			// Velocities at contact point
-			glm::vec3 vA = state_A->lin_vel + (state_A->rot_enabled ? glm::cross(state_A->spin_vel, rA) : glm::vec3(0.0f));
-			glm::vec3 vB = state_B->lin_vel + (state_B->rot_enabled ? glm::cross(state_B->spin_vel, rB) : glm::vec3(0.0f));
-
-			glm::vec3 relative_velocity = vB - vA;
-			float relative_normal_speed = glm::dot(relative_velocity, coll.normal);
-
-			// Only resolve if closing or resting
-			if (relative_normal_speed < COLLISION_VELOCITY_THRESHOLD) {
-
-				// --- NORMAL IMPULSE ---
-				const glm::vec3 rA_cross_n = glm::cross(rA, coll.normal);
-				const glm::vec3 rB_cross_n = glm::cross(rB, coll.normal);
-
-				float normal_effective_mass =
-					state_A->inv_mass +
-					state_B->inv_mass +
-					(state_A->rot_enabled ? glm::dot(rA_cross_n, state_A->rot_inv_inertia * rA_cross_n) : 0.0f) +
-					(state_B->rot_enabled ? glm::dot(rB_cross_n, state_B->rot_inv_inertia * rB_cross_n) : 0.0f);
-				normal_effective_mass = std::max(normal_effective_mass, 1e-6f);
-
-				float restitution = std::min(state_A->restitution, state_B->restitution);
-
-				// Kill bounce at very low speeds (resting stability)
-				if (std::abs(relative_normal_speed) < 0.05f) { restitution = 0.0f; }
-
-				// Apply normal impulse
-				float normal_impulse_magnitude = -(1.0f + restitution) * relative_normal_speed / normal_effective_mass;
-				const glm::vec3 normal_impulse = normal_impulse_magnitude * coll.normal;
-
-				if (state_A->lin_enabled) { state_A->lin_vel -= normal_impulse * state_A->inv_mass; }
-				if (state_A->rot_enabled) { state_A->spin_vel -= state_A->rot_inv_inertia * glm::cross(rA, normal_impulse); }
-				if (state_B->lin_enabled) { state_B->lin_vel += normal_impulse * state_B->inv_mass; }
-				if (state_B->rot_enabled) { state_B->spin_vel += state_B->rot_inv_inertia * glm::cross(rB, normal_impulse); }
-
-				// --- FRICTION IMPULSE ---
-				vA = state_A->lin_vel + (state_A->rot_enabled ? glm::cross(state_A->spin_vel, rA) : glm::vec3(0.0f));
-				vB = state_B->lin_vel + (state_B->rot_enabled ? glm::cross(state_B->spin_vel, rB) : glm::vec3(0.0f));
-				relative_velocity = vB - vA;
-				glm::vec3 tangent_velocity = relative_velocity - glm::dot(relative_velocity, coll.normal) * coll.normal;
-				if (glm::length2(tangent_velocity) > 1e-6f) {
-					const glm::vec3 friction_direction = glm::normalize(tangent_velocity);
-					const glm::vec3 rA_cross_t = glm::cross(rA, friction_direction);
-					const glm::vec3 rB_cross_t = glm::cross(rB, friction_direction);
-					float tangent_effective_mass =
-						state_A->inv_mass +
-						state_B->inv_mass +
-						(state_A->rot_enabled ? glm::dot(rA_cross_t, state_A->rot_inv_inertia * rA_cross_t) : 0.0f) +
-						(state_B->rot_enabled ? glm::dot(rB_cross_t, state_B->rot_inv_inertia * rB_cross_t) : 0.0f);
-					tangent_effective_mass = std::max(tangent_effective_mass, 1e-6f);
-					float desired_friction_impulse = -glm::dot(relative_velocity, friction_direction) / tangent_effective_mass;
-					const float friction_coefficient = std::sqrt(state_A->friction * state_B->friction);
-					const float max_friction_impulse = friction_coefficient * normal_impulse_magnitude;
-					float clamped_friction_impulse = glm::clamp(desired_friction_impulse, -max_friction_impulse, max_friction_impulse);
-					const glm::vec3 friction_impulse = clamped_friction_impulse * friction_direction;
-
-					// Apply friction impulse
-					if (state_A->lin_enabled) { state_A->lin_vel -= friction_impulse * state_A->inv_mass; }
-					if (state_A->rot_enabled) { state_A->spin_vel -= state_A->rot_inv_inertia * glm::cross(rA, friction_impulse); }
-					if (state_B->lin_enabled) { state_B->lin_vel += friction_impulse * state_B->inv_mass; }
-					if (state_B->rot_enabled) { state_B->spin_vel += state_B->rot_inv_inertia * glm::cross(rB, friction_impulse); }
+			uint32_t states_count = static_cast<uint32_t>(input_states.size());
+			uint32_t voxel_master_buffer_total_elements = voxel_buffer_elements * vb_map.size();
+			auto& states_buffer = task.make_buffer<PhysicsState>(states_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			auto& sort_keys_buffer = task.make_buffer<EntitySortKey>(states_count, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			auto& input_states_staging_buffer = task.make_buffer<PhysicsState>(states_count, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			auto& result_states_staging_buffer = task.make_buffer<PhysicsState>(states_count, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			auto& voxel_master_buffer = task.make_buffer<uint32_t>(voxel_master_buffer_total_elements, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			auto& voxel_master_staging_buffer = task.make_buffer<uint32_t>(voxel_master_buffer_total_elements, BufferType::TRANSFER_BUFFER, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			auto& collision_candidates_buffer = task.make_buffer<CollisionCandidateGPU>(MAX_COLLISION_COUNT_PER_SUBSTEP, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			auto& collision_candidates_counter_buffer = task.make_buffer<uint32_t>(1, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			auto& collision_results_buffer = task.make_buffer<CollisionResultGPU>(MAX_COLLISION_COUNT_PER_SUBSTEP, BufferType::STORAGE_BUFFER, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			
+			// Write input states into the corresponding staging buffer
+			input_states_staging_buffer.write(input_states, states_count, 0, 0, tl_semaphore, QueueFamily::COMPUTE_QUEUE);
+			
+			// Write each mesh's voxel data into the staging buffer at its correct offset;
+			// host-vixible to host-visible buffer copy
+			for (const auto& [meshID, master_buffer_offset] : vb_map) {
+				auto mesh = Mesh::get_mesh_by_ID(meshID);
+				if (mesh) {
+					voxel_master_staging_buffer.write(mesh->get_voxel_buffer(), voxel_buffer_elements, 0, master_buffer_offset);
 				}
 			}
 
-			// --- POSITION PROJECTION ---
-			if (coll.overlap > 0.0f) {
-				const glm::vec3 rA_cross_n = glm::cross(rA, coll.normal);
-				const glm::vec3 rB_cross_n = glm::cross(rB, coll.normal);
+			auto& cb = task.get_command_buffer();
+			cb.begin_recording();
 
-				float position_effective_mass =
-					state_A->inv_mass +
-					state_B->inv_mass +
-					(state_A->rot_enabled ? glm::dot(rA_cross_n, state_A->rot_inv_inertia * rA_cross_n) : 0.0f) +
-					(state_B->rot_enabled ? glm::dot(rB_cross_n, state_B->rot_inv_inertia * rB_cross_n) : 0.0f);
-				position_effective_mass = std::max(position_effective_mass, 1e-6f);
-				constexpr float penetration_slop = 0.002f;
-				constexpr float correction_bias = 0.8f;
-				float penetration = std::max(coll.overlap - penetration_slop, 0.0f);
-				const glm::vec3 position_correction = (penetration * correction_bias / position_effective_mass) * coll.normal;
+			// make sure the host-side snapshots are written into the staging buffer
+			cb.add_buffer_memory_barrier(input_states_staging_buffer,
+				VK_ACCESS_2_HOST_WRITE_BIT,
+				VK_ACCESS_2_TRANSFER_READ_BIT,
+				VK_PIPELINE_STAGE_2_HOST_BIT,
+				VK_PIPELINE_STAGE_2_TRANSFER_BIT
+			);
+			cb.add_buffer_memory_barrier(voxel_master_staging_buffer,
+				VK_ACCESS_2_HOST_WRITE_BIT,
+				VK_ACCESS_2_TRANSFER_READ_BIT,
+				VK_PIPELINE_STAGE_2_HOST_BIT,
+				VK_PIPELINE_STAGE_2_TRANSFER_BIT
+			);
+			cb.record_barriers();
+			cb.copy_buffer(input_states_staging_buffer, states_buffer);
+			cb.copy_buffer(voxel_master_staging_buffer, voxel_master_buffer);
 
+			// ------------------------------------------------------------------------------------------------------------------------------------------
+			// SUBSTEPS LOOP
+			// ------------------------------------------------------------------------------------------------------------------------------------------
 
-				if (state_A->lin_enabled) { state_A->pos -= position_correction * state_A->inv_mass; }
-				if (state_B->lin_enabled) { state_B->pos += position_correction * state_B->inv_mass; }
+			auto& ds = task.make_descriptor_set(*resrc.set_layout);
+			ds.bind_buffer(0, states_buffer);
+			ds.bind_buffer(1, sort_keys_buffer);
+			ds.bind_buffer(2, voxel_master_buffer);
+			ds.bind_buffer(3, collision_candidates_buffer);
+			ds.bind_buffer(4, collision_candidates_counter_buffer);
+			ds.bind_buffer(5, collision_results_buffer);
+			ds.write();
 
-				// Optional velocity cleanup along normal (slow-speed stability)
-				glm::vec3 vA_post = state_A->lin_vel + (state_A->rot_enabled ? glm::cross(state_A->spin_vel, rA) : glm::vec3(0));
-				glm::vec3 vB_post = state_B->lin_vel + (state_B->rot_enabled ? glm::cross(state_B->spin_vel, rB) : glm::vec3(0));
-				float post_correction_normal_speed = glm::dot(vB_post - vA_post, coll.normal);
+			auto& constants = task.make_constants( // constants layout must match the pattern in the PhysicsJobResources constructor in order to match the expectations of the pipeline layouts!
+				states_count,
+				uint32_t(COMPLEX_COLLISION_VOXEL_RESOLUTION),
+				float_t(dt_sec / PHYSICS_SUBSTEPS),
+				uint32_t(MAX_COLLISION_COUNT_PER_SUBSTEP),
+				float_t(COMPLEX_COLLISIONS_SIZE_THRESHOLD),
+				uint32_t(COLLISION_SOLVER_ITERATIONS)
+			);
+			size_t sort_stage_offset = constants.add_values(0u); // placeholder for even-odd sort (0: even, 1: odd)
 
-				if (post_correction_normal_speed < 0.0f) {
-					const glm::vec3 normal_velocity_correction = post_correction_normal_speed * coll.normal;
-					if (state_A->lin_enabled) { state_A->lin_vel += normal_velocity_correction * state_A->inv_mass; }
-					if (state_B->lin_enabled) { state_B->lin_vel -= normal_velocity_correction * state_B->inv_mass; }
+			for (uint32_t i = 0; i < PHYSICS_SUBSTEPS; i++) {
+
+				// STEP 1: INTEGRATE & UPDATE BOUNDS
+				if (i == 0) {
+					// make sure copying from input_states_staging buffer is complete
+					cb.add_buffer_memory_barrier(states_buffer,
+						VK_ACCESS_2_TRANSFER_WRITE_BIT,
+						VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+						VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+					);
+				}
+				else {
+					// make sure step 4 of previous substep has finished writing into unsorted_states_buffer
+					cb.add_buffer_memory_barrier(states_buffer,
+						VK_ACCESS_2_SHADER_WRITE_BIT,
+						VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+					);
+				}
+				cb.record_barriers();
+				cb.bind_descriptor_set(ds, *resrc.physics_integration_pipeline);
+				cb.bind_push_constants(constants, *resrc.physics_integration_pipeline);
+				cb.bind_pipeline(*resrc.physics_integration_pipeline);
+				cb.dispatch(*resrc.physics_integration_pipeline, states_count, 1, 1);
+
+				// STEP 2: SORT STATES (BITONIC MERGE) BASED ON BOUNDING BOX X-AXIS POSITIONS
+
+				// make sure the integration step has finished writing into the states before starting to sort
+				cb.add_buffer_memory_barrier(states_buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.record_barriers();
+
+				// even-odd sort loop for the states based on their bounding box min x position (stored in the sort_keys_buffer)
+				cb.bind_descriptor_set(ds, *resrc.states_sort_pipeline);
+				cb.bind_pipeline(*resrc.states_sort_pipeline);
+				for (uint32_t p = 0; p < states_count; p++) {
+					// Stage 0: Even
+					constants.add_values(0u, sort_stage_offset); // even stage
+					cb.bind_push_constants(constants, *resrc.states_sort_pipeline);
+					cb.dispatch(*resrc.states_sort_pipeline, states_count / 2 + 1, 1, 1);
+
+					cb.add_buffer_memory_barrier(sort_keys_buffer,
+						VK_ACCESS_2_SHADER_WRITE_BIT,
+						VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT,
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+					);
+					cb.record_barriers();
+
+					// Stage 1: Odd
+					constants.add_values(1u, sort_stage_offset); // odd stage
+					cb.bind_push_constants(constants, *resrc.states_sort_pipeline);
+					cb.dispatch(*resrc.states_sort_pipeline, states_count / 2 + 1, 1, 1);
+
+					cb.add_buffer_memory_barrier(sort_keys_buffer,
+						VK_ACCESS_2_SHADER_WRITE_BIT,
+						VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT,
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+					);
+					cb.record_barriers();
+				}
+
+				// STEP 3: IDENTIFY COLLISION CANDIDATES
+				cb.add_buffer_memory_barrier(collision_candidates_counter_buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.record_barriers();
+				cb.bind_push_constants(constants, *resrc.collision_detection_pipeline);
+				cb.bind_descriptor_set(ds, *resrc.collision_detection_pipeline);
+				cb.bind_pipeline(*resrc.collision_detection_pipeline);
+				cb.dispatch(*resrc.collision_detection_pipeline, states_count, 1, 1);
+
+				// STEP 4: CONFIRM COLLISIONS
+				cb.add_buffer_memory_barrier(collision_candidates_buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.add_buffer_memory_barrier(collision_candidates_counter_buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.add_buffer_memory_barrier(voxel_master_buffer,
+					VK_ACCESS_2_TRANSFER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT,
+					VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.record_barriers();
+				cb.bind_push_constants(constants, *resrc.collision_confirmation_pipeline);
+				cb.bind_descriptor_set(ds, *resrc.collision_confirmation_pipeline);
+				cb.bind_pipeline(*resrc.collision_confirmation_pipeline);
+				cb.dispatch(*resrc.collision_confirmation_pipeline, COMPLEX_COLLISION_VOXEL_RESOLUTION, COMPLEX_COLLISION_VOXEL_RESOLUTION, COMPLEX_COLLISION_VOXEL_RESOLUTION);
+
+				// STEP 5: RESOLVE COLLISIONS
+				// --- 5.1: resolve penetration (overlap), buoyancy, collision normal and contact point
+				cb.add_buffer_memory_barrier(collision_candidates_buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.add_buffer_memory_barrier(collision_results_buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.record_barriers();
+				cb.bind_push_constants(constants, *resrc.collision_resolve_step1_pipeline);
+				cb.bind_descriptor_set(ds, *resrc.collision_resolve_step1_pipeline);
+				cb.bind_pipeline(*resrc.collision_resolve_step1_pipeline);
+				cb.dispatch(*resrc.collision_resolve_step1_pipeline, MAX_COLLISION_COUNT_PER_SUBSTEP, 1, 1);
+
+				// --- 5.2 / 5.3: iterative impulse solver
+				
+				// Make Step 5.1 results visible and ensure accumulators are clear
+				cb.add_buffer_memory_barrier(collision_results_buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.add_buffer_memory_barrier(states_buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.record_barriers();
+
+				for (uint32_t iter = 0; iter < COLLISION_SOLVER_ITERATIONS; iter++) {
+					// A: Calculate Impulses (writes to accumulators)
+					cb.bind_push_constants(constants, *resrc.collision_resolve_step2_pipeline);
+					cb.bind_descriptor_set(ds, *resrc.collision_resolve_step2_pipeline);
+					cb.bind_pipeline(*resrc.collision_resolve_step2_pipeline);
+					cb.dispatch(*resrc.collision_resolve_step2_pipeline, MAX_COLLISION_COUNT_PER_SUBSTEP, 1, 1);
+
+					cb.add_buffer_memory_barrier(states_buffer,
+						VK_ACCESS_2_SHADER_WRITE_BIT, // solver wrote to accumulators
+						VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, // step 5.3 reads accum and writes vel
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+					);
+					cb.record_barriers();
+
+					// B: Apply Impulses & Reset Accumulators
+					cb.bind_push_constants(constants, *resrc.collision_resolve_step3_pipeline);
+					cb.bind_descriptor_set(ds, *resrc.collision_resolve_step3_pipeline);
+					cb.bind_pipeline(*resrc.collision_resolve_step3_pipeline);
+					cb.dispatch(*resrc.collision_resolve_step3_pipeline, states_count, 1, 1);
+
+					cb.add_buffer_memory_barrier(states_buffer,
+						VK_ACCESS_2_SHADER_WRITE_BIT, // 5.3 wrote to velocities
+						VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, // next 5.2 reads velocities
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+					);
+					cb.record_barriers();
+				}
+
+				// --- 5.3: apply states update from accumulators
+				cb.add_buffer_memory_barrier(states_buffer,
+					VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+				);
+				cb.record_barriers();
+				cb.dispatch(*resrc.collision_resolve_step3_pipeline, states_count, 1, 1);
+			}
+
+			// ------------------------------------------------------------------------------------------------------------------------------------------
+			// COMMAND BUFFER SUBMIT
+			// ------------------------------------------------------------------------------------------------------------------------------------------
+
+			cb.add_buffer_memory_barrier(states_buffer,
+				VK_ACCESS_2_SHADER_WRITE_BIT,
+				VK_ACCESS_2_TRANSFER_READ_BIT,
+				VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+				VK_PIPELINE_STAGE_2_TRANSFER_BIT
+			);
+			cb.record_barriers();
+			cb.copy_buffer(states_buffer, result_states_staging_buffer);
+			cb.record_barriers();
+			cb.end_recording();
+			task.timeline_sync(tl_semaphore);
+			task.submit(0, true); // 'true' = keep task protected from reset/reuse after submit
+
+			auto payload = std::make_shared<PhysicsJobPayload>();
+			payload->result_states = &result_states_staging_buffer;
+			payload->tl_semaphore = &tl_semaphore;
+			job.payload = payload;
+		}
+	);
+
+	// ------------------------------------------------------------------------------------------------------------------------------------------
+	// RECORD JOB CONSUME FUNCTION (FOR READING BACK RESULTS AS SOON AS THE JOB IS IN THE 'READY' STATE);
+	// // !!!! IMPORTANT: REQUIRES A CALL TO "VulkanManager::process_jobs()" ON THE MAIN THREAD, OTHERWISE NO RESULT WILL EVER BE AVAILABLE !!!!
+	// ------------------------------------------------------------------------------------------------------------------------------------------
+	VulkanManager::consume_job(jobID,
+		[&](VulkanManager::VulkanJob& job) {
+			auto payload = std::static_pointer_cast<PhysicsJobPayload>(job.payload);
+			std::vector<PhysicsState> result_states_vec = payload->result_states->read();
+			payload->result_states = nullptr; // immediatly invalidate the pointer -> no longer needed after read-back
+
+			// Mutex lock to prevent Memory Tearing
+			// (the Physics thread or Render thread might be trying to read ent->state at this exact moment)
+			std::vector<RankedMutex*> locks;
+			locks.push_back(&this->entity_mutex);
+			locks.push_back(&this->physics_mutex);
+			for (auto& ps : this->particle_systems) { locks.push_back(&ps.particles_mutex); }
+			LockGuard lock(locks);
+
+			// publish back the updated Entity States (VulkanJobs are executed on the main thread -> no mutex lock required)
+			for (auto& state : result_states_vec) {
+				Entity* ent = Entity::get_entity_by_ID(state.unique_entity_ID);
+					
+				if (!ent || ent->get_unique_ID() != state.unique_entity_ID || !ent->is_visible()) { // stale, recycled or invisible Entity
+					continue;
+				}
+
+				if (ent->state.protection_flag == 0) {
+					ent->state = state;
 				}
 			}
 		}
-
-		// update the rolling average of the substep duration
-		auto substep_end = std::chrono::high_resolution_clock::now();
-		float_t current_substep_duration = std::chrono::duration<float_t>(substep_end - substep_start).count();
-		avg_substep_duration = (0.99f * avg_substep_duration) + (0.01f * current_substep_duration);
-
-	} // END OF SUBSTEPS LOOP
-
-
-	// === FINAL STEP: PUBLISH (Locked) ===
-	{
-		LockGuard lock({ &entity_mutex, &physics_mutex });
-
-		for (auto it = states.begin(); it != states.end(); ) {
-			int32_t entID = it->first;
-			Entity* ent = Entity::get_entity_by_ID(entID);
-			PhysicsState* state = it->second.get();
-
-			if (!ent || ent->get_unique_ID() != state->unique_entity_ID || !ent->is_visible() || !ent->get_mesh().is_solid()) { // stale, recycled, invisible or unsolid Entity
-				it = states.erase(it);
-				continue;
-			}
-
-			if (state->lin_enabled) {
-				ent->set_position(state->pos);
-				ent->set_lin_velocity(state->lin_vel);
-			}
-
-			if (state->rot_enabled) {
-				ent->set_spin_velocity(state->spin_vel);
-				ent->set_orientation(state->orientation);
-			}
-
-			ent->set_last_collision(Entity::get_entity_by_ID(state->last_collided_with));
-			++it;
-		}
-	}
+	);
 }
 
 bool Scene::check_physics_thread_watchdog(uint64_t dt_warning_ns, uint64_t dt_critical_ns) {
@@ -14213,15 +14079,15 @@ void Swapchain::create() {
 	}
 }
 
-uint32_t Swapchain::acquire_next_image(Semaphore& image_available_binary_semaphore, const std::optional<Fence>& fence, uint64_t timeout) {
+int32_t Swapchain::acquire_next_image(Semaphore& image_available_binary_semaphore, const std::optional<Fence>& fence, uint64_t timeout) {
 	VkResult result;
 	if (!swapchain) {
 		Log::warning(__FUNCTION__, ": swapchain is invalid!");
-		return current_image_index;
+		return INVALID_ID;
 	}
 	if (!surface) {
 		Log::warning(__FUNCTION__, ": surface is invalid!");
-		return current_image_index;
+		return INVALID_ID;
 	}
 	if (swapchain && surface && surface->get() && fence.has_value()) {
 		result = vkAcquireNextImageKHR(device->get_logical(), swapchain, timeout, image_available_binary_semaphore.get(), fence.value().get(), &current_image_index);
@@ -14540,11 +14406,14 @@ uint32_t DescriptorPool::release_set(VkDescriptorSet set) {
 
 uint32_t DescriptorPool::allocate_set(VkDescriptorSet& descriptor_set, DescriptorSetLayout& descriptor_set_layout) {
 	if (sets.size() >= max_sets) {
-		Log::error(
-			"in method DescriptorPool::allocate_set(): max number of sets for this pool (memory location: ",
-			this, ", VkDescriptorPool handle: ", pool, ") is ", max_sets,
-			" (as defined by the pool constructor) and has been reached; no more descriptor sets can be added"
-		);
+		VulkanManager::get_singleton().recover();
+		if (sets.size() >= max_sets) {
+			Log::error(
+				"in method DescriptorPool::allocate_set(): max number of sets for this pool (memory location: ",
+				this, ", VkDescriptorPool handle: ", pool, ") is ", max_sets,
+				" (as defined by the pool constructor) and has been reached; no more descriptor sets can be added"
+			);
+		}
 	}
 	VkDescriptorSetAllocateInfo allocate_info = {};
 	allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -15121,6 +14990,7 @@ GraphicsPipelineLayout::GraphicsPipelineLayout(Device& device, const std::vector
 GraphicsPipelineLayout::~GraphicsPipelineLayout() {
 	Log::debug("Destructor invoked for GraphicsPipelineLayout at memory location ", this, ".");
 	if (pipeline_layout) {
+		VulkanManager::get_singleton().get_device().wait_idle();
 		vkDestroyPipelineLayout(logical, pipeline_layout, nullptr);
 		this->pipeline_layout = VK_NULL_HANDLE;
 	}
@@ -15141,6 +15011,7 @@ GraphicsPipelineLayout& GraphicsPipelineLayout::operator=(GraphicsPipelineLayout
 	Log::debug("GraphicsPipelineLayout move assignment invoked ('this' = ", this, "&other = ", &other, ", VkPipelineLayout = ", other.pipeline_layout, ").");
 	if (this != &other) {
 		if (pipeline_layout) {
+			VulkanManager::get_singleton().get_device().wait_idle();
 			vkDestroyPipelineLayout(logical, pipeline_layout, nullptr);
 		}
 		pipeline_layout = std::exchange(other.pipeline_layout, VK_NULL_HANDLE);
@@ -15445,6 +15316,7 @@ GraphicsPipeline::GraphicsPipeline(
 GraphicsPipeline::~GraphicsPipeline() {
 	Log::debug("GraphicsPipeline destructor invoked for GraphicsPipeline instance at memory location ", this, " with VkPipeline handle ", this->pipeline, ".");
 	if (pipeline) {
+		VulkanManager::get_singleton().get_device().wait_idle();
 		vkDestroyPipeline(logical, pipeline, nullptr);
 		this->pipeline = VK_NULL_HANDLE;
 	}
@@ -15463,6 +15335,7 @@ GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline&& other) noexcept
 	if (this != &other) {
 		if (pipeline != VK_NULL_HANDLE) {
 			Log::debug("move assignment operation: destroying previous graphics pipeline (handle: ", pipeline, ")");
+			VulkanManager::get_singleton().get_device().wait_idle();
 			vkDestroyPipeline(logical, pipeline, nullptr);
 			pipeline = VK_NULL_HANDLE;
 		}
@@ -15577,11 +15450,13 @@ ComputePipeline::ComputePipeline(
 ComputePipeline::~ComputePipeline() {
 	if (pipeline != nullptr) {
 		Log::debug("destroying compute pipeline");
+		VulkanManager::get_singleton().get_device().wait_idle();
 		vkDestroyPipeline(logical, pipeline, nullptr);
 		pipeline = nullptr;
 	}
 	if (layout != nullptr) {
 		Log::debug("destroying pipeline layout");
+		VulkanManager::get_singleton().get_device().wait_idle();
 		vkDestroyPipelineLayout(logical, layout, nullptr);
 		layout = nullptr;
 	}
@@ -15605,11 +15480,13 @@ ComputePipeline& ComputePipeline::operator=(ComputePipeline&& other) noexcept {
 	if (this != &other) {
 		if (pipeline != VK_NULL_HANDLE) {
 			Log::debug("move assignment operation: destroying previous compute pipeline (handle: ", pipeline, ")");
+			VulkanManager::get_singleton().get_device().wait_idle();
 			vkDestroyPipeline(logical, pipeline, nullptr);
 			pipeline = VK_NULL_HANDLE;
 		}
 		if (layout != VK_NULL_HANDLE) {
 			Log::debug("move assignment operation: destroying previous pipeline layout (handle: ", layout, ")");
+			VulkanManager::get_singleton().get_device().wait_idle();
 			vkDestroyPipelineLayout(logical, layout, nullptr);
 			layout = VK_NULL_HANDLE;
 		}
@@ -16854,6 +16731,10 @@ Task::Task(Device& device, CommandPool& command_pool, DescriptorPool& descriptor
 // destructor
 Task::~Task() {
 	Log::debug("Task destructor invoked on Task object at memory location ", this, ".");
+	if (this->fence) {
+		this->fence->wait(__FUNCTION__, 5e7); // wait for fence for up to 50 ms
+	}
+	this->reset(true);
 	num_destroyed++;
 }
 
@@ -17597,6 +17478,7 @@ uint64_t Task::num_destroyed = 0;
 // create a singleton with default device features
 VulkanManager& VulkanManager::get_singleton() {
 	if (singleton == nullptr) {
+		Log::force("MAIN THREAD: ", std::this_thread::get_id());
 		Log::debug("\n===============================================================================\n");
 		Log::info("Initializing VulkanManager Singleton");
 		Log::debug("\n===============================================================================");
@@ -17648,7 +17530,7 @@ VulkanManager& VulkanManager::get_singleton() {
 		shared_descriptor_pool_transfer = std::make_unique<DescriptorPool>(*device, MAX_DESCRIPTOR_SET_COUNT, DEFAULT_TRANSFER_POOL_SIZE);
 
 		// setup collision resources
-		collision_resources = std::make_unique<CollisionResources>();
+		physics_job_resources = std::make_unique<PhysicsJobResources>();
 
 		// Now, create the single VulkanManager object
 		singleton.reset(new VulkanManager());
@@ -17772,13 +17654,13 @@ void VulkanManager::log_tasks() {
 		num_busy += static_cast<uint32_t>(!is_available);
 		tasks_per_caller[tasks[i]->get_calling_function()]++;
 	}
-	Log::debug(
+	Log::force(
 		"VulkanManager tasks: ", task_count, " active tasks (", Task::num_created, " created, ",
 		Task::num_destroyed, " destroyed), ACTIVE TASKS: busy=", num_busy, ", available = ", num_available, "."
 	);
 	if (!tasks_per_caller.empty()) {
 		for (const auto& pair : tasks_per_caller) {
-			Log::debug("--- Function \"", pair.first, "\": ", pair.second, " active tasks.");
+			Log::force("--- Function \"", pair.first, "\": ", pair.second, " active tasks.");
 		}
 	}
 }
@@ -17983,25 +17865,13 @@ void VulkanManager::release_mesh(uint32_t mesh_id) {
 	Log::info("VulkanManager: failed to release Mesh with ID ", mesh_id, ": the VulkanManager currenctly doesn't own a Mesh with this ID.");
 }
 
-VulkanManager::CollisionResources& VulkanManager::get_collision_resources() {
-	return *collision_resources;
+VulkanManager::PhysicsJobResources& VulkanManager::get_physics_job_resources() {
+	return *physics_job_resources;
 }
 
-uint64_t VulkanManager::record_compute_job(std::function<void(VulkanManager::VulkanJob&)> job_function) {
+uint64_t VulkanManager::record_job(VulkanManager::JobType type, std::function<void(VulkanManager::VulkanJob&)> job_function) {
 	VulkanJob job;
-	job.task = &get_compute_task(__FUNCTION__);
-	job.job_function = std::move(job_function);
-	job.state = JobState::Recorded;
-	{
-		LockGuard lock({ &vulkan_mutex });
-		jobs.emplace(job.jobID, std::move(job));
-	}
-	return job.jobID;
-}
-
-uint64_t VulkanManager::record_graphics_job(std::function<void(VulkanManager::VulkanJob&)> job_function) {
-	VulkanJob job;
-	job.task = &get_graphics_task();
+	job.type = type;
 	job.job_function = std::move(job_function);
 	job.state = JobState::Recorded;
 	{
@@ -18031,46 +17901,56 @@ VulkanManager::JobState VulkanManager::get_job_state(uint64_t jobID) {
 	return it != jobs.end() ? it->second.state : JobState::Consumed;
 }
 
-
-bool VulkanManager::consume_job(uint64_t jobID) {
-	LockGuard lock({ &vulkan_mutex });
-	VulkanJob& job = jobs[jobID];
-	if (job.state == JobState::Ready) {
-		job.state = JobState::Consumed;
-		return true;
-	}
-	return false;
-}
-
-bool VulkanManager::consume_job(uint64_t jobID, std::function<void(VulkanJob&)> consume_function) {
+void VulkanManager::consume_job(uint64_t jobID, std::function<void(VulkanJob&)> consume_function) {
 	LockGuard lock({ &vulkan_mutex });
 	auto it = jobs.find(jobID);
-	if (it == jobs.end()) { return false; }
-
+	if (it == jobs.end()) { return; } // if the job can't be found: it's likely already consumed
 	VulkanJob& job = it->second;
-
-	if (job.get_state() == JobState::Ready) {
-		consume_function(job);			// execute function
-		job.task->set_protected(false);	// only AFTER readback!
-		job.state = JobState::Consumed;
-		return true;
-	}
-	return false;
+	job.consume_function = std::move(consume_function);
+	job.consume_function_assigned = true;
 }
 
-void VulkanManager::process_jobs() {
+void VulkanManager::process_jobs(bool skip_outdated) {
 	if (std::this_thread::get_id() != MAIN_THREAD_ID) {
 		Log::error(__FUNCTION__, ": function call is forbidden on any threads other than the main thread !!!");
 	}
 
 	LockGuard lock({ &vulkan_mutex });
 
+	size_t job_count = jobs.size();
+	if (job_count > MAX_VULKAN_JOBS) {
+		Log::warning(__FUNCTION__, ": active VulkanJobs count = ", job_count);
+	}
+
 	for (auto it = jobs.begin(); it != jobs.end(); ) {
 		VulkanJob& job = it->second;
 
 		switch (job.state) {
 			case JobState::Recorded: {
-				job.job_function(job);        // record + submit GPU work
+				if (!job.task) {
+					switch (job.state) {
+						case VulkanManager::JobType::GraphicsJob: {
+							job.task = &get_graphics_task(__FUNCTION__);
+							break;
+						}
+						case VulkanManager::JobType::TransferJob: {
+							job.task = &get_transfer_task(__FUNCTION__);
+							break;
+						}
+						case VulkanManager::JobType::ComputeJob:
+						default: {
+							job.task = &get_compute_task(__FUNCTION__);
+							break;
+						}
+					}
+				}
+				#if defined(MAKE_RENDERDOC_CAPTURE)
+					VkDebug::capture_start();
+				#endif
+				job.job_function(job); // submit GPU work from main thread
+				#if defined(MAKE_RENDERDOC_CAPTURE)
+					VkDebug::capture_stop();
+				#endif
 				job.task->set_protected(true);
 				job.state = JobState::Submitted;
 				++it;
@@ -18083,6 +17963,27 @@ void VulkanManager::process_jobs() {
 				}
 				++it;
 				break;
+			}
+			
+			case JobState::Ready: {
+				if (job.consume_function_assigned) {
+					static uint64_t last_consumed_jobID = 0;
+					if (job.jobID <= last_consumed_jobID && skip_outdated) {
+						Log::warning(__FUNCTION__, ": trying to consume job ", job.jobID, " which is older or equal to the last consumed job (", last_consumed_jobID, "). Skipping.");
+					}
+					else {
+						#if defined(MAKE_RENDERDOC_CAPTURE)
+							VkDebug::capture_start();
+						#endif
+						job.consume_function(job);
+						#if defined(MAKE_RENDERDOC_CAPTURE)
+							VkDebug::capture_stop();
+						#endif	
+					}
+					job.task->set_protected(false);
+					job.state = JobState::Consumed;
+					last_consumed_jobID = job.jobID;
+				}
 			}
 
 			case JobState::Consumed: {
@@ -18103,14 +18004,36 @@ uint32_t VulkanManager::job_count() {
 	return static_cast<uint32_t>(jobs.size());
 }
 
-VulkanManager::CollisionResources::CollisionResources() {
-	const uint32_t wg_size_xyz = VOXEL_GRID_WORKGROUP_SIZE_XYZ;
-	PushConstants constants(0u, 0u, 0u); // placeholder for 3 uint
-	shader = std::make_unique<ShaderModule>(*device, CHECK_COLLISION_SPIRV_BIN, CHECK_COLLISION_SPIRV_BYTES);
+VulkanManager::PhysicsJobResources::PhysicsJobResources() {
+	PushConstants constants(0u, 0u, 0.0f, 0u, 0u, 0.0f, 0u); // placeholder template ( states_count, vb_res, dt_substep, max_collisions_per_substep, solver iterations, complex_threshold, sort_stage)
+	this->physics_integration_shader = std::make_unique<ShaderModule>(*device, PHYSICS_INTEGRATION_SPIRV_BIN, PHYSICS_INTEGRATION_SPIRV_BYTES);
+	this->states_sort_shader = std::make_unique<ShaderModule>(*device, PHYSICS_STATES_BITONIC_MERGE_SORT_SPIRV_BIN, PHYSICS_STATES_BITONIC_MERGE_SORT_SPIRV_BYTES);
+	this->collision_detection_shader = std::make_unique<ShaderModule>(*device, PHYSICS_COLLISION_DETECTION_SPIRV_BIN, PHYSICS_COLLISION_DETECTION_SPIRV_BYTES);
+	this->collision_confirmation_shader = std::make_unique<ShaderModule>(*device, PHYSICS_COLLISION_CONFIRMATION_SPIRV_BIN, PHYSICS_COLLISION_CONFIRMATION_SPIRV_BYTES);
+	this->collision_resolve_step1_shader = std::make_unique<ShaderModule>(*device, PHYSICS_COLLISION_RESOLVE_STEP1_SPIRV_BIN, PHYSICS_COLLISION_RESOLVE_STEP1_SPIRV_BYTES);
+	this->collision_resolve_step2_shader = std::make_unique<ShaderModule>(*device, PHYSICS_COLLISION_RESOLVE_STEP2_SPIRV_BIN, PHYSICS_COLLISION_RESOLVE_STEP2_SPIRV_BYTES);
+	this->collision_resolve_step3_shader = std::make_unique<ShaderModule>(*device, PHYSICS_COLLISION_RESOLVE_STEP3_SPIRV_BIN, PHYSICS_COLLISION_RESOLVE_STEP3_SPIRV_BYTES);
+
 	set_layout = std::make_unique<DescriptorSetLayout>(*device);
-	set_layout->add_bindings(3, DescriptorType::STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_COMPUTE_BIT); // allocated 3 storage buffers at once
+	set_layout->add_bindings(6, DescriptorType::STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_COMPUTE_BIT); // buffer allocations: states_buffer, sort_keys_buffer, voxel_master_buffer, collision_candidates_buffer, collision_candidates_counter_buffer, confirmed_collisions_counter_buffer
 	set_layout->finalize();
-	pipeline = std::make_unique<ComputePipeline>(*device, *shader, constants.get_size(), *set_layout, wg_size_xyz, wg_size_xyz, wg_size_xyz);
+
+	this->physics_integration_pipeline = std::make_unique<ComputePipeline>(*device, *physics_integration_shader, constants.get_size(), *set_layout, PHYSICS_WORKGROUP_SIZE_X, 1, 1);
+	this->states_sort_pipeline = std::make_unique<ComputePipeline>(*device, *states_sort_shader, constants.get_size(), *set_layout, PHYSICS_WORKGROUP_SIZE_X, 1, 1);
+	this->collision_detection_pipeline = std::make_unique<ComputePipeline>(*device, *collision_detection_shader, constants.get_size(), *set_layout, PHYSICS_WORKGROUP_SIZE_X, 1, 1);
+	this->collision_confirmation_pipeline = std::make_unique<ComputePipeline>(*device, *collision_confirmation_shader, constants.get_size(), *set_layout, VOXEL_GRID_WORKGROUP_SIZE_XYZ, VOXEL_GRID_WORKGROUP_SIZE_XYZ, VOXEL_GRID_WORKGROUP_SIZE_XYZ);
+	this->collision_resolve_step1_pipeline = std::make_unique<ComputePipeline>(*device, *collision_resolve_step1_shader, constants.get_size(), *set_layout, PHYSICS_WORKGROUP_SIZE_X, 1, 1);
+	this->collision_resolve_step2_pipeline = std::make_unique<ComputePipeline>(*device, *collision_resolve_step2_shader, constants.get_size(), *set_layout, PHYSICS_WORKGROUP_SIZE_X, 1, 1);
+	this->collision_resolve_step3_pipeline = std::make_unique<ComputePipeline>(*device, *collision_resolve_step3_shader, constants.get_size(), *set_layout, PHYSICS_WORKGROUP_SIZE_X, 1, 1);
+}
+
+// try to free resources by processing active jobs and resetting tasks (if waiting for fences is successful and the tasks are not flagged as protected)
+void VulkanManager::recover() {
+	process_jobs();
+	device->wait_idle();
+	for (uint32_t i = 0; i < tasks.size(); i++) {
+		tasks[i].reset();
+	}
 }
 
 // private constructor: empty, because all the work is already done in get_singleton()
@@ -18122,7 +18045,6 @@ VulkanManager::VulkanManager() {}
 Renderer::FrameResources::FrameResources() {
 	VulkanManager& manager = VulkanManager::get_singleton();
 	Device& device = manager.get_device();
-	this->constants = std::make_unique<PushConstants>();
 	this->image_available_semaphore = std::make_unique<Semaphore>(device, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 	this->render_finished_semaphore = std::make_unique<Semaphore>(device, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
 }
@@ -18132,7 +18054,7 @@ bool Renderer::FrameResources::update(Semaphore& tl_semaphore) {
 	if (!this->task) {
 		task = &manager.get_graphics_task(__FUNCTION__);
 	}
-	else if (!this->task->reset()) { // deny update if the task is still busy with the last frame
+	else if (!this->task->reset(false)) { // deny update if the task is still busy with the last frame
 		return false;
 	}
 	Device& device = manager.get_device();
@@ -18229,6 +18151,7 @@ bool Renderer::FrameResources::update(Semaphore& tl_semaphore) {
 				if (current_lights[i] != previous_lights[i]) { lights_have_changed = true; break; }
 			}
 			if (lights_have_changed) {
+				device.wait_idle();
 				this->lights_buffer.reset(nullptr);
 			}
 		}
@@ -18374,7 +18297,7 @@ bool Renderer::FrameResources::update(Semaphore& tl_semaphore) {
 		));
 		uint32_t particle_count = 0;
 		for (const auto& it : this->scene->get_particle_systems()) {
-			if (it.get_emitter_entity_ptr()) { // only count if the emitter entity is still valid
+			if (!it.is_stopped()) {
 				particle_count += static_cast<uint32_t>(it.get_active_particles().size());
 			}
 		}
@@ -18385,16 +18308,15 @@ bool Renderer::FrameResources::update(Semaphore& tl_semaphore) {
 		// write model matrices and pointers to visible entities to the corresponding vectors
 		// 1. scene entities
 		for (const auto& it : this->scene->get_entities()) {
-			glm::mat4 entity_model_matrix = it.second->get_model_matrix(); // acquire matrix outside the if condition to make sure invisible entities are still tracked
 			if (it.second->is_visible()) {
-				this->model_matrices_vec.push_back(entity_model_matrix);
+				this->model_matrices_vec.push_back(it.second->get_model_matrix(SWEPT_MODEL_MATRIX)); // 'true' = use swept model matrix, i.e. interpolated between physics update steps
 				this->visible_entities.push_back(it.second.get());
 			}
 		}
 		// 2. particles
 		for (const auto& it : this->scene->get_particle_systems()) {
 			for (auto particle : it.get_active_particles()) { // all 'active' particles are visible by definition
-				model_matrices_vec.push_back(particle->entity->get_model_matrix());
+				model_matrices_vec.push_back(particle->entity->get_model_matrix(SWEPT_MODEL_MATRIX)); // 'true' = use swept model matrix, i.e. interpolated between physics update steps
 				this->visible_entities.push_back(particle->entity);
 			}
 		}
@@ -18435,99 +18357,20 @@ bool Renderer::FrameResources::update(Semaphore& tl_semaphore) {
 		);
 	}
 
-	// === UPDATE DESCRIPTOR SET ===
-	// note: if the set layout is non-default, this has to be done manually before calling FrameResources::update():
-	// e.g.: Renderer::get_frame(frame_id).get_descriptor_set().bind_buffer(...);
-	{
-		if (!this->set) {
-			if (!this->renderer->descriptor_set_layout) {
-				// if undefined: use default layout
-				Log::debug(__FUNCTION__, ": descriptor set layout is undefined for this Renderer instance -> using default.");
-				this->renderer->is_default_renderer = true;
-				this->renderer->m_descriptor_set_layout = std::make_unique<DescriptorSetLayout>(device);
-				this->renderer->m_descriptor_set_layout->add_bindings(3, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);			// for materials, lights, scene Material texIDs
-				this->renderer->m_descriptor_set_layout->add_bindings(1, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_VERTEX_BIT);				// for model matrices
-				this->renderer->m_descriptor_set_layout->add_bindings(3, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);	// for cubemaps and BRDF lut
-				this->renderer->m_descriptor_set_layout->add_bindings(1, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT); // for textures
-				this->renderer->m_descriptor_set_layout->finalize();
-				this->renderer->descriptor_set_layout = this->renderer->m_descriptor_set_layout.get();
-			}
-			DescriptorPool& pool = manager.get_descriptor_pool_graphics();
-			this->set = std::make_unique<DescriptorSet>(device, *renderer->descriptor_set_layout, pool);
-		}
-		if (this->renderer->is_default_renderer) {
-			this->set->bind_buffer(default_bindings.materials, *this->materials_buffer);
-			this->set->bind_buffer(default_bindings.lights, *this->lights_buffer);
-			this->set->bind_buffer(default_bindings.tex_IDs, *this->material_texIDs_buffer);
-			this->set->bind_buffer(default_bindings.model_matrices, *this->model_matrices_buffer);
-			this->set->bind_cubemap(default_bindings.cubemap_irradiance, this->scene->get_cubemap_irradiance(tl_semaphore));
-			this->set->bind_cubemap(default_bindings.cubemap_prefiltered, this->scene->get_cubemap_prefiltered(tl_semaphore));
-			this->set->bind_textures(default_bindings.brdf_lut, this->scene->get_brdf_lut(tl_semaphore));
-			this->set->bind_textures(default_bindings.textures, this->scene->get_textures());
-		}
-		this->set->write();
-	}
-
-	// === UPDATE PUSH CONSTANTS ===
-	// note: if the constants are non_default, they all have to be explicitly assigned:
-	// e.g.: Renderer::get_frame(frame_id).get_push_constants().add_values(...);
-	if (this->renderer->is_default_renderer) {
-		Camera& cam = this->scene->get_active_camera();
-		if (constants->get_size() == 0) {
-			// initialize the static default offsets (=first-time init)
-			FrameResources::default_offsets.view_matrix_offset = this->constants->add_values(cam.get_view_matrix());
-			FrameResources::default_offsets.projection_offset = this->constants->add_values(cam.get_projection_matrix());
-			FrameResources::default_offsets.material_offset = this->constants->add_values(num_lights);
-			FrameResources::default_offsets.light_count_offset = this->constants->add_values(uint32_t(0)); // placeholder
-			FrameResources::default_offsets.prefmipl_offset = this->constants->add_values(this->scene->get_prefiltered_mip_levels());
-			FrameResources::default_offsets.exposure_offset = this->constants->add_values(this->scene->get_exposure());
-			FrameResources::default_offsets.contrast_offset = this->constants->add_values(this->scene->get_contrast());
-			FrameResources::default_offsets.ibl_intensity_offset = this->constants->add_values(this->scene->get_ibl_intensity());
-			FrameResources::default_offsets.ambient_scene_color_offset = this->constants->add_values(this->scene->get_ambient());
-			FrameResources::default_offsets.camera_position_offset = this->constants->add_values(cam.get_position());
-		}
-		else {
-			// use the known default offsets for the update (in-place overwrite)
-			this->constants->add_values(cam.get_view_matrix(), default_offsets.view_matrix_offset);
-			this->constants->add_values(cam.get_projection_matrix(), default_offsets.projection_offset);
-			// this->constants->add_values(... , default_offsets.material_offset); // to be updated explicitly per submesh material in the main render loop
-			this->constants->add_values(num_lights, default_offsets.light_count_offset);
-			//this->constants->add_values(this->scene->get_prefiltered_mip_levels(), default_offsets.prefmipl_offset); // no update here: doesn't typically change per frame
-			this->constants->add_values(this->scene->get_exposure(), default_offsets.exposure_offset);
-			this->constants->add_values(this->scene->get_contrast(), default_offsets.contrast_offset);
-			//this->constants->add_values(this->scene->get_ibl_intensity(), default_offsets.ibl_intensity_offset); // no update here: doesn't typically change per frame
-			this->constants->add_values(this->scene->get_ambient(), default_offsets.ambient_scene_color_offset);
-			this->constants->add_values(cam.get_position(), default_offsets.camera_position_offset);
-		}
-	}
-
 	return true;
 }
 
-PushConstants& Renderer::FrameResources::get_push_constants() {
-	return *this->constants;
-}
-
-DescriptorSet& Renderer::FrameResources::get_descriptor_set() {
-	if (!this->set) {
+DescriptorSet& Renderer::FrameResources::get_descriptor_set(uint32_t batchID) {
+	if (this->descriptor_sets.size() <= batchID) {
+		this->descriptor_sets.resize(batchID + 1);
+	}
+	if (!this->descriptor_sets[batchID]) {
 		VulkanManager& manager = VulkanManager::get_singleton();
 		Device& device = manager.get_device();
-		DescriptorPool& pool = manager.get_descriptor_pool_graphics();
-		if (!this->renderer->descriptor_set_layout) {
-			// if undefined: use default layout
-			Log::debug(__FUNCTION__, ": descriptor set layout is undefined for this Renderer instance -> using default.");
-			this->renderer->is_default_renderer = true;
-			this->renderer->m_descriptor_set_layout = std::make_unique<DescriptorSetLayout>(device);
-			this->renderer->m_descriptor_set_layout->add_bindings(3, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);			// for materials, lights, scene Material texIDs
-			this->renderer->m_descriptor_set_layout->add_bindings(1, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_VERTEX_BIT);				// for model matrices
-			this->renderer->m_descriptor_set_layout->add_bindings(3, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);	// for cubemaps and BRDF lut
-			this->renderer->m_descriptor_set_layout->add_bindings(1, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT); // for textures
-			this->renderer->m_descriptor_set_layout->finalize();
-			this->renderer->descriptor_set_layout = this->renderer->m_descriptor_set_layout.get();
-		}
-		this->set = std::make_unique<DescriptorSet>(device, *renderer->descriptor_set_layout, pool);
+		DescriptorPool& pool = VulkanManager::get_singleton().get_descriptor_pool_graphics();
+		this->descriptor_sets[batchID] = std::make_unique<DescriptorSet>(device, *renderer->descriptor_set_layout, pool);
 	}
-	return *this->set;
+	return *this->descriptor_sets[batchID];
 }
 
 // +=================================+   
@@ -18556,207 +18399,174 @@ Renderer::~Renderer() {
 
 // set externally owned resources
 void Renderer::set_surface(Surface& surface) { this->surface = &surface; }
-void Renderer::set_renderpass(RenderPass& renderpass) { this->renderpass = &renderpass; }
-void Renderer::set_subpass(SubPass& subpass) { this->subpass = &subpass; }
-void Renderer::set_pipeline_layout(GraphicsPipelineLayout& pipeline_layout) { this->pipeline_layout = &pipeline_layout; }
-void Renderer::set_opaque_pass_pipeline_properties(PipelineProperties& pipeline_properties) { this->pipeline_properties_opaque = &pipeline_properties; }
-void Renderer::set_alpha_pass_pipeline_properties(PipelineProperties& pipeline_properties) { this->pipeline_properties_alpha = &pipeline_properties; }
-void Renderer::set_opaque_pass_pipeline(GraphicsPipeline& pipeline) { this->pipeline_opaque = &pipeline; }
-void Renderer::set_alpha_pass_pipeline(GraphicsPipeline& pipeline) { this->pipeline_alpha = &pipeline; }
-void Renderer::set_vertex_shader(ShaderModule& vertex_shader) { this->vertex_shader = &vertex_shader; }
-void Renderer::set_fragment_shader(ShaderModule& fragment_shader) { this->fragment_shader = &fragment_shader; }
-void Renderer::set_descriptor_set_layout(DescriptorSetLayout& descriptor_set_layout) { this->descriptor_set_layout = &descriptor_set_layout; }
-void Renderer::set_fps(float_t max_fps) { this->max_fps = std::max(0.1f, max_fps); }
+void Renderer::set_scene(Scene& scene) { this->scene = &scene; }
 
-// private method to finalize the Renderer initialization after all resources have been assigned
-// (otherise, defaults are used)
+// private method to finalize the Renderer initialization
 void Renderer::initialize(Semaphore& timeline_semaphore) {
 
 	Log::debug("\n===============================================================================");
 	Log::info("Initializing Renderer");
 	Log::debug("===============================================================================");
 
-	// make sure a surface has been assigned
+	// Make sure a surface has been assigned
 	if (!this->surface) {
 		Log::debug("... Renderer::finalize(): no surface has been assigned -> creating a default surface with extent ", this->extent.width, "x", this->extent.height);
 		this->surface = &vk_manager->get_surface(this->extent.width, this->extent.height, "Vulkan Renderer");
 	}
 	auto surface_format = vk_manager->get_device().select_surface_format(*this->surface);
 
-	// make sure a renderpass has been assigned
+	// Initialize the RenderPass
 	if (!this->renderpass) {
-		Log::debug("... Renderer::finalize(): no renderpass has been assigned -> creating a default renderpass for the selected surface format (owned by the Renderer instance)");
 		uint32_t multisample_count = 1;
-		this->m_renderpass = std::make_unique<RenderPass>(vk_manager->get_device(), multisample_count);
-		this->renderpass = this->m_renderpass.get();
+		this->renderpass = std::make_unique<RenderPass>(vk_manager->get_device(), multisample_count);
 	}
 
-	// make sure a subpass has been assigned
+	// Initialize the SubPass (with at least one color attachment reference and one depth/stencil attachment reference)
 	if (!this->subpass) {
-		Log::debug("... Renderer::finalize(): no subpass has been assigned -> creating a default subpass for the selected surface format (owned by the Renderer instance)");
-		this->m_subpass = std::make_unique<SubPass>(*renderpass);
-		this->subpass = this->m_subpass.get();
+		this->subpass = std::make_unique<SubPass>(*renderpass);
 	}
 
-	// make sure the renderpass has at least one color attachment
-	if (!this->renderpass->has_color_attachment()) {
-		Log::debug("... Renderer::finalize(): renderpass has no color attachment -> adding a default color attachment for the selected surface format");
-		this->subpass->add_attachment_reference(
-			this->renderpass->add_attachment(
-				AttachmentType::COLOR_TYPE,
-				VK_IMAGE_LAYOUT_UNDEFINED,
-				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-				VK_ATTACHMENT_LOAD_OP_CLEAR,
-				VK_ATTACHMENT_STORE_OP_STORE,
-				VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				surface_format.format
-			)
-		);
-	}
+	// Make sure the renderpass has at least one color attachment
+	this->subpass->add_attachment_reference(
+		this->renderpass->add_attachment(
+			AttachmentType::COLOR_TYPE,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			VK_ATTACHMENT_LOAD_OP_CLEAR,
+			VK_ATTACHMENT_STORE_OP_STORE,
+			VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+			VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			surface_format.format
+		)
+	);
 
-	// make sure the renderpass has a depth attachment
-	if (!this->renderpass->has_depth_stencil()) {
-		Log::debug("... Renderer::finalize(): renderpass has no depth/stencil attachment -> adding a default depth/stencil attachment");
-		this->subpass->add_attachment_reference(
-			this->renderpass->add_attachment(
-				AttachmentType::DEPTH_TYPE,
-				VK_IMAGE_LAYOUT_UNDEFINED,
-				VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-				VK_ATTACHMENT_LOAD_OP_CLEAR,
-				VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				VK_ATTACHMENT_LOAD_OP_CLEAR,
-				VK_ATTACHMENT_STORE_OP_DONT_CARE
-			)
-		);
-	}
+	// Make sure the renderpass has a depth attachment
+	this->subpass->add_attachment_reference(
+		this->renderpass->add_attachment(
+			AttachmentType::DEPTH_TYPE,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+			VK_ATTACHMENT_LOAD_OP_CLEAR,
+			VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			VK_ATTACHMENT_LOAD_OP_CLEAR,
+			VK_ATTACHMENT_STORE_OP_DONT_CARE
+		)
+	);
 
-	// finalize subpass and renderpass
+	// Finalize subpass and renderpass
 	uint32_t subpass_index = this->subpass->finalize(0, VK_PIPELINE_BIND_POINT_GRAPHICS);
-	if (this->renderpass->subpass_dependency.empty()) {
-		Log::debug("... Renderer::finalize(): renderpass has no subpass dependencies -> adding a default dependency from external to subpass ", subpass_index);
-		this->renderpass->add_subpass_dependency(
-			VK_SUBPASS_EXTERNAL,
-			subpass_index,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // src_stage_mask: Operations that write to the swapchain before the render pass
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, // dst_stage_mask: Where the pipeline writes color and depth
-			0, // src_access_mask: Wait for image layout transition
-			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT // dst_access_mask: ensure color/depth writes are safe
-		);
-	}
-	this->renderpass->finalize(); // has no effect if already finalized
+	this->renderpass->add_subpass_dependency(
+		VK_SUBPASS_EXTERNAL,
+		subpass_index,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // src_stage_mask: Operations that write to the swapchain before the render pass
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, // dst_stage_mask: Where the pipeline writes color and depth
+		0, // src_access_mask: Wait for image layout transition
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT // dst_access_mask: ensure color/depth writes are safe
+	);
+	this->renderpass->finalize();
 
-	// create a depth buffer for the current extent (internally owned)
-	if (!this->m_depth_buffer) {
-		this->m_depth_buffer = std::make_unique<DepthBuffer>(vk_manager->get_device(), extent);
-	}
+	// Create a depth buffer for the current extent
+	this->depth_buffer = std::make_unique<DepthBuffer>(vk_manager->get_device(), extent);
 
-	// make sure a swapchain has been assigned
-	if (!this->swapchain) {
-		Log::debug("... Renderer::finalize(): no swapchain has been assigned -> creating a default swapchain for the selected surface and extent (owned by the Renderer instance)");
-		this->m_swapchain = std::make_unique<Swapchain>(
-			vk_manager->get_device(),
-			*renderpass,
-			*surface,
-			surface_format,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-			*m_depth_buffer,
-			NULLOPT,
-			extent,
-			frames_in_flight,
-			VK_IMAGE_VIEW_TYPE_2D,
-			VK_PRESENT_MODE_FIFO_KHR
-		);
-		this->swapchain = this->m_swapchain.get();
-	}
+	// Make sure a swapchain has been assigned
+	this->swapchain = std::make_unique<Swapchain>(
+		vk_manager->get_device(),
+		*renderpass,
+		*surface,
+		surface_format,
+		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		*depth_buffer,
+		NULLOPT,
+		extent,
+		frames_in_flight,
+		VK_IMAGE_VIEW_TYPE_2D,
+		VK_PRESENT_MODE_FIFO_KHR
+	);
 
-	// make sure a vertex shader is assigned
-	if (!this->vertex_shader) {
-		Log::debug("... Renderer::finalize(): no vertex shader has been assigned -> loading a generic vertex shader as default (owned by the Renderer instance)");
-		is_default_renderer = true;
-		this->m_vertex_shader = std::make_unique<ShaderModule>(
-			vk_manager->get_device(),
-			VERTEX_SHADER_GENERIC_SPIRV_BIN,
-			VERTEX_SHADER_GENERIC_SPIRV_BYTES
-		);
-		this->vertex_shader = this->m_vertex_shader.get();
-	}
+	// Initialize Shader Modules
+	this->vertex_shader = std::make_unique<ShaderModule>(
+		vk_manager->get_device(),
+		VERTEX_SHADER_GENERIC_SPIRV_BIN,
+		VERTEX_SHADER_GENERIC_SPIRV_BYTES
+	);
+	this->fragment_shader = std::make_unique<ShaderModule>(
+		vk_manager->get_device(),
+		FRAGMENT_SHADER_GENERIC_SPIRV_BIN,
+		FRAGMENT_SHADER_GENERIC_SPIRV_BYTES
+	);
 
-	// make sure a fragment shader is assigned
-	// (note: if the default fragment shader is used, the descriptor set layout and push constants must match the outline expected by this shader!)
-	if (!this->fragment_shader) {
-		Log::debug("... Renderer::finalize(): no fragment shader has been assigned -> loading a generic fragment shader as default (owned by the Renderer instance)");
-		is_default_renderer = true;
-		this->m_fragment_shader = std::make_unique<ShaderModule>(
-			vk_manager->get_device(),
-			FRAGMENT_SHADER_GENERIC_SPIRV_BIN,
-			FRAGMENT_SHADER_GENERIC_SPIRV_BYTES
-		);
-		this->fragment_shader = this->m_fragment_shader.get();
-	}
+	// Define Clear Values
+	this->clear_values.resize(2);
+	this->clear_values[0].color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+	this->clear_values[1].depthStencil = { 1.0f, 0 };
 
-	// make sure clear values are defined
-	if (this->clear_values.empty()) {
-		this->clear_values.resize(2);
-		this->clear_values[0].color = { {0.0f, 0.0f, 0.0f, 1.0f} };
-		this->clear_values[1].depthStencil = { 1.0f, 0 };
-	}
+	// Initialize the PushConstants (overwrite later per draw call)
+	this->push_constants = std::make_unique<PushConstants>();
+	Renderer::FrameResources::default_offsets.view_matrix_offset = this->push_constants->add_values(glm::mat4(0.0f)); // placeholder for camera view matrix
+	Renderer::FrameResources::default_offsets.projection_offset = this->push_constants->add_values(glm::mat4(0.0f)); // placeholder for camera projection matrix
+	Renderer::FrameResources::default_offsets.material_offset = this->push_constants->add_values(0u); // placeholder for material index
+	Renderer::FrameResources::default_offsets.light_count_offset = this->push_constants->add_values(0u); // placeholder for number of lights
+	Renderer::FrameResources::default_offsets.prefmipl_offset = this->push_constants->add_values(0u); // placeholder for prefiltered mip levels
+	Renderer::FrameResources::default_offsets.exposure_offset = this->push_constants->add_values(0.0f); // placeholder for exposure
+	Renderer::FrameResources::default_offsets.contrast_offset = this->push_constants->add_values(0.0f); // placeholder for contrast
+	Renderer::FrameResources::default_offsets.ibl_intensity_offset = this->push_constants->add_values(0.0f); // placeholder for IBL intensity
+	Renderer::FrameResources::default_offsets.ambient_scene_color_offset = this->push_constants->add_values(glm::vec3(0.0f)); // placeholder for ambient light
+	Renderer::FrameResources::default_offsets.camera_position_offset = this->push_constants->add_values(glm::vec3(0.0f)); // placeholder for camera position
 
-	// make sure a pipeline layout has been assigned
-	if (!this->pipeline_layout) {
-		Log::debug("... Renderer::finalize(): no pipeline layout has been assigned -> creating a default pipeline layout (owned by the Renderer instance)");
-		this->m_pipeline_layout = std::make_unique<GraphicsPipelineLayout>(
-			vk_manager->get_device(),
-			*descriptor_set_layout,
-			*this->frames[0].constants
-		);
-		this->pipeline_layout = this->m_pipeline_layout.get();
-	}
+	// Define the DescriptorSet Layout
+	this->descriptor_set_layout = std::make_unique<DescriptorSetLayout>(vk_manager->get_device());
+	this->descriptor_set_layout->add_bindings(3, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);			// for materials, lights, scene Material texIDs
+	this->descriptor_set_layout->add_bindings(1, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_VERTEX_BIT);			// for model matrices
+	this->descriptor_set_layout->add_bindings(3, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT);	// for cubemaps and BRDF lut
+	this->descriptor_set_layout->add_bindings(1, COMBINED_IMAGE_SAMPLER_DESCRIPTOR, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT); // for textures
+	this->descriptor_set_layout->add_bindings(1, STORAGE_BUFFER_DESCRIPTOR, VK_SHADER_STAGE_VERTEX_BIT);			// for batch instance indices
+	this->descriptor_set_layout->finalize();
+
+	// Preload the prefiltered map to make sure mip levels are available when the push constants are first updated
+	const auto& prefiltered_map = this->scene->get_cubemap_prefiltered(timeline_semaphore);
+
+	// Define the Pipeline Layout
+	this->pipeline_layout = std::make_unique<GraphicsPipelineLayout>(
+		vk_manager->get_device(),
+		*descriptor_set_layout,
+		*this->push_constants
+	);
 
 	// make sure pipeline properties are defined
 	if (!this->pipeline_properties_opaque) {
 		Log::debug("... Renderer::finalize(): no pipeline properties for the opaque pass have been assigned -> creating default pipeline properties (owned by the Renderer instance)");
-		this->m_pipeline_properties_opaque = std::make_unique<PipelineProperties>();
-		this->pipeline_properties_opaque = this->m_pipeline_properties_opaque.get();
+		this->pipeline_properties_opaque = std::make_unique<PipelineProperties>();
 	}
 
 	if (!this->pipeline_properties_alpha) {
 		Log::debug("... Renderer::finalize(): no pipeline properties for the alpha pass have been assigned -> creating default pipeline properties (owned by the Renderer instance)");
-		this->m_pipeline_properties_alpha = std::make_unique<PipelineProperties>();
-		this->m_pipeline_properties_alpha->cull_mode = VK_CULL_MODE_NONE;
-		this->m_pipeline_properties_alpha->depth_write_enable = VK_FALSE;
-		this->pipeline_properties_alpha = this->m_pipeline_properties_alpha.get();
+		this->pipeline_properties_alpha = std::make_unique<PipelineProperties>();
+		this->pipeline_properties_alpha->cull_mode = VK_CULL_MODE_NONE;
+		this->pipeline_properties_alpha->depth_write_enable = VK_FALSE;
 	}
 
-	// make sure a pipeline for the opaque pass has been assigned
-	if (!this->pipeline_opaque) {
-		this->m_pipeline_opaque = std::make_unique<GraphicsPipeline>(
-			vk_manager->get_device(),
-			*renderpass,
-			subpass_index,
-			*pipeline_layout,
-			*pipeline_properties_opaque,
-			ColorBlendState::OPAQUE_BLEND,
-			*vertex_shader,
-			*fragment_shader
-		);
-		this->pipeline_opaque = this->m_pipeline_opaque.get();
-	}
+	// Define Graphics Pipelines
+	this->pipeline_opaque = std::make_unique<GraphicsPipeline>(
+		vk_manager->get_device(),
+		*renderpass,
+		subpass_index,
+		*pipeline_layout,
+		*pipeline_properties_opaque,
+		ColorBlendState::OPAQUE_BLEND,
+		*vertex_shader,
+		*fragment_shader
+	);
 
-	// make sure a pipeline for the alpha pass has been assigned
-	if (!this->pipeline_alpha) {
-		this->m_pipeline_alpha = std::make_unique<GraphicsPipeline>(
-			vk_manager->get_device(),
-			*renderpass,
-			subpass_index,
-			*pipeline_layout,
-			*pipeline_properties_alpha,
-			ColorBlendState::PREMULTIPLIED_ALPHA_BLEND,
-			*vertex_shader,
-			*fragment_shader
-		);
-		this->pipeline_alpha = this->m_pipeline_alpha.get();
-	}
+	this->pipeline_alpha = std::make_unique<GraphicsPipeline>(
+		vk_manager->get_device(),
+		*renderpass,
+		subpass_index,
+		*pipeline_layout,
+		*pipeline_properties_alpha,
+		ColorBlendState::PREMULTIPLIED_ALPHA_BLEND,
+		*vertex_shader,
+		*fragment_shader
+	);
 
 #if defined(MAKE_RENDERDOC_CAPTURE)
 	VkDebug::init(vk_manager->get_instance().get());
@@ -18769,17 +18579,16 @@ void Renderer::initialize(Semaphore& timeline_semaphore) {
 bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
 
 	static Log::Timer timer;
-	if (timer.elapsed_sec(false) < 1.0f / this->max_fps) { return false; }
 
 	// Process GPU jobs on the main thread (required e.g. for physics/collisions update)
 	VulkanManager::process_jobs();
 
 	// find "frame in flight" with idle task and update it (write buffers, etc)
 	Log::debug("Searching for frame with available task in order to render the next frame.");
-	uint32_t current_frame = UINT32_MAX;
+	uint32_t frameID = UINT32_MAX;
 	for (uint32_t i = 0; i < this->frames_in_flight; i++) {
 		if (this->frames[i].update(timeline_semaphore)) {
-			current_frame = i;
+			frameID = i;
 			break;
 		}
 	}
@@ -18787,7 +18596,7 @@ bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
 	static uint32_t skipped_frames = 0;
 #endif
 
-	if (current_frame > frames_in_flight) {
+	if (frameID > frames_in_flight) {
 #ifdef _DEBUG
 		skipped_frames++;
 #endif
@@ -18804,8 +18613,8 @@ bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
 
 	Log::debug("\n===============================================================================");
 	Log::info(
-		"Render next frame: ", total_frames_counter, " ['frame in flight': ", current_frame + 1, "/",
-		frames_in_flight, ", FPS: ", fps, ", Task: ", frames[current_frame].task, "]"
+		"Render next frame: ", total_frames_counter, " ['frame in flight': ", frameID + 1, "/",
+		frames_in_flight, ", FPS: ", fps, ", Task: ", frames[frameID].task, "]"
 	);
 	Log::debug("===============================================================================");
 #endif
@@ -18818,142 +18627,270 @@ bool Renderer::render_next_frame(Semaphore& timeline_semaphore) {
 	if (!initialized) { this->initialize(timeline_semaphore); }
 	if (!surface || !swapchain) { return false; } // prevent execution in case the surface has been destroyed
 
-	// update the descriptor set (has no effect if no resources have changed)
-	if (is_default_renderer) {
-		Log::debug("... updating model matrices buffer at descriptor set binding ", FrameResources::default_bindings.model_matrices, ".");
-		this->frames[current_frame].set->bind_buffer(FrameResources::default_bindings.model_matrices, *this->frames[current_frame].model_matrices_buffer);
-		this->frames[current_frame].set->write();
-	}
+	// update push constants range for the current frame
+	// note: the material has to be updated later (=per batch)
+	Camera& cam = this->scene->get_active_camera();
+	uint32_t num_lights = frames[frameID].lights_buffer->get_elements();
+	auto& def_offs = FrameResources::default_offsets;
+	this->push_constants->add_values(cam.get_view_matrix(), def_offs.view_matrix_offset);
+	this->push_constants->add_values(cam.get_projection_matrix(), def_offs.projection_offset);
+	this->push_constants->add_values(num_lights, def_offs.light_count_offset);
+	this->push_constants->add_values(this->scene->get_prefiltered_mip_levels(), def_offs.prefmipl_offset);
+	this->push_constants->add_values(this->scene->get_exposure(), def_offs.exposure_offset);
+	this->push_constants->add_values(this->scene->get_contrast(), def_offs.contrast_offset);
+	this->push_constants->add_values(this->scene->get_ibl_intensity(), def_offs.ibl_intensity_offset);
+	this->push_constants->add_values(this->scene->get_ambient(), def_offs.ambient_scene_color_offset);
+	this->push_constants->add_values(cam.get_position(), def_offs.camera_position_offset);
 
-	struct DrawCall {
-		float distance;
-		uint32_t entity_index;
-		const SubMesh* submesh;
+	struct BatchKey {
 		Mesh* mesh;
-		uint32_t material_index;
+		SubMesh* submesh;
+		uint32_t material; // scene-local material index
+		bool transparent;
+
+		bool operator==(const BatchKey& other) const {
+			return
+				this->mesh == other.mesh &&
+				this->submesh == other.submesh &&
+				this->material == other.material &&
+				this->transparent == other.transparent;
+		}
 	};
-	std::vector<DrawCall> alpha_queue;
-	std::vector<DrawCall> opaque_queue;
 
-	// Categorize visible entities into Opaque and Alpha queues
+	struct BatchKeyHash {
+		static inline void hash_combine(std::size_t& seed, std::size_t value) {
+			seed ^= value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+		}
+
+		size_t operator()(const BatchKey& k) const {
+			size_t h = 0;
+			hash_combine(h, std::hash<Mesh*>{}(k.mesh));
+			hash_combine(h, std::hash<SubMesh*>{}(k.submesh));
+			hash_combine(h, std::hash<uint32_t>{}(k.material));
+			hash_combine(h, std::hash<bool>{}(k.transparent));
+			return h;
+		}
+	};
+
+	struct Batch {
+		BatchKey key;
+		mutable std::vector<uint32_t> instance_indices;
+		mutable std::vector<float_t> instance_distances;
+		mutable std::vector<size_t> perm;
+		enum SortOrder { BACK_TO_FRONT, FRONT_TO_BACK };
+		size_t size() { return instance_indices.size(); }
+		void sort_by_distance(SortOrder order) {
+			const size_t n = instance_indices.size();
+			perm.resize(n);
+			std::iota(perm.begin(), perm.end(), 0);
+
+			if (order == FRONT_TO_BACK) {
+				std::sort(perm.begin(), perm.end(),
+					[&](size_t a, size_t b) {
+						return instance_distances[a] < instance_distances[b];
+					});
+			}
+			else {
+				std::sort(perm.begin(), perm.end(),
+					[&](size_t a, size_t b) {
+						return instance_distances[a] > instance_distances[b];
+					});
+			}
+			apply_permutation(perm);
+		}
+
+		void apply_permutation(const std::vector<size_t>& perm) {
+			std::vector<uint32_t> new_indices;
+			std::vector<float>    new_distances;
+
+			new_indices.reserve(perm.size());
+			new_distances.reserve(perm.size());
+
+			for (size_t i : perm) {
+				new_indices.push_back(instance_indices[i]);
+				new_distances.push_back(instance_distances[i]);
+			}
+
+			instance_indices = std::move(new_indices);
+			instance_distances = std::move(new_distances);
+		}
+	};
+
+
+	// Categorize visible entities into Batches
+	std::unordered_map<BatchKey, Batch, BatchKeyHash> batches;
+	batches.reserve(frames[frameID].visible_entities.size());
+
 	{
-		LockGuard lock({ &this->scene->entity_mutex });
+		std::vector<RankedMutex*> mtx = { &scene->entity_mutex, &scene->physics_mutex };
+		for (auto& ps : scene->get_particle_systems()) {
+			mtx.push_back(&ps.particles_mutex);
+		}
+		LockGuard lock(mtx);
 
-		for (uint32_t e_idx = 0; e_idx < this->frames[current_frame].visible_entities.size(); ++e_idx) {
-			Mesh* current_mesh = &this->frames[current_frame].visible_entities[e_idx]->get_mesh();
-			const auto& submeshes = current_mesh->get_submeshes();
+		for (uint32_t e = 0; e < frames[frameID].visible_entities.size(); ++e) {
+			Entity* ent = frames[frameID].visible_entities[e];
+			Mesh* mesh = &ent->get_mesh();
 
-			for (const auto& submesh : submeshes) {
-				const Material& mat = *scene->get_unique_materials()[submesh.scene_local_material_index];
-				bool is_transparent = mat.alpha_mode == AlphaMode::ALPHA_BLEND_MODE || mat.transmission_factor > 0.01;
+			// Culling of entities that are not in view of the Camera
+			BBox world_bbox = mesh->get_bbox().transform(frames[frameID].model_matrices_vec[e], ent->get_scale());
+			bool culled = false;
+			for (const auto& p : this->scene->get_active_camera().get_frustrum_planes()) {
+				glm::vec3 positive = world_bbox.min();
+				glm::vec3 world_bbox_max = world_bbox.max();
+				if (p.normal.x >= 0) { positive.x = world_bbox_max.x; }
+				if (p.normal.y >= 0) { positive.y = world_bbox_max.y; }
+				if (p.normal.z >= 0) { positive.z = world_bbox_max.z; }
+				if (glm::dot(p.normal, positive) + p.distance < 0) { culled = true; break; }
+			}
+			if (culled) { continue; }
 
-				glm::vec3 world_center = glm::vec3(this->frames[current_frame].model_matrices_vec[e_idx] * glm::vec4(submesh.bbox.center(), 1.0f));
-				float dist = this->scene->get_active_camera().get_distance(world_center);
+			// loop over submeshes and categorize into batches (based on mesh, submesh, material and transparency)
+			for (SubMesh& sm : mesh->get_submeshes()) {
+				const Material& mat = *scene->get_unique_materials()[sm.scene_local_material_index];
 
-				DrawCall dc = { dist, e_idx, &submesh, current_mesh, submesh.scene_local_material_index };
-				if (is_transparent) alpha_queue.push_back(dc);
-				else opaque_queue.push_back(dc);
+				bool transparent =
+					mat.alpha_mode == AlphaMode::ALPHA_BLEND_MODE ||
+					mat.transmission_factor > 0.01f;
+
+				glm::vec3 wc =
+					glm::vec3(frames[frameID].model_matrices_vec[e] *
+						glm::vec4(sm.bbox.center(), 1.0f));
+
+				float dist = scene->get_active_camera().get_distance(wc);
+
+				BatchKey key{
+					mesh,
+					&sm,
+					sm.scene_local_material_index,
+					transparent
+				};
+
+				Batch& batch = batches[key];
+				batch.key = key;
+				batch.instance_indices.push_back(e);
+				batch.instance_distances.push_back(dist);
 			}
 		}
 	}
 
-	// 1. Sort Opaque: Primary by Mesh ID (for batching), Secondary by Distance (Front-to-Back)
-	std::sort(opaque_queue.begin(), opaque_queue.end(), [](const DrawCall& a, const DrawCall& b) {
-		if (a.mesh->get_unique_ID() != b.mesh->get_unique_ID())
-			return a.mesh->get_unique_ID() < b.mesh->get_unique_ID();
-		if (a.submesh != b.submesh)
-			return a.submesh < b.submesh;
-		return a.distance < b.distance; // Front-to-back within same submesh
-	});
+	// sort the batches
+	std::vector<Batch*> ordered_batches;
+	ordered_batches.reserve(batches.size());
 
-	// 2. Sort Alpha: Pure Distance (Back-to-Front)
-	std::sort(alpha_queue.begin(), alpha_queue.end(), [](const DrawCall& a, const DrawCall& b) {
-		return a.distance > b.distance;
-	});
+	for (auto& [_, batch] : batches) {
+		ordered_batches.push_back(&batch);
+	}
 
-	uint32_t image_index = this->swapchain->acquire_next_image(*this->frames[current_frame].image_available_semaphore);
-	CommandBuffer& cb = this->frames[current_frame].task->get_command_buffer();
+	std::sort(ordered_batches.begin(), ordered_batches.end(),
+		[](const Batch* a, const Batch* b) {
+			if (a->key.transparent != b->key.transparent)
+				return a->key.transparent < b->key.transparent; // opaque first
+			if (a->key.mesh != b->key.mesh)
+				return a->key.mesh < b->key.mesh;
+			return a->key.submesh < b->key.submesh;
+		});
+
+	int32_t image_index = this->swapchain->acquire_next_image(*this->frames[frameID].image_available_semaphore);
+	if (image_index == INVALID_ID) { return false; }
+	CommandBuffer& cb = this->frames[frameID].task->get_command_buffer();
 	cb.begin_recording();
 	cb.set_viewport({ 0, 0 }, extent);
 	cb.set_scissor({ 0, 0 }, extent);
-	cb.begin_renderpass(*renderpass, swapchain->get_framebuffer(image_index).get(), { 0,0 }, swapchain->get_extent(), clear_values);
 
-	// ======= RENDER OPAQUE PASS ==========
-	cb.bind_descriptor_set(*this->frames[current_frame].set, *this->pipeline_opaque);
-	cb.bind_pipeline(*this->pipeline_opaque);
+	// Setup DescriptorSet for each batch
+	for (uint32_t batchID = 0; batchID < ordered_batches.size(); batchID++) {
+		auto& frame = frames[frameID];
 
-	Mesh* last_bound_mesh = nullptr;
-	const SubMesh* last_bound_submesh = nullptr;
-
-	for (uint32_t i = 0; i < opaque_queue.size(); ) {
-		const auto& dc = opaque_queue[i];
-
-		if (dc.mesh != last_bound_mesh) {
-			cb.bind_mesh(*dc.mesh);
-			last_bound_mesh = dc.mesh;
+		// 1. write instance indices buffer
+		auto& inst_ind_buf = frame.batch_instance_indices_buffer;
+		if (inst_ind_buf.size() <= batchID) { inst_ind_buf.resize(size_t(batchID + 1)); }
+		const uint32_t count = uint32_t(ordered_batches[batchID]->size());
+		if (!inst_ind_buf[batchID] || inst_ind_buf[batchID]->get_elements() != count) {
+			inst_ind_buf[batchID] = std::make_unique<Buffer<uint32_t>>(
+				vk_manager->get_device(),
+				BufferType::STORAGE_BUFFER,
+				count,
+				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		}
+		inst_ind_buf[batchID]->write(
+			ordered_batches[batchID]->instance_indices,
+			count, 0, 0,
+			timeline_semaphore,
+			QueueFamily::GRAPHICS_QUEUE
+		);
+		cb.add_buffer_memory_barrier(
+			*inst_ind_buf[batchID],
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_ACCESS_2_SHADER_READ_BIT,
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+		);
 
-		if (dc.submesh != last_bound_submesh) {
-			if (is_default_renderer) {
-				this->frames[current_frame].constants->add_values(dc.material_index, FrameResources::default_offsets.material_offset);
-			}
-			cb.bind_push_constants(*this->frames[current_frame].constants, *this->pipeline_opaque);
-			last_bound_submesh = dc.submesh;
-		}
+		// 2. update descriptor set
+		auto& ds = frame.get_descriptor_set(batchID);
+		ds.bind_buffer(0, *frame.materials_buffer);
+		ds.bind_buffer(1, *frame.lights_buffer);
+		ds.bind_buffer(2, *frame.material_texIDs_buffer);
+		ds.bind_buffer(3, *frame.model_matrices_buffer);
+		ds.bind_cubemap(4, this->scene->get_cubemap_irradiance(timeline_semaphore));
+		ds.bind_cubemap(5, this->scene->get_cubemap_prefiltered(timeline_semaphore));
+		ds.bind_textures(6, this->scene->get_brdf_lut(timeline_semaphore));
+		ds.bind_textures(7, this->scene->get_textures());
+		ds.bind_buffer(8, *inst_ind_buf[batchID]);
+		ds.write();
+	}
+	cb.record_barriers();
 
-		// Look ahead for contiguous instances of the SAME submesh for batching
-		uint32_t instance_count = 1;
-		uint32_t first_instance = dc.entity_index;
+	cb.begin_renderpass(*renderpass, swapchain->get_framebuffer(uint32_t(image_index)).get(), { 0,0 }, swapchain->get_extent(), clear_values);
 
-		// We can only batch if the indices are contiguous in the SSBO
-		while (i + instance_count < opaque_queue.size()) {
-			const auto& next_dc = opaque_queue[i + instance_count];
-			if (next_dc.submesh == dc.submesh && next_dc.entity_index == first_instance + instance_count) {
-				instance_count++;
+	// Lambda for batch draw
+	auto draw_batches = [&](bool transparent_pass, GraphicsPipeline& pipeline) {
+		cb.bind_pipeline(pipeline);
+
+		Mesh* last_mesh = nullptr;
+
+		for (uint32_t batchID = 0; batchID < ordered_batches.size(); batchID++) {
+			auto& batch = ordered_batches[batchID];
+
+			if (batch->key.transparent != transparent_pass) { continue; }
+
+			if (transparent_pass) {
+				batch->sort_by_distance(Batch::SortOrder::BACK_TO_FRONT);
 			}
 			else {
-				break;
+				batch->sort_by_distance(Batch::SortOrder::FRONT_TO_BACK);
+			}
+
+			const uint32_t count = uint32_t(batch->size());
+			if (count == 0) { continue; }
+
+			cb.bind_descriptor_set(frames[frameID].get_descriptor_set(batchID), pipeline);
+			if (batch->key.mesh != last_mesh) {	cb.bind_mesh(*batch->key.mesh);	last_mesh = batch->key.mesh; }
+			this->push_constants->add_values(batch->key.material, FrameResources::default_offsets.material_offset); // in-place overwrite
+			cb.bind_push_constants(*this->push_constants, pipeline);
+
+			SubMesh* sm = batch->key.submesh;
+			if (sm->index_count <= 1) {
+				cb.draw(sm->vertex_count, count, sm->vertex_offset, 0);
+			}
+			else {
+				cb.draw_indexed(sm->index_count, count, sm->first_index, 0, 0);
 			}
 		}
+	};
 
-		if (dc.submesh->index_count <= 1) {
-			cb.draw(dc.submesh->vertex_count, instance_count, dc.submesh->vertex_offset, first_instance);
-		}
-		else {
-			cb.draw_indexed(dc.submesh->index_count, instance_count, dc.submesh->first_index, 0, first_instance);
-		}
-
-		i += instance_count;
-	}
-
-	// ======= RENDER ALPHA PASS ==========
-	if (!alpha_queue.empty()) {
-		cb.bind_descriptor_set(*this->frames[current_frame].set, *this->pipeline_alpha);
-		cb.bind_pipeline(*this->pipeline_alpha);
-
-		for (const auto& dc : alpha_queue) {
-			if (dc.mesh != last_bound_mesh) {
-				cb.bind_mesh(*dc.mesh);
-				last_bound_mesh = dc.mesh;
-			}
-			if (is_default_renderer) {
-				this->frames[current_frame].constants->add_values(dc.material_index, FrameResources::default_offsets.material_offset);
-			}
-			cb.bind_push_constants(*this->frames[current_frame].constants, *this->pipeline_alpha);
-
-			if (dc.submesh->index_count <= 1) cb.draw(dc.submesh->vertex_count, 1, dc.submesh->vertex_offset, dc.entity_index);
-			else cb.draw_indexed(dc.submesh->index_count, 1, dc.submesh->first_index, 0, dc.entity_index);
-		}
-	}
+	draw_batches(false, *pipeline_opaque);
+	draw_batches(true, *pipeline_alpha);
 
 	cb.end_renderpass();
 	cb.end_recording();
-	this->frames[current_frame].task->timeline_sync(timeline_semaphore);
-	this->frames[current_frame].task->wait_binary_semaphore(*this->frames[current_frame].image_available_semaphore);
-	this->frames[current_frame].task->signal_binary_semaphore(*this->frames[current_frame].render_finished_semaphore);
-	this->frames[current_frame].task->submit();
+	this->frames[frameID].task->timeline_sync(timeline_semaphore);
+	this->frames[frameID].task->wait_binary_semaphore(*this->frames[frameID].image_available_semaphore);
+	this->frames[frameID].task->signal_binary_semaphore(*this->frames[frameID].render_finished_semaphore);
+	this->frames[frameID].task->submit();
 
-	this->swapchain->present_rendered_image(*this->frames[current_frame].render_finished_semaphore);
+	this->swapchain->present_rendered_image(*this->frames[frameID].render_finished_semaphore);
 
 	Log::debug("===============================================================================\n\n");
 	return true;
@@ -18967,13 +18904,20 @@ Swapchain& Renderer::get_swapchain() { if (!swapchain) { Log::warning("in Render
 RenderPass& Renderer::get_renderpass() { if (!renderpass) { Log::warning("in Renderer::get_renderpass(): renderpass is NULL."); }; return *this->renderpass; }
 SubPass& Renderer::get_subpass() { if (!subpass) { Log::warning("in Renderer::get_subpass(): subpass is NULL."); }; return *this->subpass; }
 GraphicsPipelineLayout& Renderer::get_pipeline_layout() { if (!pipeline_layout) { Log::warning("in Renderer::get_pipeline_layout(): pipeline_layout is NULL."); }; return *this->pipeline_layout; }
-PipelineProperties& Renderer::get_opaque_pass_pipeline_properties() { if (!pipeline_properties_opaque) { Log::warning("in Renderer::get_opaque_pass_pipeline_properties(): pipeline_properties is NULL."); }; return *this->pipeline_properties_opaque; }
-PipelineProperties& Renderer::get_alpha_pass_pipeline_properties() { if (!pipeline_properties_alpha) { Log::warning("in Renderer::get_alpha_pass_pipeline_properties(): pipeline_properties is NULL."); }; return *this->pipeline_properties_alpha; }
-GraphicsPipeline& Renderer::get_opaque_pass_pipeline() { if (!pipeline_opaque) { Log::warning("in Renderer::get_pipeline(): pipeline is NULL."); }; return *this->pipeline_opaque; }
-GraphicsPipeline& Renderer::get_alpha_pass_pipeline() { if (!pipeline_alpha) { Log::warning("in Renderer::get_pipeline(): pipeline is NULL."); }; return *this->pipeline_alpha; }
-ShaderModule& Renderer::get_vertex_shader() { if (!vertex_shader) { Log::warning("in Renderer::get_vertex_shader(): vertex_shader is NULL."); }; return *this->vertex_shader; }
-ShaderModule& Renderer::get_fragment_shader() { if (!fragment_shader) { Log::warning("in Renderer::get_fragment_shader(): fragment_shader is NULL."); }; return *this->fragment_shader; }
-DescriptorSetLayout& Renderer::get_descriptor_set_layout() { if (!descriptor_set_layout) { Log::warning("in Renderer::get_descriptor_set_layout(): descriptor_set_layout is NULL."); }; return *this->descriptor_set_layout; }
+PipelineProperties& Renderer::get_opaque_pass_pipeline_properties() {
+	if (!pipeline_properties_opaque) {
+		this->pipeline_properties_opaque = std::make_unique<PipelineProperties>();
+	};
+	return *this->pipeline_properties_opaque;
+}
+PipelineProperties& Renderer::get_alpha_pass_pipeline_properties() {
+	if (!pipeline_properties_alpha) {
+		this->pipeline_properties_alpha = std::make_unique<PipelineProperties>();
+		this->pipeline_properties_alpha->cull_mode = VK_CULL_MODE_NONE;
+		this->pipeline_properties_alpha->depth_write_enable = VK_FALSE;
+	}
+	return *this->pipeline_properties_alpha;
+}
 float_t Renderer::get_fps() const { return fps; }
 void Renderer::log_fps(uint32_t log_every_n_frames) {
 	if (!(this->total_frames_counter % std::max(log_every_n_frames, 1u))) {

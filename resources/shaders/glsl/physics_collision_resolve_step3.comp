@@ -1,0 +1,183 @@
+#version 450
+
+#define EPSILON 1e-6f
+#define COLLISION_VELOCITY_THRESHOLD -0.01f
+#define INV_SCALE (1.0f / 1e6f)
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// ==========================
+// GPU-side data structures
+// ==========================
+
+struct PhysicsState {
+    mat4 model_matrix;
+    mat4 inv_model_matrix;
+    mat4 rot_inv_inertia;
+
+    vec4 orientation;
+    
+    vec4 mesh_bbox_min;
+    vec4 mesh_bbox_max;
+    vec4 world_bbox_min;
+    vec4 world_bbox_max;
+    vec4 world_bbox_center;
+    vec4 world_bbox_axes[3];
+
+    vec4 scale;
+    vec4 pos;
+    vec4 lin_vel;
+    vec4 gravity;
+    vec4 lin_thrust;
+    vec4 spin_vel;
+    vec4 spin_thrust;
+    vec4 scale_vel;
+    vec4 scale_acc;
+    vec4 mesh_local_cog;
+    vec4 world_cog;
+
+    int unique_entity_ID;
+    int unique_mesh_ID;
+    int last_collided_with;
+    int lin_enabled;
+
+    int rot_enabled;
+    int solid;
+    uint voxel_master_buffer_offset;
+    uint voxel_buffer_elements;
+
+    float mesh_base_mass_kg;
+    float scaled_mass_kg;
+    float inv_scaled_mass_kg;
+    float restitution;
+
+    float friction;
+    float drag_coeff;
+    float tumble_strength;
+    float rho;
+
+    float mesh_fill_ratio;
+    float length_unit;
+    int lin_impulse_x;	    // accumulators for atomicAdd
+	int	lin_impulse_y;	    // ""
+
+	int	lin_impulse_z;	    // ""
+	int	spin_impulse_x;	    // ""
+	int	spin_impulse_y;	    // ""
+	int	spin_impulse_z;	    // ""
+
+	int pos_impulse_x;		// accumulators for atomic Baumgarte positional correction
+	int pos_impulse_y;		// ""
+	int pos_impulse_z;		// ""
+	int protection_flag;    // 0 = false; 1 = the user has made updates to the state since the last physics snapshot
+};
+
+struct CollisionResult {
+    vec4 normal;  // for storing the final results after averaing (resolution step 1)
+    vec4 contact; // ""
+
+    int normal_sum_x;
+    int normal_sum_y;
+    int normal_sum_z;
+    uint hit_count;
+
+    int contact_x;
+    int contact_y;
+    int contact_z;
+    int is_complex_collision; // 0 for simple AABB (SAT), 1 for complex voxel-based collision
+    
+    int entID_A;
+	int entID_B;   
+    float overlap;
+    int padding;
+};
+
+// ==========================
+// Buffers
+// ==========================
+layout(set = 0, binding = 0, std430) buffer states_buffer { PhysicsState states[]; };
+layout(set = 0, binding = 4) buffer collision_candidates_count_buffer { uint candidates_count[]; }; // single element buffer to hold the count of candidates, incremented atomically
+layout(set = 0, binding = 5, std430) buffer collision_results_buffer { CollisionResult results[]; };
+
+// ==========================
+// Push constants
+// ==========================
+layout(push_constant) uniform push_constants {
+    uint states_count;
+    uint vb_res;
+    float dt_substep;
+    uint max_collisions_per_substep;
+    float complex_threshold; // size threshold to determine if we should do voxel-based collision or just flag as simple (SAT)
+    uint solver_iterations;
+    uint sort_stage; // 0 = even, 1 = odd
+} pc;
+
+
+// ==========================
+// Main
+// ==========================
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= pc.states_count) return;
+
+    // 1. Recover floating point impulse sums from integer buckets
+    vec3 total_lin = vec3(
+        float(states[id].lin_impulse_x),
+        float(states[id].lin_impulse_y),
+        float(states[id].lin_impulse_z)
+    ) * INV_SCALE;
+
+    vec3 total_spin = vec3(
+        float(states[id].spin_impulse_x),
+        float(states[id].spin_impulse_y),
+        float(states[id].spin_impulse_z)
+    ) * INV_SCALE;
+
+    // 2. Update Linear Velocity
+    // Impulse = Change in Momentum (m * deltaV)
+    // deltaV = Impulse * invMass
+    if (states[id].lin_enabled != 0 && states[id].inv_scaled_mass_kg > 0.0) {
+        states[id].lin_vel.xyz += total_lin * states[id].inv_scaled_mass_kg;
+    }
+
+    // 3. Update Angular Velocity
+    // total_spin is the accumulated Impulse Torque
+    // delta_w = invInertia * torque_impulse
+    if (states[id].rot_enabled != 0) {
+        vec3 delta_w = (states[id].rot_inv_inertia * vec4(total_spin, 0.0)).xyz;
+        states[id].spin_vel.xyz += delta_w;
+    }
+
+    // 4. Recover displacement from buckets (Positional Correction / Baumgarte)
+    vec3 total_pos_displacement = vec3(
+        float(states[id].pos_impulse_x),
+        float(states[id].pos_impulse_y),
+        float(states[id].pos_impulse_z)
+    ) * INV_SCALE;
+
+    // 5. Apply to Position and World COG
+    if (states[id].lin_enabled != 0) {
+        states[id].pos.xyz += total_pos_displacement;
+        states[id].world_cog.xyz += total_pos_displacement;
+        
+        // 6. Update the Model Matrix translation part
+        // We update the 4th column directly to ensure subsequent steps (like voxel tests)
+        // in the SAME substep see the moved object.
+        states[id].model_matrix[3].xyz = states[id].pos.xyz;
+    }
+
+    // 7. RESET accumulators for the next solver iteration
+    states[id].lin_impulse_x = 0;
+    states[id].lin_impulse_y = 0;
+    states[id].lin_impulse_z = 0;
+    
+    states[id].spin_impulse_x = 0;
+    states[id].spin_impulse_y = 0;
+    states[id].spin_impulse_z = 0;
+
+    states[id].pos_impulse_x = 0;
+    states[id].pos_impulse_y = 0;
+    states[id].pos_impulse_z = 0;
+}

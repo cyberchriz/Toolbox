@@ -1,0 +1,216 @@
+// Vulkan/GLSL compute shader: COLLISION DETECTION
+// author: Christian Suer (github: 'cyberchriz')
+
+#version 450 core
+
+#define EPSILON 1e-6f
+
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+struct PhysicsState {
+    mat4 model_matrix;
+    mat4 inv_model_matrix;
+    mat4 rot_inv_inertia;
+
+    vec4 orientation;
+    
+    vec4 mesh_bbox_min;
+    vec4 mesh_bbox_max;
+    vec4 world_bbox_min;
+    vec4 world_bbox_max;
+    vec4 world_bbox_center;
+    vec4 world_bbox_axes[3];
+
+    vec4 scale;
+    vec4 pos;
+    vec4 lin_vel;
+    vec4 gravity;
+    vec4 lin_thrust;
+    vec4 spin_vel;
+    vec4 spin_thrust;
+    vec4 scale_vel;
+    vec4 scale_acc;
+    vec4 mesh_local_cog;
+    vec4 world_cog;
+
+    int unique_entity_ID;
+    int unique_mesh_ID;
+    int last_collided_with;
+    int lin_enabled;
+
+    int rot_enabled;
+    int solid;
+    uint voxel_master_buffer_offset;
+    uint voxel_buffer_elements;
+
+    float mesh_base_mass_kg;
+    float scaled_mass_kg;
+    float inv_scaled_mass_kg;
+    float restitution;
+
+    float friction;
+    float drag_coeff;
+    float tumble_strength;
+    float rho;
+
+    float mesh_fill_ratio;
+    float length_unit;
+    int lin_impulse_x;	    // accumulators for atomicAdd
+	int	lin_impulse_y;	    // ""
+
+	int	lin_impulse_z;	    // ""
+	int	spin_impulse_x;	    // ""
+	int	spin_impulse_y;	    // ""
+	int	spin_impulse_z;	    // ""
+
+	int pos_impulse_x;		// accumulators for atomic Baumgarte positional correction
+	int pos_impulse_y;		// ""
+	int pos_impulse_z;		// ""
+	int protection_flag;    // 0 = false; 1 = the user has made updates to the state since the last physics snapshot
+};
+
+struct EntitySortKey {
+    float x_min;
+    uint entID; // note: this is NOT the same as the global unique_entity_ID, but rather the index into the states buffer (which is used for sorting) !!!
+};
+
+struct CollisionCandidate {
+	uint entID_A;
+	uint entID_B;
+};
+
+struct CollisionResult {
+    vec4 normal;  // for storing the final results after averaing (resolution step 1)
+    vec4 contact; // ""
+
+    int normal_sum_x;
+    int normal_sum_y;
+    int normal_sum_z;
+    uint hit_count;
+
+    int contact_x;
+    int contact_y;
+    int contact_z;
+    int is_complex_collision; // 0 for simple AABB (SAT), 1 for complex voxel-based collision
+    
+    int entID_A;
+	int entID_B;   
+    float overlap;
+    int padding;
+};
+
+layout(set = 0, binding = 0, std430) buffer states_buffer { PhysicsState states[]; };
+layout(set = 0, binding = 1) buffer sort_keys_buffer { EntitySortKey sort_keys[]; };
+layout(set = 0, binding = 3, std430) buffer collision_candidates_buffer { CollisionCandidate candidates[]; };
+layout(set = 0, binding = 4) buffer collision_candidates_count_buffer { uint candidates_count[]; }; // single element buffer to hold the count of candidates, incremented atomically
+layout(set = 0, binding = 5, std430) buffer collision_results_buffer { CollisionResult results[]; };
+
+layout(push_constant) uniform push_constants {
+    uint states_count;
+    uint vb_res;
+    float dt_substep;
+    uint max_collisions_per_substep;
+    float complex_threshold; // size threshold to determine if we should do voxel-based collision or just flag as simple (SAT)
+    uint solver_iterations;
+    uint sort_stage; // 0 = even, 1 = odd
+} pc;
+
+// Helper to test SAT axis and return overlap
+float testAxis(vec3 axis, vec3 centerA, vec3 extA[3], vec3 centerB, vec3 extB[3]) {
+    if (length(axis) < 0.0001) return 1e10;
+    axis = normalize(axis);
+    
+    float radiusA = abs(dot(extA[0], axis)) + abs(dot(extA[1], axis)) + abs(dot(extA[2], axis));
+    float radiusB = abs(dot(extB[0], axis)) + abs(dot(extB[1], axis)) + abs(dot(extB[2], axis));
+    float dist = abs(dot(centerB - centerA, axis));
+    
+    return (radiusA + radiusB) - dist;
+}
+
+void main() {
+    uint idxA = gl_GlobalInvocationID.x;
+    if (idxA >= pc.states_count) return;
+
+    PhysicsState sA = states[idxA];
+    if (sA.solid == 0) return;
+
+    // Iterate through candidates (Sweep and Prune narrow phase)
+    // For this implementation, we check indices following idxA to avoid double-testing
+    for (uint idxB = idxA + 1; idxB < pc.states_count; idxB++) {
+        PhysicsState sB = states[idxB];
+        if (sB.solid == 0) continue;
+        if (sA.lin_enabled == 0 && sB.lin_enabled == 0) continue;
+
+        // 1. AABB Broad Phase Check
+        bool overlap = true;
+        if (sA.world_bbox_min.x > sB.world_bbox_max.x || sA.world_bbox_max.x < sB.world_bbox_min.x) overlap = false;
+        if (sA.world_bbox_min.y > sB.world_bbox_max.y || sA.world_bbox_max.y < sB.world_bbox_min.y) overlap = false;
+        if (sA.world_bbox_min.z > sB.world_bbox_max.z || sA.world_bbox_max.z < sB.world_bbox_min.z) overlap = false;
+
+        if (overlap) {
+            uint write_idx = atomicAdd(candidates_count[0], 1);
+            if (write_idx >= pc.max_collisions_per_substep) return;
+
+            // Determine if we need Voxel logic or SAT logic
+            float sizeA = length(sA.mesh_bbox_max.xyz - sA.mesh_bbox_min.xyz);
+            float sizeB = length(sB.mesh_bbox_max.xyz - sB.mesh_bbox_min.xyz);
+            bool is_simple = (sizeA < pc.complex_threshold || sizeB < pc.complex_threshold);
+
+            // Ensure entID_A is always the dynamic one if B is static
+            bool a_static = (sA.lin_enabled == 0);
+            uint finalA = a_static ? idxB : idxA;
+            uint finalB = a_static ? idxA : idxB;
+
+            candidates[write_idx].entID_A = finalA;
+            candidates[write_idx].entID_B = finalB;
+            results[write_idx].entID_A = int(finalA);
+            results[write_idx].entID_B = int(finalB);
+
+            if (is_simple) {
+                // --- FULL SAT LOGIC ---
+                vec3 centerA = sA.world_bbox_center.xyz;
+                vec3 centerB = sB.world_bbox_center.xyz;
+                vec3 extA[3] = { sA.world_bbox_axes[0].xyz, sA.world_bbox_axes[1].xyz, sA.world_bbox_axes[2].xyz };
+                vec3 extB[3] = { sB.world_bbox_axes[0].xyz, sB.world_bbox_axes[1].xyz, sB.world_bbox_axes[2].xyz };
+
+                float minOverlap = 1e10;
+                vec3 bestAxis = vec3(0);
+
+                // Check 6 principal axes
+                for(int i=0; i<3; i++) {
+                    float o = testAxis(extA[i], centerA, extA, centerB, extB);
+                    if (o <= 0) { overlap = false; break; }
+                    if (o < minOverlap) { minOverlap = o; bestAxis = extA[i]; }
+                    
+                    o = testAxis(extB[i], centerA, extA, centerB, extB);
+                    if (o <= 0) { overlap = false; break; }
+                    if (o < minOverlap) { minOverlap = o; bestAxis = extB[i]; }
+                }
+
+                if (overlap) {
+                    vec3 normal = normalize(bestAxis);
+                    // Ensure normal points from A to B
+                    if (dot(normal, centerB - centerA) < 0) normal = -normal;
+
+                    results[write_idx].is_complex_collision = 0;
+                    results[write_idx].normal = vec4(normal, 0);
+                    results[write_idx].overlap = minOverlap;
+                    results[write_idx].hit_count = 1;
+                    
+                    // Simple contact point approximation
+                    results[write_idx].contact = vec4(centerA + (normal * (length(centerB - centerA) * 0.5)), 1.0);
+                } else {
+                    // False positive in broad phase
+                    atomicAdd(candidates_count[0], -1);
+                }
+            } else {
+                // Flag for Voxel Phase (Step 4)
+                results[write_idx].is_complex_collision = 1;
+                results[write_idx].hit_count = 0;
+                results[write_idx].normal = vec4(0);
+                results[write_idx].contact = vec4(0);
+                results[write_idx].overlap = 0.0;
+            }
+        }
+    }
+}

@@ -1,7 +1,8 @@
 #version 450
 
 #extension GL_ARB_separate_shader_objects : enable
-#extension GL_EXT_scalar_block_layout : require
+#extension GL_KHR_vulkan_glsl : enable
+//#extension GL_EXT_scalar_block_layout : require
 
 // Input vertex attributes from the Mesh class (conventional order following glTF 2.0 specification)
 layout(location = 0) in vec4 in_color;
@@ -27,9 +28,10 @@ layout(location = 8) flat out uint v_material_index;
 layout(location = 9) out vec3 v_view_dir;
 
 // Define storage buffer for model matrices (Binding 3, as defined in the descriptor set)
-layout(binding = 3, set = 0, std430) readonly buffer model_matrices_buffer { 
-    mat4 model_matrices[];
-};
+layout(binding = 3, set = 0, std430) readonly buffer model_matrices_buffer { mat4 model_matrices[]; };
+
+// Define storage buffer for instance indices of the current (=batched) draw call
+layout(binding = 8, set = 0, std430) readonly buffer batch_instance_indices_buffer { uint instance_indices[]; };
 
 // Push constants for dynamic data (using std430)
 layout(push_constant) uniform push_constants {
@@ -46,8 +48,9 @@ layout(push_constant) uniform push_constants {
 };
 
 void main() {
-    // Retrieve the Model Matrix specific to this instance using gl_InstanceIndex
-    mat4 model = model_matrices[gl_InstanceIndex];
+    // Retrieve the Model Matrix specific to this instance
+    uint modelIndex = instance_indices[gl_InstanceIndex];
+    mat4 model = model_matrices[modelIndex];
 
     // Transform the vertex position to Clip Space and pass the vertex's world space position to the fragment shader
     vec4 world_pos = model * vec4(in_position, 1.0);

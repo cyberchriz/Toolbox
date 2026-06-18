@@ -26,7 +26,7 @@
 #endif
 
 // macro shortcuts
-#define TIMER_START Log::Timer timer(LEVEL_DEBUG, __FUNCTION__);	// start timer (first start within scope)
+#define TIMER_START Log::Timer timer(LEVEL_FORCE, __FUNCTION__);	// start timer (first start within scope)
 #define TIMER_STOP timer.stop();									// stop timer and log elapsed time (since start or last stop)
 #define TIMER_SILENT_STOP timer.silent_stop();						// stop the timer without logging (thus silencing output when the Timer instance goes out of scope)
 #define TIMER_RESTART timer.restart();								// restart timer

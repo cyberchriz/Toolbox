@@ -1,0 +1,245 @@
+#version 450
+
+#define EPSILON 1e-6f
+#define COLLISION_VELOCITY_THRESHOLD 0.0f
+#define SLOP 0.02f
+#define BAUMGARTE_BASE 1.0f // how much to correct per substep (to be divided by the number of solver iterations)
+#define SCALE 1e6f
+
+// setup specialization constants
+// in "main" use gl_WorkGroupSize.x / gl_WorkGroupSize.y / gl_WorkGroupSize.z to get the actual workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// ==========================
+// GPU-side data structures
+// ==========================
+
+struct PhysicsState {
+    mat4 model_matrix;
+    mat4 inv_model_matrix;
+    mat4 rot_inv_inertia;
+
+    vec4 orientation;
+    
+    vec4 mesh_bbox_min;
+    vec4 mesh_bbox_max;
+    vec4 world_bbox_min;
+    vec4 world_bbox_max;
+    vec4 world_bbox_center;
+    vec4 world_bbox_axes[3];
+
+    vec4 scale;
+    vec4 pos;
+    vec4 lin_vel;
+    vec4 gravity;
+    vec4 lin_thrust;
+    vec4 spin_vel;
+    vec4 spin_thrust;
+    vec4 scale_vel;
+    vec4 scale_acc;
+    vec4 mesh_local_cog;
+    vec4 world_cog;
+
+    int unique_entity_ID;
+    int unique_mesh_ID;
+    int last_collided_with;
+    int lin_enabled;
+
+    int rot_enabled;
+    int solid;
+    uint voxel_master_buffer_offset;
+    uint voxel_buffer_elements;
+
+    float mesh_base_mass_kg;
+    float scaled_mass_kg;
+    float inv_scaled_mass_kg;
+    float restitution;
+
+    float friction;
+    float drag_coeff;
+    float tumble_strength;
+    float rho;
+
+    float mesh_fill_ratio;
+    float length_unit;
+    int lin_impulse_x;	    // accumulators for atomicAdd
+	int	lin_impulse_y;	    // ""
+
+	int	lin_impulse_z;	    // ""
+	int	spin_impulse_x;	    // ""
+	int	spin_impulse_y;	    // ""
+	int	spin_impulse_z;	    // ""
+
+	int pos_impulse_x;		// accumulators for atomic Baumgarte positional correction
+	int pos_impulse_y;		// ""
+	int pos_impulse_z;		// ""
+	int protection_flag;    // 0 = false; 1 = the user has made updates to the state since the last physics snapshot
+};
+
+struct CollisionResult {
+    vec4 normal;  // for storing the final results after averaing (resolution step 1)
+    vec4 contact; // ""
+
+    int normal_sum_x;
+    int normal_sum_y;
+    int normal_sum_z;
+    uint hit_count;
+
+    int contact_x;
+    int contact_y;
+    int contact_z;
+    int is_complex_collision; // 0 for simple AABB (SAT), 1 for complex voxel-based collision
+    
+    int entID_A;
+	int entID_B;   
+    float overlap;
+    int padding;
+};
+
+// ==========================
+// Buffers
+// ==========================
+layout(set = 0, binding = 0, std430) buffer states_buffer { PhysicsState states[]; };
+layout(set = 0, binding = 4) buffer collision_candidates_count_buffer { uint candidates_count[]; }; // single element buffer to hold the count of candidates, incremented atomically
+layout(set = 0, binding = 5, std430) buffer collision_results_buffer { CollisionResult results[]; };
+
+// ==========================
+// Push constants
+// ==========================
+layout(push_constant) uniform push_constants {
+    uint states_count;
+    uint vb_res;
+    float dt_substep;
+    uint max_collisions_per_substep;
+    float complex_threshold; // size threshold to determine if we should do voxel-based collision or just flag as simple (SAT)
+    uint solver_iterations;
+    uint sort_stage; // 0 = even, 1 = odd
+} pc;
+
+
+// ==========================
+// Main
+// ==========================
+void main() {
+    uint candID = gl_GlobalInvocationID.x;
+    
+    // Safety check against the number of collisions found in Step 3/4
+    if (candID >= candidates_count[0]) return;
+    
+    // We use a local copy of the result
+    CollisionResult res = results[candID];
+    if (res.hit_count == 0) return;
+
+    uint idA = uint(res.entID_A);
+    uint idB = uint(res.entID_B);
+
+    vec3 normal = res.normal.xyz;
+    vec3 contact_point = res.contact.xyz;
+    
+    // Vectors from centers of gravity to contact point
+    vec3 rA = contact_point - states[idA].world_cog.xyz;
+    vec3 rB = contact_point - states[idB].world_cog.xyz;
+
+    // 1. CALCULATE RELATIVE VELOCITY AT CONTACT POINT
+    vec3 vA = states[idA].lin_vel.xyz + (states[idA].rot_enabled != 0 ? cross(states[idA].spin_vel.xyz, rA) : vec3(0));
+    vec3 vB = states[idB].lin_vel.xyz + (states[idB].rot_enabled != 0 ? cross(states[idB].spin_vel.xyz, rB) : vec3(0));
+    vec3 rel_v = vB - vA;
+    float sep_v = dot(rel_v, normal);
+
+    // 2. IMPULSE SOLVER (BOUNCE & FRICTION)
+    if (sep_v < COLLISION_VELOCITY_THRESHOLD) {
+
+        // --- NORMAL IMPULSE ---
+        float inv_massA = (states[idA].solid != 0) ? states[idA].inv_scaled_mass_kg : 0.0f;
+        float inv_massB = (states[idB].solid != 0) ? states[idB].inv_scaled_mass_kg : 0.0f;
+
+        vec3 rA_n = cross(rA, normal);
+        vec3 rB_n = cross(rB, normal);
+            
+        float eff_mass = inv_massA + inv_massB +
+            (states[idA].rot_enabled != 0 ? dot(rA_n, (states[idA].rot_inv_inertia * vec4(rA_n, 0)).xyz) : 0.0f) +
+            (states[idB].rot_enabled != 0 ? dot(rB_n, (states[idB].rot_inv_inertia * vec4(rB_n, 0)).xyz) : 0.0f);
+
+        float restitution = min(states[idA].restitution, states[idB].restitution);
+
+        if (abs(sep_v) < 0.02f) restitution = 0.0f; // Anti-jitter: Micro-velocity damping
+
+        float j = -(1.0f + restitution) * sep_v / max(eff_mass, EPSILON);
+        vec3 impulse = j * normal;
+
+        // --- TANGENTIAL FRICTION IMPULSE (COULOMB) ---
+        vec3 tangent = rel_v - (sep_v * normal);
+        if (length(tangent) > EPSILON) {
+            tangent = normalize(tangent);
+            float friction = sqrt(states[idA].friction * states[idB].friction);
+            
+            vec3 rA_t = cross(rA, tangent);
+            vec3 rB_t = cross(rB, tangent);
+            float eff_mass_t = inv_massA + inv_massB +
+                (states[idA].rot_enabled != 0 ? dot(rA_t, (states[idA].rot_inv_inertia * vec4(rA_t, 0)).xyz) : 0.0f) +
+                (states[idB].rot_enabled != 0 ? dot(rB_t, (states[idB].rot_inv_inertia * vec4(rB_t, 0)).xyz) : 0.0f);
+            
+            float jt = -dot(rel_v, tangent) / max(eff_mass_t, EPSILON);
+            // Coulomb's Law clamp: jt <= j * friction
+            jt = clamp(jt, -j * friction, j * friction);
+            impulse += jt * tangent;
+        }
+
+        // Accumulatte Linear Impulses
+        if (states[idA].lin_enabled != 0) {
+            atomicAdd(states[idA].lin_impulse_x, int(-impulse.x * SCALE));
+            atomicAdd(states[idA].lin_impulse_y, int(-impulse.y * SCALE));
+            atomicAdd(states[idA].lin_impulse_z, int(-impulse.z * SCALE));
+        }
+        if (states[idB].lin_enabled != 0) {
+            atomicAdd(states[idB].lin_impulse_x, int(impulse.x * SCALE));
+            atomicAdd(states[idB].lin_impulse_y, int(impulse.y * SCALE));
+            atomicAdd(states[idB].lin_impulse_z, int(impulse.z * SCALE));
+        }
+
+        // Apply Angular Impulses
+        if (states[idA].rot_enabled != 0) {
+            vec3 torqueA = cross(rA, -impulse);
+            atomicAdd(states[idA].spin_impulse_x, int(torqueA.x * SCALE));
+            atomicAdd(states[idA].spin_impulse_y, int(torqueA.y * SCALE));
+            atomicAdd(states[idA].spin_impulse_z, int(torqueA.z * SCALE));
+        }
+        if (states[idB].rot_enabled != 0) {
+            vec3 torqueB = cross(rB, impulse);
+            atomicAdd(states[idB].spin_impulse_x, int(torqueB.x * SCALE));
+            atomicAdd(states[idB].spin_impulse_y, int(torqueB.y * SCALE));
+            atomicAdd(states[idB].spin_impulse_z, int(torqueB.z * SCALE));
+        }
+    }
+    
+    // 3. POSITIONAL CORRECTION (BAUMGARTE)
+
+    if (res.overlap > SLOP) {
+        float inv_massA = (states[idA].lin_enabled != 0) ? states[idA].inv_scaled_mass_kg : 0.0f;
+        float inv_massB = (states[idB].lin_enabled != 0) ? states[idB].inv_scaled_mass_kg : 0.0f;
+        float total_inv_mass = inv_massA + inv_massB;
+
+        if (total_inv_mass > EPSILON) {
+            // Divide by solver_iterations so we don't overshoot in a single frame
+            float bias = (BAUMGARTE_BASE / float(pc.solver_iterations)) * (res.overlap - SLOP);
+        
+            // The correction vector is the displacement needed to push them apart
+            vec3 correction = (bias / total_inv_mass) * normal;
+
+            if (states[idA].lin_enabled != 0) {
+                atomicAdd(states[idA].pos_impulse_x, int(-correction.x * inv_massA * SCALE));
+                atomicAdd(states[idA].pos_impulse_y, int(-correction.y * inv_massA * SCALE));
+                atomicAdd(states[idA].pos_impulse_z, int(-correction.z * inv_massA * SCALE));
+            }
+            if (states[idB].lin_enabled != 0) {
+                atomicAdd(states[idB].pos_impulse_x, int(correction.x * inv_massB * SCALE));
+                atomicAdd(states[idB].pos_impulse_y, int(correction.y * inv_massB * SCALE));
+                atomicAdd(states[idB].pos_impulse_z, int(correction.z * inv_massB * SCALE));
+            }
+        }
+    }
+
+    // 4. Update collision tracking
+    atomicExchange(states[idA].last_collided_with, int(idB));
+    atomicExchange(states[idB].last_collided_with, int(idA));
+}

@@ -1,0 +1,49 @@
+// Vulkan/GLSL: Bitonic Merge Pass
+#version 450 core
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+struct EntitySortKey {
+    float x_min;
+    uint entID;
+};
+
+// std430 is crucial here to match C++ packing (usually 8 bytes if no padding)
+layout(set = 0, binding = 1, std430) coherent buffer sort_keys_buffer { 
+    EntitySortKey sort_keys[]; 
+};
+
+layout(push_constant) uniform push_constants {
+    uint states_count;
+    uint vb_res;
+    float dt_substep;
+    uint max_collisions_per_substep;
+    float complex_threshold; // size threshold to determine if we should do voxel-based collision or just flag as simple (SAT)
+    uint solver_iterations;
+    uint sort_stage; // 0 = even, 1 = odd
+} pc;
+
+void main() {
+    // Each thread handles one pair comparison
+    uint i = gl_GlobalInvocationID.x;
+    
+    // Calculate the left-hand index of the pair based on the stage
+    // Stage 0: 0, 2, 4, 6...
+    // Stage 1: 1, 3, 5, 7...
+    uint idxA = i * 2 + pc.sort_stage;
+    uint idxB = idxA + 1;
+
+    // Bounds check: ensure the pair is within the actual entity count
+    if (idxB >= pc.states_count) {
+        return;
+    }
+
+    EntitySortKey keyA = sort_keys[idxA];
+    EntitySortKey keyB = sort_keys[idxB];
+
+    // Simple swap logic
+    if (keyA.x_min > keyB.x_min) {
+        sort_keys[idxA] = keyB;
+        sort_keys[idxB] = keyA;
+    }
+}

@@ -11,8 +11,8 @@ int main() {
 	//ngrid_test();
 	//graphics_test_skull();
 	//graphics_test_helmet();
-	graphics_test_chronograph();
-	//particles_test();
+	//graphics_test_chronograph();
+	particles_test();
 
 	std::cin.get();
 }

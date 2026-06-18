@@ -20,7 +20,7 @@ void graphics_test_chronograph() {
 
 	// set scene details
 	scene.get_active_camera().set_world_up(UpAxis::Y_UP);
-	scene.get_active_camera().set_position({ 0.0f, 0.0f, 8.0f });
+	scene.get_active_camera().set_position({ 0.0f, 0.0f, 10.0f });
 	scene.get_active_camera().look_at(scene.get_entity(entity_id));
 	scene.get_active_camera().set_aspect_ratio(extent);
 	scene.get_active_camera().set_near_plane(0.01f);
@@ -28,13 +28,13 @@ void graphics_test_chronograph() {
 	scene.set_ambient({ 0.0f, 0.0f, 0.0f });
 	scene.set_exposure(0.8f);
 	scene.set_contrast(1.0f);
-	scene.set_ibl_intensity(0.1f);
+	scene.set_ibl_intensity(0.3f);
 
 	// add a front spot light
 	uint32_t light_id2 = scene.add_scene_light(LightType::SPOT_LIGHT, { 10.0f, -1.5f, 25.0f });
 	scene.get_scene_light(light_id2).point_to(scene.get_entity(entity_id));
-	scene.get_scene_light(light_id2).set_intensity(100.0f);
-	scene.get_scene_light(light_id2).set_range(50.0f);
+	scene.get_scene_light(light_id2).set_intensity(350.0f);
+	scene.get_scene_light(light_id2).set_range(100.0f);
 	scene.get_scene_light(light_id2).set_cone_angle(1.0f, 2.0f);
 
 	rd.set_surface(surface);
@@ -60,7 +60,7 @@ void graphics_test_chronograph() {
 				double dx, dy;
 				em.mouse_delta(dx, dy);
 				if (em.check_modifiers(GLFW_MOD_CONTROL)) {
-					scene.get_entity(entity_id).translate({ static_cast<float_t>(dx * 0.001f), static_cast<float_t>(-dy * 0.001f), 0.0f });
+					scene.get_entity(entity_id).translate({ static_cast<float_t>(dx * 0.01f), static_cast<float_t>(-dy * 0.01f), 0.0f });
 				}
 				else {
 					scene.get_entity(entity_id).rotate({ static_cast<float>(dy * 0.1f), static_cast<float>(dx * 0.1f), 0.0f });

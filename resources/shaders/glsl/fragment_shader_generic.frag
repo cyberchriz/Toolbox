@@ -7,7 +7,8 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
-#extension GL_EXT_scalar_block_layout : require
+#extension GL_KHR_vulkan_glsl : enable
+//#extension GL_EXT_scalar_block_layout : require
 
 #define MAX_TEXTURES 1024
 
